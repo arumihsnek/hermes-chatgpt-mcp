@@ -12,7 +12,8 @@ def test_systemd_unit_keeps_query_command_and_oauth_state_boundaries():
     assert "StateDirectoryMode=0700" in unit
     assert "Environment=MCP_OAUTH_DIAGNOSTICS=0" in unit
     assert "/var/lib/hermes-chatgpt-mcp" in unit
-    assert "ReadWritePaths=/home/ubuntu/.hermes/kanban/boards /home/ubuntu/.hermes/kanban.db -/home/ubuntu/.hermes/kanban.db-wal -/home/ubuntu/.hermes/kanban.db-shm /var/lib/hermes-chatgpt-mcp" in unit
+    assert "ReadOnlyPaths=/home/ubuntu/.hermes" in unit
+    assert "ReadWritePaths=/home/ubuntu/.hermes/kanban/boards /home/ubuntu/.hermes/kanban.db /home/ubuntu/.hermes/kanban.db-wal /home/ubuntu/.hermes/kanban.db-shm /var/lib/hermes-chatgpt-mcp" in unit
     assert "ReadWritePaths=/home/ubuntu/.hermes\n" not in unit
 
 
@@ -20,6 +21,8 @@ def test_oci_installer_preserves_private_oauth_state_configuration():
     installer = Path("scripts/install_oci.sh").read_text(encoding="utf-8")
     assert '"MCP_OAUTH_STATE_FILE": "/var/lib/hermes-chatgpt-mcp/oauth-state.json"' in installer
     assert 'path.chmod(0o600)' in installer
+    assert 'if not path.exists():' in installer
+    assert 'refusing symlinked SQLite sidecar' in installer
     assert "systemctl restart" in installer
     assert '"HERMES_KANBAN_BOARD": "codex_app_server"' not in installer
     assert '"MCP_KANBAN_READ_BOARDS": "codex_app_server,dashboard"' not in installer

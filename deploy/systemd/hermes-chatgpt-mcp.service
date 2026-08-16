@@ -24,11 +24,12 @@ ProtectSystem=full
 ProtectHome=read-only
 StateDirectory=hermes-chatgpt-mcp
 StateDirectoryMode=0700
-# Named boards live below kanban/boards; the legacy canonical ``default``
-# board and its SQLite WAL sidecars live at the Hermes root. WAL/SHM files are
-# ephemeral: systemd must ignore a sidecar that SQLite has removed between
-# restarts, while retaining the narrow write grant whenever it exists.
-ReadWritePaths=/home/ubuntu/.hermes/kanban/boards /home/ubuntu/.hermes/kanban.db -/home/ubuntu/.hermes/kanban.db-wal -/home/ubuntu/.hermes/kanban.db-shm /var/lib/hermes-chatgpt-mcp
+# Keep the Hermes home read-only and reopen only the canonical board storage.
+# The installer creates the legacy WAL/SHM sidecars when absent. systemd then
+# bind-mounts those individual files, so SQLite can update them without
+# granting the service write access to unrelated Hermes state.
+ReadOnlyPaths=/home/ubuntu/.hermes
+ReadWritePaths=/home/ubuntu/.hermes/kanban/boards /home/ubuntu/.hermes/kanban.db /home/ubuntu/.hermes/kanban.db-wal /home/ubuntu/.hermes/kanban.db-shm /var/lib/hermes-chatgpt-mcp
 PrivateDevices=yes
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 RestrictSUIDSGID=yes
