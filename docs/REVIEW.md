@@ -4,36 +4,55 @@ Review date: 2026-08-16 UTC
 
 ## Result
 
-The selected boundary is a read-only external facade over Hermes' canonical query module. No Hermes repository file was modified. The service is deployed independently and the public HTTPS endpoint was exercised against the live Hermes board.
+PASS. v0.2 preserves the v0.1 query-only boundary and adds one separately
+authorized, canonical Hermes task-creation command. No Hermes repository file
+was modified.
 
 ## Findings and resolutions
 
 | Area | Finding | Resolution/evidence |
 | --- | --- | --- |
-| Canonicality | Hermes' dashboard and existing MCP/tool surfaces contain mutation routes. | Rejected them; adapter calls only `hermes_cli.kanban_db` query readers and the live smoke passed against `codex_app_server`. |
-| Read-only storage | Hermes' normal `connect()` performs initialization/migration work. | Never call it; use URI `mode=ro`, tracked connection when available, and `PRAGMA query_only=ON`. Fixture SQL writes fail and all six MCP calls preserve the fingerprint. |
-| WAL/systemd | `ProtectHome=read-only` prevented SQLite WAL/SHM reads in the service namespace. | Added a board-specific `ReadWritePaths` coordination exception while retaining application query-only mode; live public calls now pass. |
-| MCP surface | FastMCP 1.28.1's generated outer argument model ignored unknown fields. | Rebuilt the pinned SDK's outer models with `extra=forbid`; contract tests assert the exact six tools and read-only annotations. |
-| Authentication | Built-in FastMCP OAuth metadata advertises client-secret methods that do not match the ChatGPT connector contract. | Custom bounded DCR/authorize/token routes advertise public `none`, PKCE S256, issuer/audience/scope validation, and bearer enforcement. Public OAuth flow passed. |
-| External edge | 1Panel OpenResty is containerized; host `nginx.service` is unrelated/failed. | Installer detects the OpenResty container, validates its actual binary, uses the existing reload hook, and proxies only the MCP/OAuth/health allowlist. |
-| TLS | Existing Kanban fullchain contained only the leaf certificate. | Backed up the shared certificate, restored the official YE1/cross-signed chain, reloaded OpenResty, and verified `openssl` return code 0 plus CA-valid HTTPS metadata/health. |
-| Data minimization | Attachment and workspace paths could leak physical filesystem details. | Output models omit them; metadata/log/error fields are bounded and secret-like keys are filtered. |
-| Operations | Initial service health check raced process startup. | Installer now retries loopback health and restarts idempotently before the OpenResty reload. |
+| Canonicality | Hermes owns task creation, IDs, status derivation, parent links, events, and notification inheritance. | `HermesCreateAdapter` calls only `hermes_cli.kanban_db.create_task` through `connect_closing`; no SQL write is present in the integration. |
+| Query/command isolation | Reusing the v0.1 read adapter for writes would weaken `mode=ro` guarantees. | Separate `ReadOnlyHermesStore` and `HermesCreateAdapter`; the six query tools still use `mode=ro` plus `PRAGMA query_only=ON`. |
+| Public mutation surface | A broad Hermes API or CLI would expose unrelated mutators. | MCP discovery returns exactly seven tools; `create_task` is the only write and no update/delete/claim/assign-after-create/move/start/complete/review/approve/reject/retry/import/sync tool is registered. |
+| Scope isolation | A read token must remain usable for all v0.1 tools but unable to create. | Resource guard requires `hermes:read`; `create_task` performs an additional `hermes:create` check. Read-only token integration test is denied without a state change. |
+| MCP annotations | Clients need an explicit distinction between query and additive write. | Six tools: `readOnlyHint=true`; create: `readOnlyHint=false`, `destructiveHint=false`, `idempotentHint=false`. The annotations match the current SDK/spec vocabulary. |
+| OAuth persistence | v0.1 in-memory DCR/refresh state would lose ChatGPT clients at restart. | DCR metadata and refresh-token hashes are atomically persisted at mode 0600 under systemd `StateDirectory`; access tokens remain signed/self-contained and auth codes remain ephemeral. Public post-restart client lookup and refresh rotation passed. |
+| Validation | Unbounded or invented create fields could widen the command surface. | Strict schemas reject extras and bound title/body/parents/IDs/priority; only native create fields are exposed. Missing boards/parents fail closed. |
+| Auditability | A ChatGPT card must look native to Hermes. | The command uses Hermes transaction/event/link semantics and canonical `created_by=chatgpt_mcp`; public `get_task`, `get_activity`, and `get_dispatch` verified the created task. |
+| Sandbox | Enabling a writable command path must not make the query path writable. | systemd keeps `ProtectSystem=full`, `ProtectHome=read-only`, `NoNewPrivileges`, board-specific `ReadWritePaths`, and a separate private OAuth state directory. |
+| Edge/operations | Existing HTTPS/OpenResty infrastructure must remain the single edge. | The existing 1Panel OpenResty container passed syntax validation; service is loopback-only, enabled, active, and restartable. |
 
 ## Verification evidence
 
-- Fixture suite: `25 passed`.
-- Live adapter smoke: six canonical read operations, `codex_app_server`, fingerprint unchanged.
-- Public MCP: `initialize`, `tools/list` returned exactly 6, and all six `tools/call` operations succeeded over HTTPS; live fingerprint unchanged.
-- Public OAuth: dynamic registration `201`, authorization form `200`, approval redirect `303`, token `200`, rotated refresh token present.
-- Service: `systemd-analyze verify` clean for this unit, enabled and active.
-- Edge: OpenResty container `openresty -t` successful after deployment.
-- HTTPS: `/healthz`, protected-resource metadata, and authorization-server metadata returned `200` with CA-valid TLS.
-- Secret scan: no private key, bearer token, or runtime credential file is tracked; `.env` patterns are ignored.
+- Local suite: `36 passed`.
+- Compile check: `compileall` passed.
+- Real Hermes read smoke on `codex_app_server`: six canonical operations,
+  fingerprint unchanged.
+- Public v0.2 smoke: health, protected-resource and authorization-server
+  metadata, DCR, PKCE, seven-tool discovery, annotations, real `create_task`,
+  `get_task`, `get_activity`, `get_dispatch`, restart, refresh-token rotation,
+  and cleanup passed.
+- `systemd-analyze verify`: exit code 0; service enabled and active with
+  `ExecMainStatus=0` and no restart loop.
+- OAuth state: version 1, mode 0600, private directory mode 0700; state file
+  contains client metadata and refresh hashes only.
+- OpenResty container: `/usr/local/openresty/bin/openresty -t` successful.
+- TLS: `Verify return code: 0 (ok)`.
+- Cleanup read check: `v02_validation_rows=0`.
+- Secret scan boundary: runtime env/state are outside Git; no credentials or
+  bearer tokens are tracked.
 
-## Remaining risks accepted for v0.1
+## Known residual risks
 
-- OAuth client/code/refresh state is in memory and is lost on restart.
-- The board-specific SQLite sidecar exception must be updated if the configured board changes.
-- The service has no write capability, revocation UI, audit ledger of connector reads, or ChatGPT web end-to-end account confirmation.
-- The deployment depends on the existing 1Panel/OpenResty reload hook and certificate renewal process; the installer validates these prerequisites but does not own certificate issuance.
+- One configured board is served per process; changing the board requires a
+  service restart and the board-specific systemd write path must change with
+  it.
+- Existing v0.1 DCR clients lived only in the old process memory. The first
+  restart after this rollout can require ChatGPT reauthorization; clients
+  registered after persistent state is active survive later restarts.
+- OAuth state is local to one systemd instance and intentionally has no
+  distributed-store/cluster semantics.
+- v0.2 is not full Kanban write management: `create_task` is the only write.
+- The deployment depends on the existing 1Panel/OpenResty reload hook and
+  certificate renewal process; it does not own certificate issuance.
