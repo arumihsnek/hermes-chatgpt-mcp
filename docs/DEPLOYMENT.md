@@ -89,6 +89,19 @@ For a controlled live check, use clearly prefixed test cards and remove them
 afterward only through Hermes' native administrative/test cleanup path. Never
 add a public delete tool to make cleanup convenient.
 
+The repository includes a bounded endpoint smoke:
+
+```bash
+set -a; . /home/ubuntu/.hermes/hermes-chatgpt-mcp.env; set +a
+HERMES_LIVE_TEST=1 /home/ubuntu/hermes-agent/venv/bin/python \
+  scripts/live_multiboard_smoke.py
+HERMES_LIVE_TEST=1 HERMES_LIVE_WRITE_TEST=1 \
+  /home/ubuntu/hermes-agent/venv/bin/python scripts/live_multiboard_smoke.py
+```
+
+The second command performs one idempotent create per controlled board and
+cleans both cards with Hermes-native administrative functions in `finally`.
+
 ## Restart persistence check
 
 Before a production restart, register a temporary public test client with a

@@ -132,6 +132,22 @@ The v0.3 integration tests construct multiple temporary boards with Hermes'
 `SCHEMA_SQL` and execute the real `kanban_db.create_task` command path; no
 mocked task-creation implementation is used.
 
+After deployment, the endpoint-level A/B check is:
+
+```bash
+set -a; . /home/ubuntu/.hermes/hermes-chatgpt-mcp.env; set +a
+HERMES_LIVE_TEST=1 \
+/home/ubuntu/hermes-agent/venv/bin/python scripts/live_multiboard_smoke.py
+
+# Only for the controlled one-card-per-board write proof:
+HERMES_LIVE_TEST=1 HERMES_LIVE_WRITE_TEST=1 \
+/home/ubuntu/hermes-agent/venv/bin/python scripts/live_multiboard_smoke.py
+```
+
+The write mode uses unique `[mcp-v03-smoke ...]` titles and cleans up through
+Hermes' native archive/delete functions in a `finally` block. It is never an
+MCP capability.
+
 ## MCP tools
 
 READ tools:
