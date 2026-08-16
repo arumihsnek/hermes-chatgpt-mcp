@@ -58,6 +58,8 @@ def test_oauth_diagnostics_trace_scopes_without_raw_credentials(caplog):
         redirect_uri=redirect_uri,
         scope="hermes:read hermes:create offline_access",
         code_challenge=challenge,
+        board="fixture-board",
+        write_grant=True,
     )
     bundle = service.exchange_code_bundle(
         code=code,
@@ -88,6 +90,8 @@ def test_oauth_diagnostics_trace_scopes_without_raw_credentials(caplog):
     } <= stages
     assert any(event.get("granted_scopes") == "hermes:read hermes:create offline_access" for event in events)
     assert any(event.get("effective_scopes") == "hermes:read hermes:create offline_access" for event in events)
+    assert any(event.get("board") == "fixture-board" and event.get("board_access") == "write" for event in events)
+    assert any(event.get("grant_fp") and len(event["grant_fp"]) == 12 for event in events)
 
     log_text = caplog.text
     for secret in (code, verifier, challenge, bundle["access_token"], bundle["refresh_token"], rotated["access_token"], rotated["refresh_token"]):
@@ -127,7 +131,13 @@ async def _test_http_oauth_diagnostics_trace_request_boundaries(tmp_path, caplog
             assert (await client.get("/oauth/authorize", params=params)).status_code == 200
             approved = await client.post(
                 "/oauth/authorize",
-                data={**params, "username": "chatgpt", "password": "correct horse battery staple"},
+                data={
+                    **params,
+                    "username": "chatgpt",
+                    "password": "correct horse battery staple",
+                    "access_mode": "write",
+                    "board": fixture.board,
+                },
             )
             assert approved.status_code == 303
             code = parse_qs(urlsplit(approved.headers["location"]).query)["code"][0]
@@ -178,5 +188,6 @@ async def _test_http_oauth_diagnostics_trace_request_boundaries(tmp_path, caplog
     } <= stages
     assert any(event.get("requested_scopes") == "hermes:read hermes:create offline_access" for event in events)
     assert any(event.get("effective_scopes") == "hermes:read hermes:create offline_access" for event in events)
+    assert any(event.get("board") == fixture.board and event.get("board_access") == "write" for event in events)
     for secret in (code, verifier, challenge, token_data["access_token"], token_data["refresh_token"], refreshed["access_token"], refreshed["refresh_token"]):
         assert secret not in caplog.text

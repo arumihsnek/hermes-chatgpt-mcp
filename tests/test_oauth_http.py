@@ -37,6 +37,10 @@ def test_oauth_http_dcr_default_then_create_authorization(tmp_path):
     asyncio.run(_test_oauth_http_dcr_default_then_create_authorization(tmp_path))
 
 
+def test_oauth_http_read_choice_strips_create_and_is_global(tmp_path):
+    asyncio.run(_test_oauth_http_read_choice_strips_create_and_is_global(tmp_path))
+
+
 async def _test_oauth_http_dcr_default_then_create_authorization(tmp_path):
     fixture = make_hermes_fixture(tmp_path)
     settings = _settings()
@@ -58,7 +62,7 @@ async def _test_oauth_http_dcr_default_then_create_authorization(tmp_path):
             })
             assert registration.status_code == 201, registration.text
             client_data = registration.json()
-            assert client_data["scope"] == "hermes:read"
+            assert client_data["scope"] == "hermes:read hermes:create"
 
             params = {
                 "response_type": "code",
@@ -72,10 +76,18 @@ async def _test_oauth_http_dcr_default_then_create_authorization(tmp_path):
             }
             authorize = await client.get("/oauth/authorize", params=params)
             assert authorize.status_code == 200
+            assert "Fixture Board" in authorize.text
+            assert "Read all boards and write one selected board" in authorize.text
 
             approved = await client.post(
                 "/oauth/authorize",
-                data={**params, "username": "chatgpt", "password": "correct horse battery staple"},
+                data={
+                    **params,
+                    "username": "chatgpt",
+                    "password": "correct horse battery staple",
+                    "access_mode": "write",
+                    "board": fixture.board,
+                },
             )
             assert approved.status_code == 303
             code = parse_qs(urlsplit(approved.headers["location"]).query)["code"][0]
@@ -89,6 +101,67 @@ async def _test_oauth_http_dcr_default_then_create_authorization(tmp_path):
             })
             assert token.status_code == 200, token.text
             assert token.json()["scope"] == requested_scope
+            claims = app.state.hermes_mcp_auth.verified_claims(token.json()["access_token"])
+            assert claims is not None
+            assert claims["board"] == fixture.board
+            assert claims["board_access"] == "write"
+
+
+async def _test_oauth_http_read_choice_strips_create_and_is_global(tmp_path):
+    fixture = make_hermes_fixture(tmp_path)
+    settings = _settings()
+    app = create_app(_adapter(fixture), settings=settings, auth_service=AuthService(settings))
+    verifier = "verifier-" + "c" * 35
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+    callback = "https://chatgpt.com/connector/oauth/callback"
+    transport = httpx.ASGITransport(app=app)
+
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=transport, base_url=settings.public_base_url, follow_redirects=False) as client:
+            registration = await client.post("/oauth/register", json={
+                "client_name": "ChatGPT",
+                "redirect_uris": [callback],
+                "token_endpoint_auth_method": "none",
+                "grant_types": ["authorization_code"],
+                "response_types": ["code"],
+            })
+            assert registration.status_code == 201, registration.text
+            client_data = registration.json()
+            params = {
+                "response_type": "code",
+                "client_id": client_data["client_id"],
+                "redirect_uri": callback,
+                "scope": "hermes:read hermes:create",
+                "state": "state-read",
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
+                "resource": settings.public_base_url,
+            }
+            approved = await client.post(
+                "/oauth/authorize",
+                data={
+                    **params,
+                    "username": "chatgpt",
+                    "password": "correct horse battery staple",
+                    "access_mode": "read",
+                },
+            )
+            assert approved.status_code == 303
+            code = parse_qs(urlsplit(approved.headers["location"]).query)["code"][0]
+            token = await client.post("/oauth/token", data={
+                "grant_type": "authorization_code",
+                "client_id": client_data["client_id"],
+                "code": code,
+                "redirect_uri": callback,
+                "code_verifier": verifier,
+            })
+
+    assert token.status_code == 200, token.text
+    assert token.json()["scope"] == "hermes:read"
+    claims = app.state.hermes_mcp_auth.verified_claims(token.json()["access_token"])
+    assert claims is not None
+    assert "board" not in claims
+    assert "board_access" not in claims
 
 
 async def _test_oauth_http_pkce_flow_and_refresh_rotation(tmp_path):

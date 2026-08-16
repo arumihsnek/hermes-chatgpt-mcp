@@ -6,6 +6,7 @@ import hmac
 import html
 import json
 import os
+import re
 import secrets
 import stat
 import threading
@@ -45,6 +46,9 @@ class _Code:
     scope: str
     code_challenge: str
     expires_at: int
+    grant_id: str
+    board: str | None = None
+    board_access: str | None = None
     used: bool = False
 
 
@@ -54,6 +58,9 @@ class _Refresh:
     subject: str
     scope: str
     expires_at: int
+    grant_id: str
+    board: str | None = None
+    board_access: str | None = None
 
 
 def _b64(data: bytes) -> str:
@@ -81,13 +88,15 @@ class AuthService:
     create_scope = "hermes:create"
     offline_scope = "offline_access"
     supported_scopes = (scope, create_scope, offline_scope)
-    _state_version = 1
+    _state_version = 2
+    _board_pattern = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self._clients: dict[str, _Client] = {}
         self._codes: dict[str, _Code] = {}
         self._refresh_tokens: dict[str, _Refresh] = {}
+        self._revoked_grants: set[str] = set()
         self._lock = threading.RLock()
         self._state_path = Path(settings.oauth_state_file).expanduser() if settings.oauth_state_file else None
         self._load_persistent_state()
@@ -95,6 +104,21 @@ class AuthService:
     @staticmethod
     def _refresh_digest(token: str) -> str:
         return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _token_payload(token: str) -> dict[str, object] | None:
+        try:
+            _, payload_b64, _ = token.split(".")
+            payload = json.loads(_unb64(payload_b64))
+            return payload if isinstance(payload, dict) else None
+        except (ValueError, TypeError, UnicodeError, json.JSONDecodeError):
+            return None
+
+    def verified_claims(self, token: str) -> dict[str, object] | None:
+        """Return non-secret claims for a valid token, for internal policy checks."""
+        if self.verify_token(token) is None:
+            return None
+        return self._token_payload(token)
 
     @classmethod
     def _scope_string(
@@ -132,16 +156,33 @@ class AuthService:
             return None
         return _Client(client_id, redirects, grants, scope, client_name[:120], issued_at)
 
-    @staticmethod
-    def _refresh_from_state(value: object) -> _Refresh | None:
+    @classmethod
+    def _validate_board(cls, board: str | None) -> str | None:
+        if board is None:
+            return None
+        if not isinstance(board, str) or not cls._board_pattern.fullmatch(board):
+            raise OAuthError("invalid board", code="invalid_request")
+        return board
+
+    @classmethod
+    def _refresh_from_state(cls, value: object, digest: str) -> _Refresh | None:
         if not isinstance(value, dict):
             return None
         try:
+            board = value.get("board")
+            if board is not None:
+                board = cls._validate_board(str(board))
+            board_access = value.get("board_access")
+            if board_access is not None and board_access != "write":
+                return None
             return _Refresh(
                 client_id=str(value["client_id"]),
                 subject=str(value["subject"]),
                 scope=str(value["scope"]),
                 expires_at=int(value["expires_at"]),
+                grant_id=str(value.get("grant_id") or f"legacy-{digest[:24]}"),
+                board=board,
+                board_access=board_access,
             )
         except (KeyError, TypeError, ValueError):
             return None
@@ -155,11 +196,12 @@ class AuthService:
             if mode & 0o077:
                 raise RuntimeError("OAuth state file permissions are too broad")
             payload = json.loads(path.read_text(encoding="utf-8"))
-            if not isinstance(payload, dict) or payload.get("version") != self._state_version:
+            if not isinstance(payload, dict) or payload.get("version") not in {1, self._state_version}:
                 raise RuntimeError("OAuth state file version is unsupported")
             clients = payload.get("clients", {})
             refresh_tokens = payload.get("refresh_tokens", {})
-            if not isinstance(clients, dict) or not isinstance(refresh_tokens, dict):
+            revoked_grants = payload.get("revoked_grants", [])
+            if not isinstance(clients, dict) or not isinstance(refresh_tokens, dict) or not isinstance(revoked_grants, list):
                 raise RuntimeError("OAuth state file shape is invalid")
             loaded_clients: dict[str, _Client] = {}
             for client_id, raw in clients.items():
@@ -176,16 +218,18 @@ class AuthService:
             for digest, raw in refresh_tokens.items():
                 if not isinstance(digest, str) or len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
                     raise RuntimeError("OAuth state contains an invalid refresh token record")
-                refresh = self._refresh_from_state(raw)
+                refresh = self._refresh_from_state(raw, digest)
                 if refresh is None or refresh.client_id not in loaded_clients:
                     raise RuntimeError("OAuth state contains an invalid refresh token record")
                 self._scope_string(refresh.scope, allowed=set(loaded_clients[refresh.client_id].scope.split()))
                 loaded_refresh[digest] = refresh
+            loaded_revoked = {str(grant) for grant in revoked_grants if isinstance(grant, str) and grant}
         except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
             raise RuntimeError("OAuth state file cannot be loaded") from exc
         with self._lock:
             self._clients.update(loaded_clients)
             self._refresh_tokens.update(loaded_refresh)
+            self._revoked_grants.update(loaded_revoked)
 
     def _persist_locked(self) -> None:
         path = self._state_path
@@ -213,9 +257,13 @@ class AuthService:
                     "subject": refresh.subject,
                     "scope": refresh.scope,
                     "expires_at": refresh.expires_at,
+                    "grant_id": refresh.grant_id,
+                    "board": refresh.board,
+                    "board_access": refresh.board_access,
                 }
                 for digest, refresh in self._refresh_tokens.items()
             },
+            "revoked_grants": sorted(self._revoked_grants),
         }
         temporary = path.with_name(f".{path.name}.{secrets.token_hex(8)}.tmp")
         try:
@@ -281,7 +329,14 @@ class AuthService:
         if response_types != ("code",):
             raise OAuthError("only code response type is supported", code="invalid_client_metadata")
         try:
-            requested_scope = self._scope_string(str(payload.get("scope") or self.scope))
+            raw_scope = payload.get("scope")
+            if raw_scope:
+                requested_scope = self._scope_string(str(raw_scope))
+            else:
+                default_scopes = [self.read_scope, self.create_scope]
+                if "refresh_token" in grant_types:
+                    default_scopes.append(self.offline_scope)
+                requested_scope = self._scope_string(" ".join(default_scopes))
         except OAuthError as exc:
             raise OAuthError(str(exc), code="invalid_client_metadata") from exc
         client_id = secrets.token_urlsafe(24)
@@ -344,7 +399,16 @@ class AuthService:
             raise OAuthError("PKCE S256 is required", code="invalid_request")
         return client
 
-    def create_authorization_code(self, *, client_id: str, redirect_uri: str, scope: str, code_challenge: str) -> str:
+    def create_authorization_code(
+        self,
+        *,
+        client_id: str,
+        redirect_uri: str,
+        scope: str,
+        code_challenge: str,
+        board: str | None = None,
+        write_grant: bool = False,
+    ) -> str:
         client = self.validate_authorization_request(
             client_id=client_id,
             redirect_uri=redirect_uri,
@@ -354,6 +418,18 @@ class AuthService:
             code_challenge_method="S256",
         )
         scope_value = self._scope_string(scope, default=client.scope, allowed=set(self.supported_scopes))
+        board = self._validate_board(board)
+        if write_grant:
+            if board is None or self.create_scope not in scope_value.split():
+                raise OAuthError("write board grant requires hermes:create and board", code="invalid_scope")
+            board_access = "write"
+        else:
+            if board is not None:
+                raise OAuthError("read-only grant cannot select a write board", code="invalid_request")
+            if self.create_scope in scope_value.split():
+                raise OAuthError("write scope requires a selected board", code="invalid_scope")
+            board_access = None
+        grant_id = secrets.token_urlsafe(18)
         code = secrets.token_urlsafe(32)
         flow_fp = request_fingerprint(client_id, redirect_uri, scope_value, code_challenge)
         with self._lock:
@@ -363,6 +439,9 @@ class AuthService:
                 scope=scope_value,
                 code_challenge=code_challenge,
                 expires_at=int(time.time()) + self.settings.oauth_code_ttl_seconds,
+                grant_id=grant_id,
+                board=board,
+                board_access=board_access,
             )
         emit(
             self.settings,
@@ -373,6 +452,9 @@ class AuthService:
             requested_scopes=scope_summary(scope, self.supported_scopes),
             allowed_scopes=scope_summary(" ".join(self.supported_scopes), self.supported_scopes),
             granted_scopes=scope_summary(scope_value, self.supported_scopes),
+            board=board,
+            board_access=board_access,
+            grant_fp=fingerprint(grant_id),
             redirect=redirect_identity(redirect_uri),
             client_reused=True,
             grant_reused=False,
@@ -380,8 +462,31 @@ class AuthService:
         )
         return code
 
-    def issue_access_token(self, *, client_id: str, subject: str, scopes: list[str] | None = None) -> str:
+    def issue_access_token(
+        self,
+        *,
+        client_id: str,
+        subject: str,
+        scopes: list[str] | None = None,
+        board: str | None = None,
+        board_access: str | None = None,
+        grant_id: str | None = None,
+    ) -> str:
         scope_value = self._scope_string(" ".join(scopes or [self.scope]))
+        board = self._validate_board(board)
+        if board_access not in {None, "write"}:
+            raise OAuthError("invalid board access", code="invalid_request")
+        if board_access == "write" and (board is None or self.create_scope not in scope_value.split()):
+            raise OAuthError("write board grant requires hermes:create", code="invalid_scope")
+        if self.create_scope in scope_value.split() and board_access != "write":
+            raise OAuthError("hermes:create requires a selected board", code="invalid_scope")
+        if board is not None and board_access != "write":
+            raise OAuthError("board grant must be write access", code="invalid_request")
+        grant_id = grant_id or secrets.token_urlsafe(18)
+        with self._lock:
+            revoked = grant_id in self._revoked_grants
+        if revoked:
+            raise OAuthError("grant revoked", code="invalid_grant")
         now = int(time.time())
         payload = {
             "iss": self.settings.public_base_url,
@@ -392,13 +497,26 @@ class AuthService:
             "iat": now,
             "exp": now + self.settings.oauth_token_ttl_seconds,
             "jti": secrets.token_urlsafe(16),
+            "grant_id": grant_id,
         }
+        if board is not None:
+            payload["board"] = board
+            payload["board_access"] = board_access
         header = {"alg": "HS256", "typ": "at+jwt"}
         signing_input = f"{_json_b64(header)}.{_json_b64(payload)}".encode("ascii")
         signature = hmac.new(self.settings.oauth_signing_key.encode("utf-8"), signing_input, hashlib.sha256).digest()
         return f"{signing_input.decode('ascii')}.{_b64(signature)}"
 
-    def _issue_refresh_token(self, *, client_id: str, subject: str, scope: str) -> str:
+    def _issue_refresh_token(
+        self,
+        *,
+        client_id: str,
+        subject: str,
+        scope: str,
+        grant_id: str,
+        board: str | None = None,
+        board_access: str | None = None,
+    ) -> str:
         token = secrets.token_urlsafe(48)
         with self._lock:
             self._refresh_tokens[self._refresh_digest(token)] = _Refresh(
@@ -406,6 +524,9 @@ class AuthService:
                 subject=subject,
                 scope=scope,
                 expires_at=int(time.time()) + 30 * 24 * 3600,
+                grant_id=grant_id,
+                board=board,
+                board_access=board_access,
             )
             self._persist_locked()
         emit(
@@ -438,6 +559,9 @@ class AuthService:
             client_id=client_id,
             subject=client.client_name,
             scopes=entry.scope.split(),
+            board=entry.board,
+            board_access=entry.board_access,
+            grant_id=entry.grant_id,
         )
         emit(
             self.settings,
@@ -455,6 +579,10 @@ class AuthService:
     def exchange_code_bundle(self, *, code: str, client_id: str, redirect_uri: str, code_verifier: str) -> dict:
         access_token = self.exchange_code(code=code, client_id=client_id, redirect_uri=redirect_uri, code_verifier=code_verifier)
         client = self.client(client_id)
+        access = self.verify_token(access_token)
+        claims = self.verified_claims(access_token)
+        if access is None or claims is None:
+            raise OAuthError("issued token could not be verified", code="invalid_grant")
         result = {
             "access_token": access_token,
             "token_type": "Bearer",
@@ -466,13 +594,21 @@ class AuthService:
                 client_id=client_id,
                 subject=client.client_name,
                 scope=result["scope"],
+                grant_id=str(claims.get("grant_id") or ""),
+                board=claims.get("board") if isinstance(claims.get("board"), str) else None,
+                board_access=claims.get("board_access") if isinstance(claims.get("board_access"), str) else None,
             )
         return result
 
     def refresh_bundle(self, *, refresh_token: str, client_id: str) -> dict:
         self._cleanup()
         with self._lock:
-            entry = self._refresh_tokens.pop(self._refresh_digest(refresh_token), None)
+            digest = self._refresh_digest(refresh_token)
+            entry = self._refresh_tokens.get(digest)
+            if entry is not None and entry.client_id == client_id:
+                self._refresh_tokens.pop(digest, None)
+            elif entry is not None:
+                entry = None
             if entry is not None:
                 self._persist_locked()
         if entry is None or entry.client_id != client_id:
@@ -488,8 +624,18 @@ class AuthService:
             client_id=client_id,
             subject=entry.subject,
             scopes=entry.scope.split(),
+            board=entry.board,
+            board_access=entry.board_access,
+            grant_id=entry.grant_id,
         )
-        new_refresh = self._issue_refresh_token(client_id=client_id, subject=entry.subject, scope=entry.scope)
+        new_refresh = self._issue_refresh_token(
+            client_id=client_id,
+            subject=entry.subject,
+            scope=entry.scope,
+            grant_id=entry.grant_id,
+            board=entry.board,
+            board_access=entry.board_access,
+        )
         emit(
             self.settings,
             "token.refresh.exchange",
@@ -509,6 +655,30 @@ class AuthService:
             "refresh_token": new_refresh,
         }
 
+    def revoke_token(self, token: str, *, client_id: str | None = None) -> None:
+        """Revoke an access or refresh token without revealing token state."""
+        grant_id: str | None = None
+        digest = self._refresh_digest(token)
+        with self._lock:
+            refresh = self._refresh_tokens.get(digest)
+            if refresh is not None and (client_id is None or refresh.client_id == client_id):
+                grant_id = refresh.grant_id
+                self._refresh_tokens = {
+                    key: value for key, value in self._refresh_tokens.items()
+                    if value.grant_id != grant_id
+                }
+        if grant_id is None:
+            access = self.verify_token(token)
+            claims = self.verified_claims(token)
+            if access is not None and claims is not None and (client_id is None or access.client_id == client_id):
+                candidate = claims.get("grant_id")
+                if isinstance(candidate, str) and candidate:
+                    grant_id = candidate
+        if grant_id is not None:
+            with self._lock:
+                self._revoked_grants.add(grant_id)
+                self._persist_locked()
+
     def verify_token(self, token: str) -> AccessToken | None:
         try:
             header_b64, payload_b64, signature_b64 = token.split(".")
@@ -523,6 +693,13 @@ class AuthService:
                 return None
             if not isinstance(payload.get("exp"), int) or payload["exp"] <= now:
                 return None
+            grant_id = payload.get("grant_id")
+            if grant_id is not None:
+                if not isinstance(grant_id, str):
+                    return None
+                with self._lock:
+                    if grant_id in self._revoked_grants:
+                        return None
             scope_value = self._scope_string(str(payload.get("scope") or ""))
             if not payload.get("client_id"):
                 return None
@@ -538,7 +715,13 @@ class AuthService:
         except (ValueError, TypeError, KeyError, UnicodeError, json.JSONDecodeError):
             return None
 
-    def authorization_form(self, *, query: dict[str, str]) -> str:
+    def authorization_form(
+        self,
+        *,
+        query: dict[str, str],
+        board_options: list[dict[str, str]] | None = None,
+        default_board: str | None = None,
+    ) -> str:
         fields = {
             key: query.get(key, "")
             for key in ("client_id", "redirect_uri", "response_type", "scope", "state", "code_challenge", "code_challenge_method", "resource")
@@ -547,12 +730,32 @@ class AuthService:
             f'<input type="hidden" name="{html.escape(key)}" value="{html.escape(value)}">'
             for key, value in fields.items()
         )
+        options = board_options or []
+        default = default_board if any(item.get("slug") == default_board for item in options) else (options[0].get("slug") if options else "")
+        option_parts: list[str] = []
+        for item in options:
+            slug = str(item.get("slug") or "")
+            selected = " selected" if slug == default else ""
+            option_parts.append(
+                f'<option value="{html.escape(slug)}"{selected}>'
+                f'{html.escape(str(item.get("name") or slug))}</option>'
+            )
+        board_select = "".join(option_parts)
+        write_available = self.create_scope in query.get("scope", "").split()
+        access_controls = (
+            "<fieldset><legend>Access</legend>"
+            "<label><input type='radio' name='access_mode' value='read' checked> Read all boards</label>"
+            "<label><input type='radio' name='access_mode' value='write'> Read all boards and write one selected board</label>"
+            f"<label>Write board <select name='board'>{board_select}</select></label></fieldset>"
+            if write_available and options
+            else "<p>read-only access to all boards.</p>"
+        )
         return (
             "<!doctype html><meta charset='utf-8'><title>Hermes MCP authorization</title>"
             "<h1>Authorize Hermes MCP access</h1>"
-            "<p>This grants ChatGPT read-only Kanban access and, when requested, the separate task-creation scope.</p>"
+            "<p>read-only access covers all active Hermes boards. Write access is limited to one board selected below.</p>"
             '<form method="post" action="/oauth/authorize">'
-            f"{hidden}<label>Username <input name='username' autocomplete='username'></label>"
+            f"{hidden}{access_controls}<label>Username <input name='username' autocomplete='username'></label>"
             "<label>Password <input type='password' name='password' autocomplete='current-password'></label>"
             "<button type='submit'>Authorize</button></form>"
         )

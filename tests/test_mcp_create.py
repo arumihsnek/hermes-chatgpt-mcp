@@ -50,6 +50,8 @@ async def _test_create_task_scope_isolation_and_real_command_path(tmp_path):
         client_id="creator",
         subject="creator",
         scopes=["hermes:read", "hermes:create"],
+        board=fixture.board,
+        board_access="write",
     )
     transport = httpx.ASGITransport(app=app)
 

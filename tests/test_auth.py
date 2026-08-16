@@ -141,6 +141,8 @@ def test_create_scope_is_separate_and_creation_grant_also_contains_read():
         client_id="creator",
         subject="user",
         scopes=["hermes:read", "hermes:create"],
+        board="board-a",
+        board_access="write",
     )
     assert service.verify_token(read_token).scopes == ["hermes:read"]
     assert service.verify_token(create_token).scopes == ["hermes:read", "hermes:create"]
@@ -165,6 +167,8 @@ def test_authorization_can_request_supported_scope_beyond_dcr_default():
         redirect_uri=client["redirect_uris"][0],
         scope=scope,
         code_challenge=challenge,
+        board="board-a",
+        write_grant=True,
     )
     token = service.exchange_code(
         code=code,
@@ -196,6 +200,8 @@ def test_dcr_clients_and_refresh_rotation_survive_auth_service_restart(tmp_path)
         redirect_uri=client["redirect_uris"][0],
         scope="hermes:read hermes:create offline_access",
         code_challenge=challenge,
+        board="board-a",
+        write_grant=True,
     )
     bundle = first.exchange_code_bundle(
         code=code,
@@ -213,8 +219,69 @@ def test_dcr_clients_and_refresh_rotation_survive_auth_service_restart(tmp_path)
         client_id=client["client_id"],
     )
     assert rotated["scope"] == "hermes:read hermes:create offline_access"
+    rotated_claims = second.verified_claims(rotated["access_token"])
+    assert rotated_claims is not None
+    assert rotated_claims["board"] == "board-a"
+    assert rotated_claims["board_access"] == "write"
     with pytest.raises(OAuthError, match="invalid refresh token"):
         second.refresh_bundle(
             refresh_token=bundle["refresh_token"],
+            client_id=client["client_id"],
+        )
+
+
+def test_write_grant_is_bound_to_one_board_and_revocable(tmp_path):
+    state_file = tmp_path / "oauth" / "state.json"
+    settings = replace(_settings(), oauth_state_file=state_file)
+    service = AuthService(settings)
+    client = service.register_client(
+        {
+            "client_name": "ChatGPT",
+            "redirect_uris": ["https://chatgpt.com/connector/oauth/callback"],
+            "token_endpoint_auth_method": "none",
+            "grant_types": ["authorization_code", "refresh_token"],
+            "response_types": ["code"],
+            "scope": "hermes:read hermes:create offline_access",
+        }
+    )
+    verifier, challenge = _pkce()
+    code = service.create_authorization_code(
+        client_id=client["client_id"],
+        redirect_uri=client["redirect_uris"][0],
+        scope="hermes:read hermes:create offline_access",
+        code_challenge=challenge,
+        board="board-a",
+        write_grant=True,
+    )
+
+    bundle = service.exchange_code_bundle(
+        code=code,
+        client_id=client["client_id"],
+        redirect_uri=client["redirect_uris"][0],
+        code_verifier=verifier,
+    )
+    access = service.verify_token(bundle["access_token"])
+    assert access is not None
+    claims = service.verified_claims(bundle["access_token"])
+    assert claims is not None
+    assert claims["board"] == "board-a"
+    assert claims["board_access"] == "write"
+
+    rotated = service.refresh_bundle(
+        refresh_token=bundle["refresh_token"],
+        client_id=client["client_id"],
+    )
+    rotated_access = service.verify_token(rotated["access_token"])
+    assert rotated_access is not None
+    rotated_claims = service.verified_claims(rotated["access_token"])
+    assert rotated_claims is not None
+    assert rotated_claims["board"] == "board-a"
+    assert rotated_claims["board_access"] == "write"
+
+    service.revoke_token(rotated["refresh_token"], client_id=client["client_id"])
+    assert service.verify_token(rotated["access_token"]) is None
+    with pytest.raises(OAuthError, match="invalid refresh token"):
+        service.refresh_bundle(
+            refresh_token=rotated["refresh_token"],
             client_id=client["client_id"],
         )

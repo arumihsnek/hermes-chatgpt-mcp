@@ -158,7 +158,22 @@ def create_app(
 
     def resolve_board(board: str | None, *, operation: str) -> BoardHandle:
         try:
+            if operation == "create":
+                granted_board = write_grant_board()
+                if granted_board is None:
+                    raise tool_error(
+                        "BOARD_WRITE_SELECTION_REQUIRED",
+                        "write access requires one explicitly authorized board",
+                    )
+                if board is not None and board != granted_board:
+                    raise tool_error(
+                        "BOARD_SESSION_MISMATCH",
+                        "write access is authorized for one different board",
+                    )
+                board = granted_board
             return board_resolver.resolve(board, operation=operation)  # type: ignore[arg-type]
+        except ToolError:
+            raise
         except BoardResolutionError as exc:
             raise tool_error(exc.code, exc.message) from exc
         except Exception as exc:
@@ -192,7 +207,17 @@ def create_app(
 
     def has_create_scope() -> bool:
         token = get_access_token()
-        return token is not None and AuthService.create_scope in token.scopes
+        return token is not None and AuthService.create_scope in token.scopes and write_grant_board() is not None
+
+    def write_grant_board() -> str | None:
+        token = get_access_token()
+        if token is None or AuthService.create_scope not in token.scopes:
+            return None
+        claims = auth_service.verified_claims(token.token) or {}
+        board = claims.get("board")
+        if claims.get("board_access") != "write" or not isinstance(board, str):
+            return None
+        return board
 
     def board_summary(handle: BoardHandle) -> BoardSummary:
         view = board_resolver.query_adapter(handle).get_board()
@@ -206,7 +231,7 @@ def create_app(
             task_counts=view.task_counts,
             capabilities=BoardCapabilities(
                 read=True,
-                create=has_create_scope() and board_resolver.create_allowed(handle.slug),
+                create=has_create_scope() and write_grant_board() == handle.slug and board_resolver.create_allowed(handle.slug),
             ),
         )
 
@@ -219,7 +244,12 @@ def create_app(
     async def list_boards() -> BoardListView:
         try:
             items = [board_summary(handle) for handle in board_resolver.list_handles()]
-            return BoardListView(items=items, default_board=board_resolver.default_slug)
+            default_board = (
+                board_resolver.current_default_slug()
+                if isinstance(board_resolver, HermesBoardResolver)
+                else board_resolver.default_slug
+            )
+            return BoardListView(items=items, default_board=default_board)
         except ToolError:
             raise
         except Exception as exc:
@@ -343,6 +373,7 @@ def create_app(
                 "issuer": base,
                 "authorization_endpoint": f"{base}/oauth/authorize",
                 "token_endpoint": f"{base}/oauth/token",
+                "revocation_endpoint": f"{base}/oauth/revoke",
                 "registration_endpoint": f"{base}/oauth/register",
                 "response_types_supported": ["code"],
                 "grant_types_supported": ["authorization_code", "refresh_token"],
@@ -412,8 +443,27 @@ def create_app(
                 code_challenge=query["code_challenge"],
                 code_challenge_method=query["code_challenge_method"],
             )
+            client = auth_service.client(query["client_id"])
+            form_query = dict(query)
+            form_query["scope"] = query["scope"] or client.scope
+            options = [
+                {"slug": handle.slug, "name": handle.name}
+                for handle in board_resolver.list_handles()
+            ]
             emit(settings, "authorize.request", flow_fp=flow_fp, http_status=200, outcome="accepted")
-            return HTMLResponse(auth_service.authorization_form(query=query), headers={"Cache-Control": "no-store"})
+            default_board = (
+                board_resolver.current_default_slug()
+                if isinstance(board_resolver, HermesBoardResolver)
+                else board_resolver.default_slug
+            )
+            return HTMLResponse(
+                auth_service.authorization_form(
+                    query=form_query,
+                    board_options=options,
+                    default_board=default_board,
+                ),
+                headers={"Cache-Control": "no-store"},
+            )
         except OAuthError as exc:
             emit(settings, "authorize.request", flow_fp=flow_fp, error_code=exc.code, http_status=400, outcome="error")
             return _json_error(exc)
@@ -439,7 +489,7 @@ def create_app(
             )
             if form.get("resource") and form["resource"].rstrip("/") != settings.public_base_url:
                 raise OAuthError("invalid resource", code="invalid_target")
-            auth_service.validate_authorization_request(
+            client = auth_service.validate_authorization_request(
                 client_id=form.get("client_id", ""),
                 redirect_uri=form.get("redirect_uri", ""),
                 response_type=form.get("response_type", ""),
@@ -447,11 +497,36 @@ def create_app(
                 code_challenge=form.get("code_challenge", ""),
                 code_challenge_method=form.get("code_challenge_method", ""),
             )
+            requested_scope = form.get("scope") or client.scope
+            access_mode = form.get("access_mode", "read")
+            selected_board: str | None = None
+            write_grant = False
+            if access_mode == "write":
+                if AuthService.create_scope not in requested_scope.split():
+                    raise OAuthError(
+                        "client did not request hermes:create; re-register the MCP client",
+                        code="invalid_scope",
+                    )
+                selected_board = form.get("board") or None
+                try:
+                    board_resolver.resolve(selected_board, operation="read")
+                except BoardResolutionError as exc:
+                    raise OAuthError("invalid board selection", code="invalid_request") from exc
+                write_grant = True
+            elif access_mode == "read":
+                requested_scope = " ".join(
+                    scope for scope in AuthService.supported_scopes
+                    if scope in requested_scope.split() and scope != AuthService.create_scope
+                )
+            else:
+                raise OAuthError("invalid access mode", code="invalid_request")
             code = auth_service.create_authorization_code(
                 client_id=form["client_id"],
                 redirect_uri=form["redirect_uri"],
-                scope=form["scope"],
+                scope=requested_scope,
                 code_challenge=form["code_challenge"],
+                board=selected_board,
+                write_grant=write_grant,
             )
             emit(
                 settings,
@@ -459,7 +534,9 @@ def create_app(
                 client_fp=fingerprint(form["client_id"]),
                 flow_fp=flow_fp,
                 code_fp=fingerprint(code),
-                granted_scopes=form.get("scope"),
+                granted_scopes=requested_scope,
+                board=selected_board,
+                board_access="write" if write_grant else None,
                 redirect=redirect_identity(form["redirect_uri"]),
                 http_status=303,
                 outcome="approved",
@@ -523,6 +600,19 @@ def create_app(
                 http_status=400,
                 outcome="error",
             )
+            return _json_error(exc)
+
+    @mcp.custom_route("/oauth/revoke", methods=["POST"], include_in_schema=False)
+    async def oauth_revoke(request: Request) -> Response:
+        form: dict[str, str] = {}
+        try:
+            form = await _bounded_form(request)
+            auth_service.revoke_token(
+                form.get("token", ""),
+                client_id=form.get("client_id") or None,
+            )
+            return Response(status_code=200, headers={"Cache-Control": "no-store"})
+        except OAuthError as exc:
             return _json_error(exc)
 
     _strictify_tools(mcp)

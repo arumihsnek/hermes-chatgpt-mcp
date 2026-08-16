@@ -16,6 +16,7 @@ _FINGERPRINT_FIELDS = {
     "client_fp",
     "code_fp",
     "flow_fp",
+    "grant_fp",
     "refresh_fp",
     "new_refresh_fp",
     "token_fp",
@@ -38,9 +39,10 @@ _SAFE_TEXT_FIELDS = {
     "response_type",
     "stage",
 }
+_SAFE_BOARD_FIELDS = {"board", "board_access"}
 _SAFE_BOOL_FIELDS = {"client_reused", "grant_reused", "new_registration"}
 _SAFE_INT_FIELDS = {"http_status"}
-_SAFE_FIELD_NAMES = _FINGERPRINT_FIELDS | _SCOPE_FIELDS | _SAFE_TEXT_FIELDS | _SAFE_BOOL_FIELDS | _SAFE_INT_FIELDS
+_SAFE_FIELD_NAMES = _FINGERPRINT_FIELDS | _SCOPE_FIELDS | _SAFE_TEXT_FIELDS | _SAFE_BOARD_FIELDS | _SAFE_BOOL_FIELDS | _SAFE_INT_FIELDS
 _SAFE_TOKEN = re.compile(r"^[A-Za-z0-9_.:,-]{1,96}$")
 
 
