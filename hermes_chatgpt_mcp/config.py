@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
@@ -8,6 +9,9 @@ from urllib.parse import urlparse
 
 class ConfigurationError(ValueError):
     """Raised when the service cannot start safely from its configuration."""
+
+
+_BOARD_SLUG = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 
 
 def _env(name: str, default: str | None = None) -> str | None:
@@ -29,6 +33,21 @@ def _positive_int(name: str, default: int, *, maximum: int) -> int:
     if value < 1 or value > maximum:
         raise ConfigurationError(f"{name} must be between 1 and {maximum}")
     return value
+
+
+def _board_set(name: str) -> tuple[str, ...] | None:
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return None
+    values = tuple(part.strip() for part in raw.split(","))
+    if any(not value for value in values):
+        raise ConfigurationError(f"{name} must not contain empty board slugs")
+    if len(set(values)) != len(values):
+        raise ConfigurationError(f"{name} must not contain duplicate board slugs")
+    for value in values:
+        if not _BOARD_SLUG.fullmatch(value):
+            raise ConfigurationError(f"{name} contains an invalid board slug")
+    return values
 
 
 def _url(value: str) -> str:
@@ -62,6 +81,9 @@ class Settings:
     oauth_code_ttl_seconds: int = 300
     oauth_token_ttl_seconds: int = 3600
     oauth_state_file: Path | None = None
+    kanban_read_boards: tuple[str, ...] | None = None
+    kanban_create_boards: tuple[str, ...] | None = None
+    max_board_count: int = 50
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -105,4 +127,7 @@ class Settings:
             oauth_code_ttl_seconds=_positive_int("MCP_OAUTH_CODE_TTL", 300, maximum=900),
             oauth_token_ttl_seconds=_positive_int("MCP_OAUTH_TOKEN_TTL", 3600, maximum=86_400),
             oauth_state_file=Path(state_raw).expanduser() if state_raw else None,
+            kanban_read_boards=_board_set("MCP_KANBAN_READ_BOARDS"),
+            kanban_create_boards=_board_set("MCP_KANBAN_CREATE_BOARDS"),
+            max_board_count=_positive_int("MCP_MAX_BOARD_COUNT", 50, maximum=500),
         )
