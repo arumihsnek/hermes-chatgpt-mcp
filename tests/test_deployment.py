@@ -12,7 +12,7 @@ def test_systemd_unit_keeps_query_command_and_oauth_state_boundaries():
     assert "StateDirectoryMode=0700" in unit
     assert "Environment=MCP_OAUTH_DIAGNOSTICS=0" in unit
     assert "/var/lib/hermes-chatgpt-mcp" in unit
-    assert "ReadWritePaths=/home/ubuntu/.hermes/kanban/boards /home/ubuntu/.hermes/kanban.db /home/ubuntu/.hermes/kanban.db-wal /home/ubuntu/.hermes/kanban.db-shm /var/lib/hermes-chatgpt-mcp" in unit
+    assert "ReadWritePaths=/home/ubuntu/.hermes/kanban/boards /home/ubuntu/.hermes/kanban.db -/home/ubuntu/.hermes/kanban.db-wal -/home/ubuntu/.hermes/kanban.db-shm /var/lib/hermes-chatgpt-mcp" in unit
     assert "ReadWritePaths=/home/ubuntu/.hermes\n" not in unit
 
 
