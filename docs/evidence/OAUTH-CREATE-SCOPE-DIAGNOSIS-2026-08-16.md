@@ -83,6 +83,29 @@ real ChatGPT call that returned `SCOPE_REQUIRED: hermes:create` is consistent
 with this same read-only authorization, but it predates the correlated bearer
 events.
 
+### Fresh DCR attempt after selecting DCR
+
+A later attempt did perform DCR. Two safe diagnostic sequences show the same
+behavior for two newly issued client fingerprints:
+
+```text
+DCR request       requested_scopes = hermes:read
+DCR response      granted_scopes   = hermes:read, HTTP 201
+/authorize        requested_scopes = hermes:read hermes:create offline_access
+/authorize result invalid_scope, HTTP 400
+```
+
+The server's public metadata advertised `hermes:create` and
+`offline_access`, but the newly registered client was persisted with only
+`hermes:read`. `/authorize` correctly applies the client-specific allowlist and
+rejects the later request for scopes outside that allowlist. No authorization
+code, access token, refresh token, or MCP request was produced by this failed
+attempt.
+
+This is direct evidence that the DCR request sent by ChatGPT did not include
+`hermes:create`; it is not evidence that the server's global supported-scope
+metadata is missing that scope.
+
 ## AFIRMACIONES PREVIAS
 
 - ChatGPT was reported to expose the eight MCP tools and to show `create:false`
@@ -107,15 +130,28 @@ ChatGPT used an existing read-only client
   -> newly issued refresh record carried only hermes:read
 ```
 
+The DCR-selected retry adds a second, independently observed chain:
+
+```text
+DCR requested hermes:read
+  -> client registered with hermes:read
+  -> /authorize requested hermes:read hermes:create offline_access
+  -> server rejected the client-scope mismatch as invalid_scope
+```
+
 This identifies both:
 
 - A: `hermes:create` was not present in the scope received at `/authorize`;
 - D, at least for the client: an existing persisted client with read-only
   allowed scopes was used instead of a new DCR registration.
 
+The DCR retry additionally shows B in the narrow, expected sense: the server
+received `hermes:create` at `/authorize` but correctly rejected it because the
+registered client allowed only `hermes:read`. This is client-scope validation,
+not an unexplained server-side loss.
+
 The evidence does **not** show C (loss during refresh), because no refresh
-exchange was observed. It also does not show B (the server refusing a request
-that contained `hermes:create`): no such request was received in this flow.
+exchange was observed.
 
 The bearer stage is now observed as an accepted request using the same token
 fingerprint as the read-only authorization-code token. The direct bearer log
@@ -123,17 +159,28 @@ field is subject to the journald interleaving limitation described above.
 
 ## FIRST POINT WHERE `hermes:create` DISAPPEARS
 
-The first observable point is the incoming `/authorize` request. It was already
-absent from `requested_scopes`. The server's grant and token stages preserved
-that value; they did not remove `hermes:create`.
+For the original reused-client flow, the first observable point was the
+incoming `/authorize` request: `hermes:create` was already absent.
+
+For the DCR-selected retry, `hermes:create` was absent from the DCR client's
+persisted scope. It appeared in `/authorize`, but authorization correctly
+failed with `invalid_scope` because the client had been registered only for
+`hermes:read`.
 
 ## CAUSA RAÍZ
 
-The deployed server reused a persisted ChatGPT client whose allowed scope was
-`hermes:read`, while the fresh `/authorize` request from ChatGPT requested only
-`hermes:read`. Consequently, the server could issue only a read-only grant and
-token. Reconnecting the App did not cause a new DCR registration or upgrade
-the persisted client scope.
+The deployed server has two observed paths to the same outcome:
+
+1. With the old client, ChatGPT reused a persisted client whose allowed scope
+   was `hermes:read` and requested only `hermes:read` at `/authorize`.
+2. With DCR selected, ChatGPT registered a new client whose requested and
+   granted scope was still only `hermes:read`, then requested
+   `hermes:read hermes:create offline_access` at `/authorize`.
+
+In both cases, `hermes:create` was absent from the client scope before token
+issuance. The server correctly refused to grant a scope outside that
+client-specific allowlist. Reconnecting the App or selecting DCR did not cause
+ChatGPT's DCR request to include `hermes:create`.
 
 This is not evidence of a server-side scope-loss bug. The server behaved
 fail-closed and did not grant `hermes:create` without receiving it in the
@@ -158,16 +205,18 @@ No behavior correction was applied. In particular, the server was not changed
 to grant `hermes:create` when it is absent, `hermes:read` was not made
 sufficient for `create_task`, and no allowlist or Hermes code was modified.
 
-A remediation must make the client/DCR authorization metadata request the
-write scope explicitly, or provide a protocol-compliant way to register or
-upgrade a client with user consent. Server-side compensation would violate
-the fail-closed scope boundary and was intentionally not implemented.
+A remediation must make the client/DCR registration request the write scope
+explicitly, or provide a protocol-compliant way to register or upgrade a
+client with user consent. Server-side compensation, such as making DCR default
+to `hermes:create`, would violate the client-scope boundary and was
+intentionally not implemented.
 
 ## EVIDENCIA AUSENTE
 
 - A refresh-token exchange for this exact flow.
 - A directly reconstructable `effective_scopes` field from the bearer event;
   its token fingerprint and prior token issuance are reconstructable.
+- A successful DCR request from ChatGPT that includes `hermes:create`.
 - Evidence that a grant was reused independently of the reused client; the
   client reuse is proven by the persisted fingerprint and the authorization
   event, but no separate grant-reuse flag was emitted.
