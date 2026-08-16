@@ -66,12 +66,22 @@ window.
 
 ### MCP request observation
 
-No `mcp.bearer` diagnostic event was emitted after this authorization in the
-captured window. Therefore the fresh flow does not provide a safe, correlated
-server-side observation of the subsequent MCP bearer validation. The earlier
-real ChatGPT call that returned `SCOPE_REQUIRED: hermes:create` remains
-consistent with the newly issued read-only token, but it was not correlated to
-this fresh flow by an instrumentation event.
+Two `mcp.bearer` diagnostic events were emitted with `outcome=accepted` for the
+same client fingerprint `953e5772616e` and the same token fingerprint
+`77159e8b2481` as the authorization-code token event above. The user then
+confirmed that `get_board()` succeeded. This correlates the freshly issued
+read-only token with the live MCP request path.
+
+The `effective_scopes` key in the bearer diagnostic line was not reconstructed
+verbatim because a journald fragment was interleaved with an unrelated source
+location fragment. The token fingerprint correlation is intact, and the same
+token's authorization-code issuance is explicitly recorded with
+`effective_scopes=hermes:read`. No secret was exposed by this logging defect.
+
+No refresh-token exchange occurred in the captured journal window. The earlier
+real ChatGPT call that returned `SCOPE_REQUIRED: hermes:create` is consistent
+with this same read-only authorization, but it predates the correlated bearer
+events.
 
 ## AFIRMACIONES PREVIAS
 
@@ -106,6 +116,10 @@ This identifies both:
 The evidence does **not** show C (loss during refresh), because no refresh
 exchange was observed. It also does not show B (the server refusing a request
 that contained `hermes:create`): no such request was received in this flow.
+
+The bearer stage is now observed as an accepted request using the same token
+fingerprint as the read-only authorization-code token. The direct bearer log
+field is subject to the journald interleaving limitation described above.
 
 ## FIRST POINT WHERE `hermes:create` DISAPPEARS
 
@@ -151,8 +165,9 @@ the fail-closed scope boundary and was intentionally not implemented.
 
 ## EVIDENCIA AUSENTE
 
-- A post-authorization `mcp.bearer` event for this exact flow.
 - A refresh-token exchange for this exact flow.
+- A directly reconstructable `effective_scopes` field from the bearer event;
+  its token fingerprint and prior token issuance are reconstructable.
 - Evidence that a grant was reused independently of the reused client; the
   client reuse is proven by the persisted fingerprint and the authorization
   event, but no separate grant-reuse flag was emitted.
