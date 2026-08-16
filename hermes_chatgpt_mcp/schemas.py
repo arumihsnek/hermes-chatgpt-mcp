@@ -39,6 +39,22 @@ class BoardQuery(StrictModel):
     board: BoardSlug | None = None
 
 
+class BoardCapabilities(StrictModel):
+    read: bool
+    create: bool
+
+
+class BoardSummary(StrictModel):
+    slug: BoardSlug
+    name: str = Field(min_length=1, max_length=512)
+    description: str = Field(default="", max_length=2_000)
+    project_id: str | None = Field(default=None, max_length=128)
+    created_at: int | None = None
+    is_default: bool
+    task_counts: dict[str, int] = Field(default_factory=dict)
+    capabilities: BoardCapabilities
+
+
 AssigneeName = Annotated[str, Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")]
 TenantName = Annotated[str, Field(min_length=1, max_length=128)]
 SessionId = Annotated[str, Field(min_length=1, max_length=256)]

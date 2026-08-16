@@ -186,6 +186,23 @@ class HermesBoardResolver:
             hermes_agent_root=self.settings.hermes_agent_root,
         )
 
+    def query_adapter(self, handle: BoardHandle):
+        from .adapter import HermesReadOnlyAdapter
+
+        return HermesReadOnlyAdapter(
+            self.store(handle),
+            max_body_chars=self.settings.max_body_chars,
+            max_log_bytes=self.settings.max_log_bytes,
+            max_activity_items=self.settings.max_activity_items,
+            metadata={
+                "slug": handle.slug,
+                "name": handle.name,
+                "description": handle.description,
+                "project_id": handle.project_id,
+                "created_at": handle.created_at,
+            },
+        )
+
     def creation_lock(self, slug: str) -> threading.Lock:
         with self._lock:
             return self._creation_locks.setdefault(slug, threading.Lock())

@@ -8,6 +8,7 @@ import pytest
 
 from hermes_chatgpt_mcp.boards import BoardResolutionError, HermesBoardResolver
 from hermes_chatgpt_mcp.config import ConfigurationError, Settings
+from hermes_chatgpt_mcp.schemas import BoardCapabilities, BoardSummary
 
 from hermes_cli import kanban_db
 
@@ -107,3 +108,36 @@ def test_ambient_hermes_kanban_db_override_fails_closed(tmp_path, monkeypatch):
 
     with pytest.raises(ConfigurationError, match="HERMES_KANBAN_DB"):
         HermesBoardResolver(_board_settings(tmp_path), hermes_module=kanban_db)
+
+
+def test_board_summary_is_strict_and_path_free():
+    summary = BoardSummary(
+        slug="board-a",
+        name="Board A",
+        description="safe description",
+        project_id=None,
+        created_at=1_700_000_000,
+        is_default=False,
+        task_counts={"done": 2},
+        capabilities=BoardCapabilities(read=True, create=False),
+    )
+
+    assert "db_path" not in summary.model_dump()
+    assert "default_workdir" not in summary.model_dump()
+
+    with pytest.raises(ValueError):
+        BoardSummary(
+            **summary.model_dump(),
+            db_path="/secret/hermes/kanban.db",
+        )
+
+
+def test_resolver_query_adapter_uses_canonical_metadata_and_read_only_stats(tmp_path, monkeypatch):
+    resolver = _resolver(tmp_path, monkeypatch)
+    adapter = resolver.query_adapter(resolver.resolve("board-a", operation="read"))
+
+    view = adapter.get_board()
+
+    assert view.slug == "board-a"
+    assert view.name == "Board A"
+    assert view.task_counts == {}

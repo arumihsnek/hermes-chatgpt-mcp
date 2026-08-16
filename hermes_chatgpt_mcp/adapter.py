@@ -70,12 +70,20 @@ def _safe_data(value: Any, *, depth: int = 0, budget: int = 8_000) -> Any:
 class HermesReadOnlyAdapter:
     """Transform canonical Hermes query results into external MCP models."""
 
-    def __init__(self, store: ReadOnlyHermesStore, *, max_body_chars: int = 64_000,
-                 max_log_bytes: int = 32_000, max_activity_items: int = 200) -> None:
+    def __init__(
+        self,
+        store: ReadOnlyHermesStore,
+        *,
+        max_body_chars: int = 64_000,
+        max_log_bytes: int = 32_000,
+        max_activity_items: int = 200,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
         self.store = store
         self.max_body_chars = max_body_chars
         self.max_log_bytes = max_log_bytes
         self.max_activity_items = max_activity_items
+        self._canonical_metadata = dict(metadata) if metadata is not None else None
 
     @property
     def hermes(self):
@@ -105,6 +113,8 @@ class HermesReadOnlyAdapter:
         )
 
     def _metadata(self) -> dict[str, Any]:
+        if self._canonical_metadata is not None:
+            return self._canonical_metadata
         path = self.store.db_path.parent / "board.json"
         if path.is_file():
             try:
