@@ -96,7 +96,15 @@ async def _test_unknown_task_and_unknown_tool_are_sanitized(tmp_path):
             missing = await _rpc(client, token, "tools/call", {"name": "get_task", "arguments": {"request": {"task_id": "missing"}}}, 2)
             assert missing["result"]["isError"] is True
             assert "traceback" not in str(missing).lower()
-            unknown = await _rpc(client, token, "tools/call", {"name": "create_task", "arguments": {}}, 3)
+            unknown = await _rpc(client, token, "tools/call", {"name": "update_task", "arguments": {}}, 3)
             assert unknown["result"]["isError"] is True
-            assert "create" not in str(unknown).lower() or "unknown" in str(unknown).lower()
-
+            assert "unknown" in str(unknown).lower()
+            invalid_create = await _rpc(
+                client,
+                token,
+                "tools/call",
+                {"name": "create_task", "arguments": {"request": {}}},
+                4,
+            )
+            assert invalid_create["result"]["isError"] is True
+            assert "traceback" not in str(invalid_create).lower()

@@ -90,6 +90,7 @@ class HermesReadOnlyAdapter:
             title=str(task.title),
             status=str(task.status),
             assignee=getattr(task, "assignee", None),
+            created_by=getattr(task, "created_by", None),
             priority=int(getattr(task, "priority", 0) or 0),
             created_at=int(getattr(task, "created_at", 0) or 0),
             started_at=getattr(task, "started_at", None),

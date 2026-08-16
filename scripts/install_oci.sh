@@ -65,13 +65,14 @@ defaults = {
     "MCP_OAUTH_USERNAME": "chatgpt",
     "MCP_OAUTH_PASSWORD": secrets.token_urlsafe(24),
     "MCP_OAUTH_SIGNING_KEY": secrets.token_urlsafe(48),
+    "MCP_OAUTH_STATE_FILE": "/var/lib/hermes-chatgpt-mcp/oauth-state.json",
 }
 for key, value in defaults.items():
     values.setdefault(key, value)
 ordered = [
     "HERMES_AGENT_ROOT", "HERMES_KANBAN_HOME", "HERMES_KANBAN_BOARD",
     "MCP_PUBLIC_BASE_URL", "MCP_HOST", "MCP_PORT", "MCP_OAUTH_USERNAME",
-    "MCP_OAUTH_PASSWORD", "MCP_OAUTH_SIGNING_KEY",
+    "MCP_OAUTH_PASSWORD", "MCP_OAUTH_SIGNING_KEY", "MCP_OAUTH_STATE_FILE",
 ]
 extra = [key for key in values if key not in ordered]
 path.write_text("".join(f"{key}={values[key]}\n" for key in ordered + extra), encoding="utf-8")

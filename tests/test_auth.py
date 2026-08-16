@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+from dataclasses import replace
 
 import pytest
 
@@ -121,4 +122,69 @@ def test_authorization_code_is_single_use_and_pkce_is_required():
             client_id=client["client_id"],
             redirect_uri="http://localhost/callback",
             code_verifier=verifier,
+        )
+
+
+def test_create_scope_is_separate_and_creation_grant_also_contains_read():
+    service = AuthService(_settings())
+    with pytest.raises(OAuthError, match="requires hermes:read"):
+        service.register_client(
+            {
+                "redirect_uris": ["http://localhost/callback"],
+                "token_endpoint_auth_method": "none",
+                "scope": "hermes:create",
+            }
+        )
+
+    read_token = service.issue_access_token(client_id="read-only", subject="user")
+    create_token = service.issue_access_token(
+        client_id="creator",
+        subject="user",
+        scopes=["hermes:read", "hermes:create"],
+    )
+    assert service.verify_token(read_token).scopes == ["hermes:read"]
+    assert service.verify_token(create_token).scopes == ["hermes:read", "hermes:create"]
+
+
+def test_dcr_clients_and_refresh_rotation_survive_auth_service_restart(tmp_path):
+    state_file = tmp_path / "oauth" / "state.json"
+    settings = replace(_settings(), oauth_state_file=state_file)
+    first = AuthService(settings)
+    client = first.register_client(
+        {
+            "client_name": "ChatGPT",
+            "redirect_uris": ["https://chatgpt.com/connector/oauth/callback"],
+            "token_endpoint_auth_method": "none",
+            "grant_types": ["authorization_code", "refresh_token"],
+            "response_types": ["code"],
+            "scope": "hermes:read hermes:create",
+        }
+    )
+    verifier, challenge = _pkce()
+    code = first.create_authorization_code(
+        client_id=client["client_id"],
+        redirect_uri=client["redirect_uris"][0],
+        scope="hermes:read hermes:create",
+        code_challenge=challenge,
+    )
+    bundle = first.exchange_code_bundle(
+        code=code,
+        client_id=client["client_id"],
+        redirect_uri=client["redirect_uris"][0],
+        code_verifier=verifier,
+    )
+    assert state_file.stat().st_mode & 0o077 == 0
+    assert bundle["refresh_token"] not in state_file.read_text(encoding="utf-8")
+
+    second = AuthService(settings)
+    assert second.client(client["client_id"]).client_id == client["client_id"]
+    rotated = second.refresh_bundle(
+        refresh_token=bundle["refresh_token"],
+        client_id=client["client_id"],
+    )
+    assert rotated["scope"] == "hermes:read hermes:create"
+    with pytest.raises(OAuthError, match="invalid refresh token"):
+        second.refresh_bundle(
+            refresh_token=bundle["refresh_token"],
+            client_id=client["client_id"],
         )

@@ -45,11 +45,11 @@ async def _rpc(client: httpx.AsyncClient, token: str, method: str, params=None, 
     return response.json()
 
 
-def test_health_metadata_auth_and_exact_readonly_tool_contract(tmp_path):
-    asyncio.run(_test_health_metadata_auth_and_exact_readonly_tool_contract(tmp_path))
+def test_health_metadata_auth_and_exact_tool_contract(tmp_path):
+    asyncio.run(_test_health_metadata_auth_and_exact_tool_contract(tmp_path))
 
 
-async def _test_health_metadata_auth_and_exact_readonly_tool_contract(tmp_path):
+async def _test_health_metadata_auth_and_exact_tool_contract(tmp_path):
     fixture = make_hermes_fixture(tmp_path)
     settings = _settings()
     auth = AuthService(settings)
@@ -66,6 +66,7 @@ async def _test_health_metadata_auth_and_exact_readonly_tool_contract(tmp_path):
             protected = await client.get("/.well-known/oauth-protected-resource")
             assert protected.status_code == 200
             assert [value.rstrip("/") for value in protected.json()["authorization_servers"]] == [settings.public_base_url]
+            assert set(protected.json()["scopes_supported"]) == {"hermes:read", "hermes:create"}
 
             metadata = await client.get("/.well-known/oauth-authorization-server")
             assert metadata.status_code == 200
@@ -96,7 +97,14 @@ async def _test_health_metadata_auth_and_exact_readonly_tool_contract(tmp_path):
         "get_task_graph",
         "get_dispatch",
         "get_activity",
+        "create_task",
     }
-    assert all(tool["annotations"]["readOnlyHint"] is True for tool in tools)
-    assert all(tool["annotations"]["destructiveHint"] is False for tool in tools)
+    readonly = [tool for tool in tools if tool["name"] != "create_task"]
+    create = next(tool for tool in tools if tool["name"] == "create_task")
+    assert all(tool["annotations"]["readOnlyHint"] is True for tool in readonly)
+    assert all(tool["annotations"]["destructiveHint"] is False for tool in readonly)
+    assert create["annotations"]["readOnlyHint"] is False
+    assert create["annotations"]["destructiveHint"] is False
+    assert create["annotations"]["idempotentHint"] is False
     assert all(tool["inputSchema"].get("additionalProperties", True) is False for tool in tools)
+    assert set(metadata.json()["scopes_supported"]) == {"hermes:read", "hermes:create"}

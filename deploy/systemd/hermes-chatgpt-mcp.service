@@ -1,5 +1,5 @@
 [Unit]
-Description=Hermes ChatGPT read-only MCP service
+Description=Hermes ChatGPT MCP service (read plus safe task creation)
 After=network-online.target
 Wants=network-online.target
 
@@ -10,6 +10,7 @@ Group=ubuntu
 WorkingDirectory=/home/ubuntu/code/hermes-chatgpt-mcp
 EnvironmentFile=/home/ubuntu/.hermes/hermes-chatgpt-mcp.env
 Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=MCP_OAUTH_STATE_FILE=/var/lib/hermes-chatgpt-mcp/oauth-state.json
 ExecStart=/home/ubuntu/hermes-agent/venv/bin/python -m hermes_chatgpt_mcp.server
 Restart=on-failure
 RestartSec=5
@@ -19,7 +20,9 @@ NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=full
 ProtectHome=read-only
-ReadWritePaths=/home/ubuntu/.hermes/kanban/boards/codex_app_server
+StateDirectory=hermes-chatgpt-mcp
+StateDirectoryMode=0700
+ReadWritePaths=/home/ubuntu/.hermes/kanban/boards/codex_app_server /var/lib/hermes-chatgpt-mcp
 PrivateDevices=yes
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 RestrictSUIDSGID=yes

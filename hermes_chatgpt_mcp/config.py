@@ -61,6 +61,7 @@ class Settings:
     max_activity_items: int = 200
     oauth_code_ttl_seconds: int = 300
     oauth_token_ttl_seconds: int = 3600
+    oauth_state_file: Path | None = None
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -84,6 +85,7 @@ class Settings:
             raise ConfigurationError("MCP_OAUTH_SIGNING_KEY must contain at least 32 characters")
 
         home_raw = _env("HERMES_KANBAN_HOME")
+        state_raw = _env("MCP_OAUTH_STATE_FILE", "/var/lib/hermes-chatgpt-mcp/oauth-state.json")
         return cls(
             hermes_agent_root=root,
             hermes_kanban_home=Path(home_raw).expanduser() if home_raw else None,
@@ -102,4 +104,5 @@ class Settings:
             max_activity_items=_positive_int("MCP_MAX_ACTIVITY_ITEMS", 200, maximum=2_000),
             oauth_code_ttl_seconds=_positive_int("MCP_OAUTH_CODE_TTL", 300, maximum=900),
             oauth_token_ttl_seconds=_positive_int("MCP_OAUTH_TOKEN_TTL", 3600, maximum=86_400),
+            oauth_state_file=Path(state_raw).expanduser() if state_raw else None,
         )

@@ -39,6 +39,26 @@ class BoardQuery(StrictModel):
     board: BoardSlug | None = None
 
 
+AssigneeName = Annotated[str, Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")]
+TenantName = Annotated[str, Field(min_length=1, max_length=128)]
+SessionId = Annotated[str, Field(min_length=1, max_length=256)]
+IdempotencyKey = Annotated[str, Field(min_length=1, max_length=256, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$")]
+
+
+class CreateTaskInput(BoardQuery):
+    """Strict, safe subset of Hermes' canonical create_task arguments."""
+
+    title: str = Field(min_length=1, max_length=512)
+    body: str | None = Field(default=None, max_length=64_000)
+    parent_ids: list[TaskId] = Field(default_factory=list, max_length=32)
+    assignee: AssigneeName | None = None
+    priority: int = Field(default=0, ge=-1_000, le=1_000)
+    tenant: TenantName | None = None
+    session_id: SessionId | None = None
+    triage: bool = False
+    idempotency_key: IdempotencyKey | None = None
+
+
 class ListTasksInput(BoardQuery):
     assignee: str | None = Field(default=None, max_length=128)
     status: TaskStatus | None = None
@@ -76,6 +96,7 @@ class TaskSummary(StrictModel):
     title: str
     status: str
     assignee: str | None = None
+    created_by: str | None = None
     priority: int
     created_at: int
     started_at: int | None = None
@@ -184,3 +205,18 @@ class ActivityView(StrictModel):
     evidence: dict[str, Any] = Field(default_factory=dict)
     truncated: bool = False
 
+
+class CreateTaskResult(StrictModel):
+    created: bool
+    task_id: str
+    board: str
+    title: str
+    status: str
+    assignee: str | None = None
+    priority: int
+    tenant: str | None = None
+    session_id: str | None = None
+    parent_ids: list[str] = Field(default_factory=list)
+    child_ids: list[str] = Field(default_factory=list)
+    created_by: str | None = None
+    created_at: int

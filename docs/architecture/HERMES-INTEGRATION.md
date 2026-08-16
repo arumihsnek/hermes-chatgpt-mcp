@@ -147,9 +147,9 @@ The two paths do not share a connection or adapter. A read token cannot call
 `create_task`; the MCP handler checks `hermes:create` in addition to the
 resource-wide `hermes:read` requirement. The six query tools retain their
 read-only annotations and scope. The create tool is the only public mutator
-and is annotated `readOnlyHint=false`, `destructiveHint=true`, and
-`idempotentHint=true` because Hermes' idempotency key makes a repeated keyed
-request converge without another card.
+and is annotated `readOnlyHint=false`, `destructiveHint=false` (additive
+write), and `idempotentHint=false`: Hermes supports an idempotency key, but it
+is optional and the MCP hint must describe every invocation.
 
 The service sandbox grants write access only to the configured board directory
 and the service-owned OAuth state directory. The query adapter continues to

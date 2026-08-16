@@ -6,15 +6,18 @@ import os
 from urllib.parse import parse_qs, urlencode, urlparse, urlsplit, urlunsplit
 
 from mcp.server.auth.settings import AuthSettings
+from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
 from starlette.requests import Request
+from starlette.routing import request_response
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from .adapter import HermesReadOnlyAdapter, TaskNotFoundError
 from .auth import AuthService, BearerTokenVerifier, OAuthError
+from .command import HermesCreateAdapter
 from .config import Settings
 from .hermes import ReadOnlyHermesStore
 from .schemas import (
@@ -22,6 +25,8 @@ from .schemas import (
     ActivityView,
     BoardQuery,
     BoardView,
+    CreateTaskInput,
+    CreateTaskResult,
     DispatchView,
     GraphInput,
     TaskDetail,
@@ -95,6 +100,7 @@ def _strictify_tools(mcp: FastMCP) -> None:
 def create_app(
     adapter: HermesReadOnlyAdapter | None = None,
     *,
+    command_adapter: HermesCreateAdapter | None = None,
     settings: Settings | None = None,
     auth_service: AuthService | None = None,
 ):
@@ -111,6 +117,8 @@ def create_app(
             max_log_bytes=settings.max_log_bytes,
             max_activity_items=settings.max_activity_items,
         )
+    if command_adapter is None:
+        command_adapter = HermesCreateAdapter(adapter.store)
     auth_service = auth_service or AuthService(settings)
     auth_settings = AuthSettings(
         issuer_url=settings.public_base_url,
@@ -122,8 +130,9 @@ def create_app(
     mcp = FastMCP(
         "hermes-chatgpt-mcp",
         instructions=(
-            "Read-only Hermes Kanban queries. This server cannot create, update, delete, dispatch, "
-            "claim, assign, move, start, complete, review, approve, reject, retry, import, or sync tasks."
+            "Hermes Kanban queries plus one explicitly authorized create_task operation. "
+            "This server cannot update, delete, dispatch, claim, assign, move, start, complete, "
+            "review, approve, reject, retry, import, or sync tasks."
         ),
         token_verifier=BearerTokenVerifier(auth_service),
         auth=auth_settings,
@@ -137,6 +146,13 @@ def create_app(
         ),
     )
     readonly = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
+    create_annotations = ToolAnnotations(
+        title="Create Hermes task",
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=False,
+        openWorldHint=False,
+    )
 
     def ensure_board(board: str | None) -> None:
         if board is not None and board != adapter.store.board:
@@ -152,6 +168,20 @@ def create_app(
         except Exception as exc:  # pragma: no cover - exercised by integration failures
             logger.error("Hermes read query failed: %s", type(exc).__name__)
             raise ToolError("Hermes query failed") from exc
+
+    async def run_command(callback, *args, **kwargs):
+        try:
+            return callback(*args, **kwargs)
+        except (ValueError, FileNotFoundError, LookupError) as exc:
+            raise ToolError("invalid or unavailable Hermes task creation request") from exc
+        except Exception as exc:  # pragma: no cover - exercised by integration failures
+            logger.error("Hermes create command failed: %s", type(exc).__name__)
+            raise ToolError("Hermes task creation failed") from exc
+
+    def require_scope(scope: str) -> None:
+        token = get_access_token()
+        if token is None or scope not in token.scopes:
+            raise ToolError(f"insufficient scope: {scope}")
 
     @mcp.tool(
         name="get_board",
@@ -222,6 +252,31 @@ def create_app(
         ensure_board(request.board)
         return await run_query(adapter.get_activity, request.task_id, max_items=request.max_items, log_bytes=request.log_bytes)
 
+    @mcp.tool(
+        name="create_task",
+        description=(
+            "Create exactly one Hermes Kanban task through Hermes' canonical command path. "
+            "This is the only mutating tool and requires hermes:create in addition to hermes:read."
+        ),
+        annotations=create_annotations,
+        structured_output=True,
+    )
+    async def create_task(request: CreateTaskInput) -> CreateTaskResult:
+        ensure_board(request.board)
+        require_scope(AuthService.create_scope)
+        return await run_command(
+            command_adapter.create_task,
+            title=request.title,
+            body=request.body,
+            parent_ids=request.parent_ids,
+            assignee=request.assignee,
+            priority=request.priority,
+            tenant=request.tenant,
+            session_id=request.session_id,
+            triage=request.triage,
+            idempotency_key=request.idempotency_key,
+        )
+
     @mcp.custom_route("/healthz", methods=["GET"], include_in_schema=False)
     async def healthz(request: Request) -> Response:
         return JSONResponse({"status": "ok"})
@@ -239,7 +294,7 @@ def create_app(
                 "grant_types_supported": ["authorization_code", "refresh_token"],
                 "code_challenge_methods_supported": ["S256"],
                 "token_endpoint_auth_methods_supported": ["none"],
-                "scopes_supported": [AuthService.scope],
+                "scopes_supported": [AuthService.scope, AuthService.create_scope],
             },
             headers={"Cache-Control": "public, max-age=300"},
         )
@@ -318,6 +373,30 @@ def create_app(
 
     _strictify_tools(mcp)
     app = mcp.streamable_http_app()
+
+    # FastMCP 1.28.1 derives protected-resource ``scopes_supported`` from the
+    # resource-wide required scopes. The resource requires hermes:read for
+    # every MCP request, while create_task has the additional hermes:create
+    # capability. Replace only the generated metadata handler so discovery
+    # advertises both without globally requiring the write scope.
+    protected_resource_path = "/.well-known/oauth-protected-resource"
+
+    async def protected_resource_metadata(request: Request) -> Response:
+        return JSONResponse(
+            {
+                "resource": settings.public_base_url,
+                "authorization_servers": [settings.public_base_url],
+                "scopes_supported": [AuthService.scope, AuthService.create_scope],
+                "bearer_methods_supported": ["header"],
+            },
+            headers={"Cache-Control": "public, max-age=300"},
+        )
+
+    for route in app.routes:
+        if getattr(route, "path", None) == protected_resource_path:
+            route.endpoint = protected_resource_metadata
+            route.app = request_response(protected_resource_metadata)
+            break
     app.state.hermes_mcp_auth = auth_service
     app.state.hermes_mcp = mcp
     app.state.hermes_mcp_settings = settings
