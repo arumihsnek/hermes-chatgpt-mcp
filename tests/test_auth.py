@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 from dataclasses import replace
 
 import pytest
@@ -228,6 +229,54 @@ def test_dcr_clients_and_refresh_rotation_survive_auth_service_restart(tmp_path)
             refresh_token=bundle["refresh_token"],
             client_id=client["client_id"],
         )
+
+
+def test_legacy_unbound_write_refresh_is_dropped_without_blocking_restart(tmp_path):
+    state_file = tmp_path / "oauth" / "state.json"
+    state_file.parent.mkdir(mode=0o700)
+    legacy_read = "legacy-read-refresh"
+    legacy_write = "legacy-unbound-write-refresh"
+    state_file.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "clients": {
+                    "legacy-client": {
+                        "client_id": "legacy-client",
+                        "redirect_uris": ["https://chatgpt.com/connector/oauth/callback"],
+                        "grant_types": ["authorization_code", "refresh_token"],
+                        "scope": "hermes:read",
+                        "client_name": "ChatGPT",
+                        "issued_at": 1,
+                    }
+                },
+                "refresh_tokens": {
+                    hashlib.sha256(legacy_read.encode()).hexdigest(): {
+                        "client_id": "legacy-client",
+                        "subject": "ChatGPT",
+                        "scope": "hermes:read",
+                        "expires_at": 4_000_000_000,
+                    },
+                    hashlib.sha256(legacy_write.encode()).hexdigest(): {
+                        "client_id": "legacy-client",
+                        "subject": "ChatGPT",
+                        "scope": "hermes:read hermes:create offline_access",
+                        "expires_at": 4_000_000_000,
+                    },
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    state_file.chmod(0o600)
+    service = AuthService(replace(_settings(), oauth_state_file=state_file))
+
+    rotated = service.refresh_bundle(refresh_token=legacy_read, client_id="legacy-client")
+    assert rotated["scope"] == "hermes:read"
+    with pytest.raises(OAuthError, match="invalid refresh token"):
+        service.refresh_bundle(refresh_token=legacy_write, client_id="legacy-client")
+    assert json.loads(state_file.read_text(encoding="utf-8"))["version"] == 2
 
 
 def test_write_grant_is_bound_to_one_board_and_revocable(tmp_path):

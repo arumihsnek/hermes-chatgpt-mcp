@@ -191,6 +191,7 @@ class AuthService:
         path = self._state_path
         if path is None or not path.exists():
             return
+        migrate_state = False
         try:
             mode = stat.S_IMODE(path.stat().st_mode)
             if mode & 0o077:
@@ -198,6 +199,7 @@ class AuthService:
             payload = json.loads(path.read_text(encoding="utf-8"))
             if not isinstance(payload, dict) or payload.get("version") not in {1, self._state_version}:
                 raise RuntimeError("OAuth state file version is unsupported")
+            migrate_state = payload.get("version") != self._state_version
             clients = payload.get("clients", {})
             refresh_tokens = payload.get("refresh_tokens", {})
             revoked_grants = payload.get("revoked_grants", [])
@@ -221,7 +223,22 @@ class AuthService:
                 refresh = self._refresh_from_state(raw, digest)
                 if refresh is None or refresh.client_id not in loaded_clients:
                     raise RuntimeError("OAuth state contains an invalid refresh token record")
-                self._scope_string(refresh.scope, allowed=set(loaded_clients[refresh.client_id].scope.split()))
+                normalized_scope = self._scope_string(refresh.scope, allowed=set(self.supported_scopes))
+                if normalized_scope != refresh.scope:
+                    refresh.scope = normalized_scope
+                    migrate_state = True
+                scopes = set(normalized_scope.split())
+                # v0.2 could persist a refresh token with hermes:create even
+                # though no board claim existed yet. Keep the service and all
+                # safe read grants available, but discard that unbound write
+                # grant instead of manufacturing a board during migration.
+                if refresh.board_access == "write":
+                    if refresh.board is None or self.create_scope not in scopes:
+                        migrate_state = True
+                        continue
+                elif refresh.board is not None or self.create_scope in scopes:
+                    migrate_state = True
+                    continue
                 loaded_refresh[digest] = refresh
             loaded_revoked = {str(grant) for grant in revoked_grants if isinstance(grant, str) and grant}
         except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
@@ -230,6 +247,8 @@ class AuthService:
             self._clients.update(loaded_clients)
             self._refresh_tokens.update(loaded_refresh)
             self._revoked_grants.update(loaded_revoked)
+            if migrate_state:
+                self._persist_locked()
 
     def _persist_locked(self) -> None:
         path = self._state_path
