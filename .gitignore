@@ -29,3 +29,5 @@ coverage/
 logs/
 tmp/
 
+# Local linked worktrees
+.worktrees/
