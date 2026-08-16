@@ -8,7 +8,7 @@ from pydantic import ValidationError
 from hermes_chatgpt_mcp.adapter import HermesReadOnlyAdapter
 from hermes_chatgpt_mcp.command import HermesCreateAdapter
 from hermes_chatgpt_mcp.hermes import ReadOnlyHermesStore
-from hermes_chatgpt_mcp.schemas import CreateTaskInput
+from hermes_chatgpt_mcp.schemas import BoardCapabilities, BoardListView, CreateTaskInput
 
 from .fixtures import make_hermes_fixture
 
@@ -106,3 +106,11 @@ def test_command_adapter_contains_no_sql_write_statement():
 
     source = Path("hermes_chatgpt_mcp/command.py").read_text(encoding="utf-8")
     assert re.search(r"\b(INSERT|UPDATE|DELETE|REPLACE)\b", source, re.IGNORECASE) is None
+
+
+def test_stable_board_capability_and_list_wire_shapes_remain_unchanged():
+    capabilities = BoardCapabilities(read=True, create=False)
+    view = BoardListView(items=[], default_board="main")
+
+    assert capabilities.model_dump() == {"read": True, "create": False}
+    assert view.model_dump() == {"items": [], "default_board": "main"}
