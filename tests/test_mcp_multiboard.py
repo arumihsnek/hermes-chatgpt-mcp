@@ -39,8 +39,8 @@ def _multi_settings(root: Path) -> Settings:
         _settings(),
         hermes_kanban_home=root,
         default_board="board-a",
-        kanban_read_boards=("board-a", "board-b"),
-        kanban_create_boards=("board-a",),
+        kanban_read_boards=None,
+        kanban_create_boards=None,
     )
 
 
@@ -58,14 +58,16 @@ def _seed_task(root: Path, slug: str, task_id: str, title: str) -> str:
         return actual
 
 
-def _make_multi_app(tmp_path: Path, monkeypatch, *, create_boards=("board-a",)):
+def _make_multi_app(tmp_path: Path, monkeypatch, *, create_boards=None):
     _write_board(tmp_path, "board-a", name="Board A")
     _write_board(tmp_path, "board-b", name="Board B")
     _write_board(tmp_path, "board-c", name="Board C")
     monkeypatch.setenv("HERMES_KANBAN_HOME", str(tmp_path))
     task_a_id = _seed_task(tmp_path, "board-a", "seed-a", "A-only task")
     task_b_id = _seed_task(tmp_path, "board-b", "seed-b", "B-only task")
-    settings = replace(_multi_settings(tmp_path), kanban_create_boards=tuple(create_boards))
+    settings = _multi_settings(tmp_path)
+    if create_boards is not None:
+        settings = replace(settings, kanban_create_boards=tuple(create_boards))
     auth = AuthService(settings)
     return settings, auth, create_app(settings=settings, auth_service=auth), task_a_id, task_b_id
 
@@ -79,7 +81,7 @@ async def _test_list_boards_returns_only_authorized_canonical_boards(tmp_path, m
     token = auth.issue_access_token(
         client_id="creator",
         subject="creator",
-        scopes=["hermes:read", "hermes:create"],
+        scopes=["hermes:read"],
     )
     transport = httpx.ASGITransport(app=app)
     async with app.router.lifespan_context(app):
@@ -96,9 +98,9 @@ async def _test_list_boards_returns_only_authorized_canonical_boards(tmp_path, m
     assert result["result"].get("isError") is not True
     assert after == before
     boards = result["result"]["structuredContent"]["items"]
-    assert [board["slug"] for board in boards] == ["board-a", "board-b"]
-    assert [board["is_default"] for board in boards] == [True, False]
-    assert boards[0]["capabilities"] == {"read": True, "create": True}
+    assert [board["slug"] for board in boards] == ["board-a", "board-b", "board-c"]
+    assert [board["is_default"] for board in boards] == [True, False, False]
+    assert boards[0]["capabilities"] == {"read": True, "create": False}
     assert boards[1]["capabilities"] == {"read": True, "create": False}
     assert all("db_path" not in board for board in boards)
 
@@ -119,7 +121,7 @@ async def _test_read_tools_route_to_explicit_board_a_and_b(tmp_path, monkeypatch
             tasks_a = await _rpc(client, token, "tools/call", {"name": "list_tasks", "arguments": {"request": {"board": "board-a", "limit": 20}}}, 3)
             tasks_b = await _rpc(client, token, "tools/call", {"name": "list_tasks", "arguments": {"request": {"board": "board-b", "limit": 20}}}, 4)
 
-    assert [item["slug"] for item in boards["result"]["structuredContent"]["items"]] == ["board-a", "board-b"]
+    assert [item["slug"] for item in boards["result"]["structuredContent"]["items"]] == ["board-a", "board-b", "board-c"]
     assert all(item["capabilities"] == {"read": True, "create": False} for item in boards["result"]["structuredContent"]["items"])
     assert board_a["result"]["structuredContent"]["slug"] == "board-a"
     assert board_b["result"]["structuredContent"]["slug"] == "board-b"
@@ -148,13 +150,13 @@ def test_create_task_routes_to_a_and_b_without_cross_board_writes(tmp_path, monk
 
 
 async def _test_create_task_routes_to_a_and_b_without_cross_board_writes(tmp_path, monkeypatch):
-    settings, auth, app, task_a_id, _ = _make_multi_app(
-        tmp_path, monkeypatch, create_boards=("board-a", "board-b")
-    )
+    settings, auth, app, task_a_id, _ = _make_multi_app(tmp_path, monkeypatch)
     token = auth.issue_access_token(
         client_id="creator",
         subject="creator",
         scopes=["hermes:read", "hermes:create"],
+        board="board-a",
+        board_access="write",
     )
     transport = httpx.ASGITransport(app=app)
     async with app.router.lifespan_context(app):
@@ -166,6 +168,9 @@ async def _test_create_task_routes_to_a_and_b_without_cross_board_writes(tmp_pat
             before_b = await _rpc(
                 client, token, "tools/call",
                 {"name": "list_tasks", "arguments": {"request": {"board": "board-b", "limit": 20}}}, 2,
+            )
+            discovered = await _rpc(
+                client, token, "tools/call", {"name": "list_boards", "arguments": {}}, 20,
             )
             created_a = await _rpc(
                 client, token, "tools/call",
@@ -203,24 +208,27 @@ async def _test_create_task_routes_to_a_and_b_without_cross_board_writes(tmp_pat
             activity_b = await _rpc(
                 client, token, "tools/call",
                 {"name": "get_activity", "arguments": {"request": {
-                    "board": "board-b", "task_id": created_b["result"]["structuredContent"]["task_id"],
+                    "board": "board-b", "task_id": "missing-task",
                     "max_items": 20, "log_bytes": 0
                 }}}, 9,
             )
 
     payload_a = created_a["result"]["structuredContent"]
-    payload_b = created_b["result"]["structuredContent"]
+    capabilities = {
+        item["slug"]: item["capabilities"]
+        for item in discovered["result"]["structuredContent"]["items"]
+    }
+    assert capabilities["board-a"] == {"read": True, "create": True}
+    assert capabilities["board-b"] == {"read": True, "create": False}
     assert payload_a["board"] == "board-a"
-    assert payload_b["board"] == "board-b"
+    assert created_b["result"]["isError"] is True
     assert duplicate_a["result"]["structuredContent"]["task_id"] == payload_a["task_id"]
     assert cross_board_parent["result"]["isError"] is True
     assert len(after_a["result"]["structuredContent"]["items"]) == len(before_a["result"]["structuredContent"]["items"]) + 1
-    assert len(after_b["result"]["structuredContent"]["items"]) == len(before_b["result"]["structuredContent"]["items"]) + 1
+    assert len(after_b["result"]["structuredContent"]["items"]) == len(before_b["result"]["structuredContent"]["items"])
     assert any(item["id"] == payload_a["task_id"] for item in after_a["result"]["structuredContent"]["items"])
     assert all(item["id"] != payload_a["task_id"] for item in after_b["result"]["structuredContent"]["items"])
-    assert any(item["id"] == payload_b["task_id"] for item in after_b["result"]["structuredContent"]["items"])
-    assert all(item["id"] != payload_b["task_id"] for item in after_a["result"]["structuredContent"]["items"])
-    assert any(event["kind"] == "created" for event in activity_b["result"]["structuredContent"]["events"])
+    assert activity_b["result"]["isError"] is True
 
 
 def test_create_task_rejects_readable_but_non_writable_board(tmp_path, monkeypatch):
@@ -233,6 +241,8 @@ async def _test_create_task_rejects_readable_but_non_writable_board(tmp_path, mo
         client_id="creator",
         subject="creator",
         scopes=["hermes:read", "hermes:create"],
+        board="board-a",
+        board_access="write",
     )
     transport = httpx.ASGITransport(app=app)
     async with app.router.lifespan_context(app):
@@ -253,7 +263,7 @@ async def _test_create_task_rejects_readable_but_non_writable_board(tmp_path, mo
             )
 
     assert rejected["result"]["isError"] is True
-    assert "BOARD_NOT_ALLOWED" in str(rejected)
+    assert "BOARD_SESSION_MISMATCH" in str(rejected)
     assert after["result"]["structuredContent"]["items"] == before["result"]["structuredContent"]["items"]
 
 

@@ -2,8 +2,9 @@
 """Exercise the deployed MCP surface against two explicitly controlled boards.
 
 Read checks are the default. Set ``HERMES_LIVE_WRITE_TEST=1`` only for one
-clearly-prefixed create per board; cleanup uses Hermes' native archive/delete
-functions and never a public MCP delete operation.
+clearly-prefixed create per board. Each write uses a separate board-bound
+grant, mirroring separate authorized sessions; cleanup uses Hermes' native
+archive/delete functions and never a public MCP delete operation.
 """
 
 from __future__ import annotations
@@ -60,16 +61,27 @@ def main() -> int:
     if len(boards) != 2 or len(set(boards)) != 2:
         raise SystemExit("MCP_LIVE_TEST_BOARDS must contain exactly two distinct boards")
     endpoint = os.environ.get("MCP_LIVE_URL", f"{settings.public_base_url}/mcp")
-    token = AuthService(settings).issue_access_token(
+    auth = AuthService(settings)
+    read_token = auth.issue_access_token(
         client_id="live-multiboard-smoke",
         subject="live-multiboard-smoke",
-        scopes=["hermes:read", "hermes:create"],
+        scopes=["hermes:read"],
     )
+    write_tokens = {
+        slug: auth.issue_access_token(
+            client_id=f"live-multiboard-smoke-{slug}",
+            subject="live-multiboard-smoke",
+            scopes=["hermes:read", "hermes:create"],
+            board=slug,
+            board_access="write",
+        )
+        for slug in boards
+    }
     created: dict[str, str] = {}
     nonce = secrets.token_hex(6)
     try:
         with httpx.Client(base_url=endpoint.removesuffix("/mcp"), timeout=20.0) as client:
-            tools = _rpc(client, token, "tools/list", {}, 1)["tools"]
+            tools = _rpc(client, read_token, "tools/list", {}, 1)["tools"]
             names = {tool["name"] for tool in tools}
             expected = {
                 "list_boards", "get_board", "list_tasks", "get_task",
@@ -77,24 +89,25 @@ def main() -> int:
             }
             if names != expected:
                 raise RuntimeError(f"unexpected MCP tool surface: {sorted(names)}")
-            discovered = _rpc(client, token, "tools/call", {"name": "list_boards", "arguments": {}}, 2)
+            discovered = _rpc(client, read_token, "tools/call", {"name": "list_boards", "arguments": {}}, 2)
             discovered_slugs = {item["slug"] for item in discovered["structuredContent"]["items"]}
             if not set(boards).issubset(discovered_slugs):
                 raise RuntimeError("configured live boards were not discoverable")
             for index, slug in enumerate(boards, start=10):
-                board = _rpc(client, token, "tools/call", {"name": "get_board", "arguments": {"request": {"board": slug}}}, index)
+                board = _rpc(client, read_token, "tools/call", {"name": "get_board", "arguments": {"request": {"board": slug}}}, index)
                 if board["structuredContent"]["slug"] != slug:
                     raise RuntimeError(f"board resolver crossed boundary for {slug}")
-                tasks = _rpc(client, token, "tools/call", {"name": "list_tasks", "arguments": {"request": {"board": slug, "limit": 1}}}, index + 10)
+                tasks = _rpc(client, read_token, "tools/call", {"name": "list_tasks", "arguments": {"request": {"board": slug, "limit": 1}}}, index + 10)
                 print(f"PASS read board={slug} tasks={len(tasks['structuredContent']['items'])}")
             if os.environ.get("HERMES_LIVE_WRITE_TEST") != "1":
                 print("PASS discovery/read-only multi-board smoke; writes not requested")
                 return 0
             for index, slug in enumerate(boards, start=30):
-                key = f"chatgpt-mcp-v03-smoke-{slug}-{nonce}"
-                result = _rpc(client, token, "tools/call", {"name": "create_task", "arguments": {"request": {
+                key = f"chatgpt-mcp-v04-smoke-{slug}-{nonce}"
+                write_token = write_tokens[slug]
+                result = _rpc(client, write_token, "tools/call", {"name": "create_task", "arguments": {"request": {
                     "board": slug,
-                    "title": f"[mcp-v03-smoke {nonce}] cleanup required",
+                    "title": f"[mcp-v04-smoke {nonce}] cleanup required",
                     "body": "Temporary verification card; delete only through native cleanup.",
                     "idempotency_key": key,
                 }}}, index)
@@ -102,18 +115,18 @@ def main() -> int:
                 if payload["board"] != slug:
                     raise RuntimeError(f"create_task crossed board boundary for {slug}")
                 created[slug] = payload["task_id"]
-                retry = _rpc(client, token, "tools/call", {"name": "create_task", "arguments": {"request": {
+                retry = _rpc(client, write_token, "tools/call", {"name": "create_task", "arguments": {"request": {
                     "board": slug, "title": "retry", "idempotency_key": key,
                 }}}, index + 1)
                 if retry["structuredContent"]["task_id"] != payload["task_id"]:
                     raise RuntimeError(f"idempotency failed on {slug}")
-                _rpc(client, token, "tools/call", {"name": "get_task", "arguments": {"request": {
+                _rpc(client, write_token, "tools/call", {"name": "get_task", "arguments": {"request": {
                     "board": slug, "task_id": payload["task_id"],
                 }}}, index + 2)
-                _rpc(client, token, "tools/call", {"name": "get_activity", "arguments": {"request": {
+                _rpc(client, write_token, "tools/call", {"name": "get_activity", "arguments": {"request": {
                     "board": slug, "task_id": payload["task_id"], "max_items": 20, "log_bytes": 0,
                 }}}, index + 3)
-                _rpc(client, token, "tools/call", {"name": "get_dispatch", "arguments": {"request": {
+                _rpc(client, write_token, "tools/call", {"name": "get_dispatch", "arguments": {"request": {
                     "board": slug, "task_id": payload["task_id"],
                 }}}, index + 4)
                 print(f"PASS write board={slug} task={payload['task_id']} idempotent=true")
