@@ -5,6 +5,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import httpx
+import pytest
 
 from hermes_chatgpt_mcp.adapter import HermesReadOnlyAdapter
 from hermes_chatgpt_mcp.auth import AuthService
@@ -100,6 +101,57 @@ def _assert_tool_error(result: dict, code: str, *, forbidden_path: Path | None =
     assert "stack" not in rendered.lower()
     if forbidden_path is not None:
         assert str(forbidden_path) not in rendered
+
+
+def test_settings_beta_derives_beta_mcp_surface_without_explicit_override(tmp_path, monkeypatch):
+    asyncio.run(_test_settings_beta_derives_beta_mcp_surface_without_explicit_override(tmp_path, monkeypatch))
+
+
+async def _test_settings_beta_derives_beta_mcp_surface_without_explicit_override(tmp_path, monkeypatch):
+    _, settings, auth, resolver, _ = _beta_app(tmp_path, monkeypatch)
+    app = create_app(board_resolver=resolver, settings=settings, auth_service=auth)
+    token = _token(auth, "manager", ["hermes:read", "hermes:manage"], board="fixture-board")
+    transport = httpx.ASGITransport(app=app)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=transport, base_url=settings.public_base_url) as client:
+            tools = (await _rpc(client, token, "tools/list"))["result"]["tools"]
+
+    assert {tool["name"] for tool in tools} == {
+        "list_boards",
+        "get_board",
+        "list_tasks",
+        "get_task",
+        "get_task_graph",
+        "get_dispatch",
+        "get_activity",
+        "create_task",
+        "create_board",
+        "add_comment",
+        "assign_task",
+    }
+
+
+@pytest.mark.parametrize(
+    ("settings_surface", "explicit_surface"),
+    [("beta", "stable"), ("stable", "beta")],
+)
+def test_create_app_rejects_surface_selector_mismatch(settings_surface, explicit_surface):
+    settings = replace(_settings(), surface=settings_surface)
+
+    with pytest.raises(ValueError, match="surface"):
+        create_app(settings=settings, surface=explicit_surface, board_resolver=object())
+
+
+@pytest.mark.parametrize(
+    ("settings_surface", "auth_surface"),
+    [("beta", "stable"), ("stable", "beta")],
+)
+def test_create_app_rejects_injected_auth_policy_mismatch(settings_surface, auth_surface):
+    settings = replace(_settings(), surface=settings_surface)
+    auth = AuthService(replace(settings, surface=auth_surface))
+
+    with pytest.raises(ValueError, match="policy"):
+        create_app(settings=settings, auth_service=auth, board_resolver=object())
 
 
 def test_beta_manage_scope_is_offered_one_board_oauth_authorization():

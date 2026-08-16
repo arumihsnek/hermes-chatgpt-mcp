@@ -18,7 +18,7 @@ from starlette.routing import request_response
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from .adapter import HermesReadOnlyAdapter, TaskNotFoundError
-from .auth import AuthService, BearerTokenVerifier, OAuthError
+from .auth import BETA_AUTH_POLICY, STABLE_AUTH_POLICY, AuthService, BearerTokenVerifier, OAuthError
 from .boards import BoardHandle, BoardResolutionError, HermesBoardResolver, SingleBoardResolver
 from .command import HermesCreateAdapter
 from .config import Settings
@@ -120,12 +120,23 @@ def create_app(
     board_resolver: HermesBoardResolver | SingleBoardResolver | None = None,
     settings: Settings | None = None,
     auth_service: AuthService | None = None,
-    surface: Literal["stable", "beta"] = "stable",
+    surface: Literal["stable", "beta"] | None = None,
 ):
-    if surface not in {"stable", "beta"}:
-        raise ValueError("surface must be stable or beta")
-    beta = surface == "beta"
     settings = settings or Settings.from_env()
+    configured_surface = settings.surface
+    if configured_surface not in {"stable", "beta"}:
+        raise ValueError("settings.surface must be stable or beta")
+    if surface is not None:
+        if surface not in {"stable", "beta"}:
+            raise ValueError("surface must be stable or beta")
+        if surface != configured_surface:
+            raise ValueError("surface override must match settings.surface")
+    effective_surface = configured_surface if surface is None else surface
+    expected_policy = BETA_AUTH_POLICY if effective_surface == "beta" else STABLE_AUTH_POLICY
+    auth_service = auth_service or AuthService(settings)
+    if auth_service.policy != expected_policy:
+        raise ValueError("auth_service policy does not match effective surface")
+    beta = effective_surface == "beta"
     if board_resolver is None:
         if adapter is not None:
             if command_adapter is None:
@@ -133,7 +144,6 @@ def create_app(
             board_resolver = SingleBoardResolver(adapter, command_adapter, settings)
         else:
             board_resolver = HermesBoardResolver(settings)
-    auth_service = auth_service or AuthService(settings)
     auth_settings = AuthSettings(
         issuer_url=settings.public_base_url,
         resource_server_url=settings.public_base_url,
