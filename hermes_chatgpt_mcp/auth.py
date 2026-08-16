@@ -78,7 +78,8 @@ class AuthService:
     scope = "hermes:read"
     read_scope = scope
     create_scope = "hermes:create"
-    supported_scopes = (scope, create_scope)
+    offline_scope = "offline_access"
+    supported_scopes = (scope, create_scope, offline_scope)
     _state_version = 1
 
     def __init__(self, settings: Settings) -> None:

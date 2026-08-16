@@ -35,6 +35,8 @@ class HermesCreateAdapter:
         triage: bool = False,
         idempotency_key: str | None = None,
     ) -> CreateTaskResult:
+        if not self.store.db_path.is_file():
+            raise FileNotFoundError(f"Hermes board database does not exist: {self.store.board}")
         parents = tuple(str(parent_id) for parent_id in parent_ids if str(parent_id))
         # ``connect_closing`` is Hermes' normal command connection. Passing the
         # resolved path and board keeps board selection explicit and avoids
