@@ -77,7 +77,7 @@ class CreateTaskInput(BoardQuery):
     tenant: TenantName | None = None
     session_id: SessionId | None = None
     triage: bool = False
-    idempotency_key: IdempotencyKey | None = None
+    idempotency_key: IdempotencyKey
 
 
 class ListTasksInput(BoardQuery):

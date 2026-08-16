@@ -67,12 +67,24 @@ async def _test_create_task_scope_isolation_and_real_command_path(tmp_path):
                 client,
                 read_token,
                 "tools/call",
-                {"name": "create_task", "arguments": {"request": {"title": "must be denied"}}},
+                {"name": "create_task", "arguments": {"request": {"title": "must be denied", "idempotency_key": "denied-1"}}},
                 2,
             )
             assert denied["result"]["isError"] is True
             assert "hermes:create" in str(denied)
             assert tree_fingerprint(fixture.root) == denied_before
+
+            missing_key_before = tree_fingerprint(fixture.root)
+            missing_key = await _rpc(
+                client,
+                create_token,
+                "tools/call",
+                {"name": "create_task", "arguments": {"request": {"title": "must be idempotent"}}},
+                21,
+            )
+            assert missing_key["result"]["isError"] is True
+            assert "idempotency_key" in str(missing_key)
+            assert tree_fingerprint(fixture.root) == missing_key_before
 
             await _rpc(
                 client,
@@ -156,7 +168,7 @@ async def _test_create_task_scope_isolation_and_real_command_path(tmp_path):
                 client,
                 create_token,
                 "tools/call",
-                {"name": "create_task", "arguments": {"request": {"title": "invalid", "parent_ids": ["missing-parent"]}}},
+                {"name": "create_task", "arguments": {"request": {"title": "invalid", "parent_ids": ["missing-parent"], "idempotency_key": "invalid-parent-1"}}},
                 10,
             )
             assert invalid["result"]["isError"] is True

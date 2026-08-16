@@ -132,7 +132,10 @@ class HermesBoardResolver:
             description=str(entry.get("description") or "")[:2_000],
             project_id=(str(entry["project_id"])[:128] if entry.get("project_id") else None),
             created_at=(int(created_at) if isinstance(created_at, int) else None),
-            is_default=slug == str(getattr(self.hermes, "DEFAULT_BOARD", "default")),
+            # MCP's default is the board used when the request omits ``board``;
+            # it may be a named Hermes board rather than Hermes' legacy
+            # ``default`` database.
+            is_default=slug == self.default_slug,
             db_path=self._db_path(slug),
         )
 
