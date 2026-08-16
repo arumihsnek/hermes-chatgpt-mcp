@@ -137,3 +137,28 @@ To remove only this integration:
 Removal preserves the environment file, OAuth state, Hermes source, databases,
 logs, and the existing Kanban service. Do not delete the state directory if a
 future rollback must preserve ChatGPT registrations.
+
+## Temporary OAuth handshake diagnostics
+
+The current diagnosis branch temporarily enables
+`MCP_OAUTH_DIAGNOSTICS=1` in the systemd unit. This does not grant any scope or
+change OAuth decisions. It emits only bounded scope names, safe status fields,
+and short one-way fingerprints for DCR, `/authorize`, `/token`, refresh, and
+MCP bearer verification events.
+
+After installing the committed unit, verify the service and inspect only the
+diagnostic marker:
+
+```bash
+sudo systemd-analyze verify /etc/systemd/system/hermes-chatgpt-mcp.service
+sudo systemctl daemon-reload
+sudo systemctl restart hermes-chatgpt-mcp.service
+sudo journalctl -u hermes-chatgpt-mcp.service -g hermes_oauth_diagnostic --since '5 minutes ago' --no-pager
+```
+
+Do not copy general Uvicorn access logs into evidence. The server disables
+Uvicorn access logging while this diagnostic build is running because OAuth
+query strings can contain PKCE and authorization state values. Once the one
+fresh ChatGPT authorization has been captured, remove the temporary
+`MCP_OAUTH_DIAGNOSTICS=1` unit line, restore normal deployment logging policy,
+reload systemd, and restart the service.

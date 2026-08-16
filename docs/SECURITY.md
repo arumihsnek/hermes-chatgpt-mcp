@@ -71,6 +71,18 @@ refresh tokens are never written to Git or logs.
 If the state file exists with broad permissions or an invalid structure, the
 service fails closed instead of silently discarding client registrations.
 
+## Temporary OAuth diagnostics
+
+For the 2026-08-16 scope-loss experiment, the service can run with
+`MCP_OAUTH_DIAGNOSTICS=1`. The diagnostic logger is disabled by default and
+allows only known scope names, bounded protocol status fields, redirect
+scheme/host/path, and short one-way fingerprints. It never records access
+tokens, refresh tokens, authorization codes, PKCE values, credentials,
+cookies, Authorization headers, or raw OAuth-state contents. Uvicorn access
+logging is disabled in this diagnostic build so OAuth query strings are not
+duplicated into the journal. Disable the flag and restart after the controlled
+authorization has been observed.
+
 ## Data minimization and errors
 
 Responses contain bounded IDs, titles, statuses, bodies, summaries, activity,

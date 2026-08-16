@@ -10,6 +10,7 @@ def test_systemd_unit_keeps_query_command_and_oauth_state_boundaries():
     assert "NoNewPrivileges=yes" in unit
     assert "StateDirectory=hermes-chatgpt-mcp" in unit
     assert "StateDirectoryMode=0700" in unit
+    assert "Environment=MCP_OAUTH_DIAGNOSTICS=1" in unit
     assert "/var/lib/hermes-chatgpt-mcp" in unit
     assert "/home/ubuntu/.hermes/kanban/boards/codex_app_server" in unit
     assert "/home/ubuntu/.hermes/kanban/boards/dashboard" in unit

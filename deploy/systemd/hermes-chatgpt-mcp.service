@@ -11,6 +11,8 @@ WorkingDirectory=/home/ubuntu/code/hermes-chatgpt-mcp
 EnvironmentFile=/home/ubuntu/.hermes/hermes-chatgpt-mcp.env
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=MCP_OAUTH_STATE_FILE=/var/lib/hermes-chatgpt-mcp/oauth-state.json
+# Temporary, opt-in-safe OAuth handshake diagnostics for the 2026-08-16 experiment.
+Environment=MCP_OAUTH_DIAGNOSTICS=1
 ExecStart=/home/ubuntu/hermes-agent/venv/bin/python -m hermes_chatgpt_mcp.server
 Restart=on-failure
 RestartSec=5
