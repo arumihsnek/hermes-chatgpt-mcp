@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hermes-chatgpt-mcp"
-version = "0.1.0"
-description = "Authenticated read-only MCP facade for the canonical Hermes Kanban query surface"
+version = "0.2.0"
+description = "Authenticated MCP facade for canonical Hermes Kanban queries and safe task creation"
 requires-python = ">=3.11,<3.13"
 dependencies = [
   "mcp==1.28.1",
@@ -28,4 +28,3 @@ include = ["hermes_chatgpt_mcp*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
-

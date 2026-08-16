@@ -2,25 +2,78 @@
 
 ## External surface
 
-The only public MCP route is `/mcp`. OpenResty forwards only that exact path, the two OAuth metadata paths, `/oauth/`, and `/healthz` to loopback port 8789. The existing HermesKanban `/` route remains separate. The service does not listen on a public interface.
+The public surface is the exact `/mcp` endpoint plus the OAuth discovery,
+registration, authorization, token, and `/healthz` paths. OpenResty forwards
+only those paths to loopback port 8789. The existing HermesKanban `/` route,
+database files, and internal Hermes ports remain separate.
 
-## Authentication
+## Authentication and scopes
 
-All MCP requests require a bearer token validated for issuer, audience, expiry, signature, and `hermes:read`. OAuth registration accepts only public `none` clients, exact registered HTTPS redirect URIs (or localhost HTTP for development), authorization code, PKCE S256, and bounded scopes. Login comparisons are constant-time and failure messages are generic. Access and refresh state is short-lived/in-memory and secrets are environment-only.
+All MCP requests require a bearer token validated for issuer, audience,
+expiry, signature, and `hermes:read`. OAuth registration accepts public
+`none` clients, exact registered HTTPS redirect URIs (or localhost HTTP for
+development), authorization code, PKCE S256, and only the supported scopes:
 
-## Read-only defense in depth
+- `hermes:read` — six query tools;
+- `hermes:create` — `create_task`, always granted together with
+  `hermes:read`.
 
-- Adapter imports Hermes query models/functions only.
-- Production never calls Hermes `connect`, `init_db`, `write_txn`, dispatch, or command methods.
-- SQLite opens `file:...?mode=ro`; the connection immediately enables `PRAGMA query_only=ON`.
-- MCP annotations mark every tool `readOnlyHint=true`, `destructiveHint=false`, and `idempotentHint=true`.
-- The generated FastMCP argument envelope and nested Pydantic models reject unknown fields.
-- The fixture and live tests fingerprint DB/WAL/SHM/metadata before and after all read operations.
+The `create_task` handler performs an additional scope check. A valid
+read-only token therefore cannot reach the command adapter. Login comparisons
+are constant-time and failures are generic. No client secret is accepted.
 
-## Data minimization
+## Query/command defense in depth
 
-IDs, titles, statuses, bounded bodies, summaries, activity, and safe attachment metadata are returned. Stored filesystem paths, workspace paths, credentials, environment-like metadata, and secret-like fields are removed or redacted. Errors exposed to clients are stable and do not include stack traces.
+- `ReadOnlyHermesStore` is the only query storage boundary and uses SQLite URI
+  `mode=ro` plus immediate `PRAGMA query_only=ON`.
+- The query adapter never calls Hermes `connect`, `init_db`, `write_txn`,
+  `create_task`, dispatch, or other mutators.
+- `HermesCreateAdapter` is a separate class with one public method and calls
+  only Hermes' canonical `kanban_db.create_task`; this repository contains no
+  task-table write SQL.
+- The MCP tool allowlist contains exactly seven tools. No update/delete/claim/
+  assign/move/start/complete/review/approve/reject/retry/import/sync tool is
+  registered.
+- Read tools are annotated `readOnlyHint=true`, `destructiveHint=false`, and
+  `idempotentHint=true`.
+- `create_task` is annotated `readOnlyHint=false`, `destructiveHint=false`
+  (additive), and `idempotentHint=false` because an idempotency key is
+  optional.
+- Strict Pydantic schemas reject unknown fields and bound IDs, title/body
+  size, parent count, priority, and all list/graph/activity limits.
+- Tests compare fixture state before/after every query operation and verify
+  that denied/invalid creation calls do not add tasks.
 
-## Operational controls
+## OAuth persistence
 
-Inputs have explicit size/count/depth limits; systemd uses a dedicated unprivileged user, `NoNewPrivileges`, private temporary storage, read-only system/home protections, and journald logs. The selected board directory is writable only as a SQLite coordination exception; query-only mode remains enforced by the application.
+The service persists only what must survive restart:
+
+- DCR client metadata;
+- hashes of active refresh tokens and their client/scope/expiry records.
+
+Access tokens are signed self-contained JWT-like bearer values and are not
+stored. Authorization codes are short-lived one-time values and remain
+in-memory. Refresh tokens are rotated and the old hash is removed before the
+new hash is persisted. The state file is written atomically with mode `0600`
+inside a systemd-owned `0700` directory. Passwords, signing keys, and raw
+refresh tokens are never written to Git or logs.
+
+If the state file exists with broad permissions or an invalid structure, the
+service fails closed instead of silently discarding client registrations.
+
+## Data minimization and errors
+
+Responses contain bounded IDs, titles, statuses, bodies, summaries, activity,
+and safe attachment metadata. Stored filesystem paths, workspace paths,
+credentials, environment-like metadata, and secret-like fields are removed or
+redacted. Error responses are stable and do not expose SQL, stack traces, or
+configuration values.
+
+## Process and network controls
+
+systemd runs as the unprivileged `ubuntu` user with `NoNewPrivileges`,
+`ProtectSystem=full`, `ProtectHome=read-only`, private devices/temp space,
+restricted address families, and explicit write paths for only the selected
+Hermes board and OAuth state directory. The service binds to loopback; TLS is
+terminated by the existing OpenResty edge. The deployment does not expose
+other Hermes services.

@@ -28,6 +28,7 @@ def test_settings_parse_bounded_values(monkeypatch):
     assert settings.public_base_url == "https://mcp.example.test"
     assert settings.max_page_size == 25
     assert settings.port == 9876
+    assert str(settings.oauth_state_file) == "/var/lib/hermes-chatgpt-mcp/oauth-state.json"
 
 
 def test_settings_reject_oversized_page_limit(monkeypatch):

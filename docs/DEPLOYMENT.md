@@ -1,10 +1,13 @@
 # OCI deployment
 
-The OCI machine runs the existing HermesKanban UI on loopback port 8790 and terminates TLS in a 1Panel OpenResty container. This integration uses loopback port 8789 and path-specific routing on the existing `kanban.hermesinthenight.duckdns.org` TLS server, so it does not expose a new Hermes process or require a new certificate name.
+The OCI host runs HermesKanban and terminates TLS in the existing 1Panel
+OpenResty container. `hermes-chatgpt-mcp` remains an independent systemd
+service on `127.0.0.1:8789`; OpenResty forwards only the MCP/OAuth/health
+paths for `kanban.hermesinthenight.duckdns.org`.
 
-## Install
+## Install or update
 
-Run from the integration repository as `ubuntu` with non-interactive sudo available:
+Run from this repository as `ubuntu` with non-interactive sudo:
 
 ```bash
 ./scripts/install_oci.sh
@@ -13,22 +16,48 @@ Run from the integration repository as `ubuntu` with non-interactive sudo availa
 The installer:
 
 1. installs the systemd unit and root-owned OpenResty location include;
-2. creates `/home/ubuntu/.hermes/hermes-chatgpt-mcp.env` as `ubuntu:ubuntu` mode 0600 if it does not exist, generating private credentials without printing them;
-3. uses the configured `codex_app_server` board and loopback `127.0.0.1:8789` defaults;
+2. creates or preserves `/home/ubuntu/.hermes/hermes-chatgpt-mcp.env` as
+   `ubuntu:ubuntu`, mode `0600`, without printing its values;
+3. configures the selected `codex_app_server` board and loopback port;
 4. validates OpenResty inside the running 1Panel container;
-5. restarts the MCP unit, waits for `/healthz`, and reloads OpenResty through `/usr/local/bin/reload-openresty-1panel.sh`.
+5. reloads systemd and restarts the service;
+6. waits for loopback health and reloads OpenResty through
+   `/usr/local/bin/reload-openresty-1panel.sh`.
 
-The `.locations` suffix is intentional: 1Panel's `conf.d/*.conf` include runs at HTTP scope, while this file contains `location` blocks and is included only inside the existing Kanban server block.
+The systemd unit declares `StateDirectory=hermes-chatgpt-mcp`, which creates
+`/var/lib/hermes-chatgpt-mcp` as a private `0700` directory. The OAuth state
+file is `/var/lib/hermes-chatgpt-mcp/oauth-state.json` with mode `0600`.
+`MCP_OAUTH_STATE_FILE` is also explicit in the unit, so an old env file cannot
+silently restore the v0.1 in-memory behavior.
+
+## Sandbox boundary
+
+The unit keeps `NoNewPrivileges`, `ProtectSystem=full`, `ProtectHome=read-only`,
+`PrivateDevices`, `PrivateTmp`, and restricted address families. The only
+Hermes write allowance is:
+
+```text
+/home/ubuntu/.hermes/kanban/boards/codex_app_server
+```
+
+That directory is needed by Hermes' canonical command connection for its
+normal SQLite/WAL operation. The query adapter still opens its own connection
+with URI `mode=ro` and immediately sets `PRAGMA query_only=ON`; it never uses
+the writable command connection. The second write allowance is only the
+service-owned OAuth state directory. Change the board `ReadWritePaths` line
+and the environment together if the deployed board changes.
 
 ## Verification
 
 ```bash
 sudo systemd-analyze verify /etc/systemd/system/hermes-chatgpt-mcp.service
+sudo systemctl is-enabled hermes-chatgpt-mcp.service
 sudo systemctl is-active hermes-chatgpt-mcp.service
+stat -c '%A %U:%G %n' /var/lib/hermes-chatgpt-mcp
 sudo journalctl -u hermes-chatgpt-mcp.service -n 50 --no-pager
 ```
 
-The edge check must be performed with the OpenResty container's actual executable, not the failed host `nginx.service`:
+Check the actual OpenResty executable in the container:
 
 ```bash
 sudo ctr -n moby containers list
@@ -42,22 +71,47 @@ Then verify from a CA-valid client:
 GET https://kanban.hermesinthenight.duckdns.org/healthz
 GET https://kanban.hermesinthenight.duckdns.org/.well-known/oauth-protected-resource
 GET https://kanban.hermesinthenight.duckdns.org/.well-known/oauth-authorization-server
+POST https://kanban.hermesinthenight.duckdns.org/oauth/register
+POST https://kanban.hermesinthenight.duckdns.org/oauth/token
+POST https://kanban.hermesinthenight.duckdns.org/mcp
 ```
 
-The MCP endpoint itself must return `401` without a bearer token. Use the OAuth flow, not a copied secret in a shell history, to obtain a ChatGPT token.
+The MCP endpoint must return `401` without a bearer token. A complete test
+must use DCR + PKCE, request `hermes:read hermes:create`, verify seven tools
+and their annotations, call all six read tools, call `create_task`, and read
+the created task back. Never copy the runtime password or bearer tokens into
+shell history or logs.
 
-## SQLite sandbox note
+## Restart persistence check
 
-The application always opens Hermes with SQLite URI `mode=ro` and immediately sets `PRAGMA query_only=ON`. The systemd unit permits writes only to the selected board directory so SQLite can create transient WAL/SHM coordination sidecars when Hermes uses WAL; no Hermes table/row mutation API is reachable and the read-only tests fingerprint the state before/after every operation. Change the `ReadWritePaths` line whenever the configured board changes.
+Before a production restart, register a temporary public test client with a
+local/controlled callback and obtain a refresh token through the normal PKCE
+flow. Record only the client ID (not tokens), then run:
 
-## TLS and rollback
+```bash
+sudo systemctl restart hermes-chatgpt-mcp.service
+```
 
-The existing Kanban certificate must be a valid server chain, not just a leaf certificate. The installer does not mint or copy certificates. If the edge config or certificate needs repair, back it up first and validate inside the OpenResty container before reloading. The integration deployment keeps timestamped backups of the edited `hermes-subdomains.conf`.
+Use the same client ID and refresh token against `/oauth/token`. Success proves
+that DCR registration and refresh rotation survived the restart. The old
+refresh token must be rejected after rotation, and the new token must carry
+the same requested scopes. Authorization codes are intentionally not persisted
+and should expire or become invalid across a restart.
 
+An existing v0.1 ChatGPT registration lived only in the old process memory.
+The first restart after this rollout may therefore require ChatGPT to run its
+OAuth flow again; registrations made after the state file is active survive
+future restarts.
+
+## Rollback and removal
+
+The installer creates timestamped backups of the edited OpenResty host config.
 To remove only this integration:
 
 ```bash
 ./scripts/uninstall_oci.sh
 ```
 
-This stops/removes only `hermes-chatgpt-mcp.service` and its managed include. It preserves the environment file and never deletes Hermes databases, logs, source, or the existing Kanban service.
+Removal preserves the environment file, OAuth state, Hermes source, databases,
+logs, and the existing Kanban service. Do not delete the state directory if a
+future rollback must preserve ChatGPT registrations.
