@@ -18,8 +18,8 @@ The installer:
 1. installs the systemd unit and root-owned OpenResty location include;
 2. creates or preserves `/home/ubuntu/.hermes/hermes-chatgpt-mcp.env` as
    `ubuntu:ubuntu`, mode `0600`, without printing its values;
-3. configures the canonical board resolver with the bounded OCI allowlists
-   `codex_app_server,dashboard` and loopback port;
+3. configures the canonical board resolver to discover all active boards by
+   default and keeps loopback port 8789;
 4. validates OpenResty inside the running 1Panel container;
 5. reloads systemd and restarts the service;
 6. waits for loopback health and reloads OpenResty through
@@ -34,20 +34,22 @@ silently restore the v0.1 in-memory behavior.
 ## Sandbox boundary
 
 The unit keeps `NoNewPrivileges`, `ProtectSystem=full`, `ProtectHome=read-only`,
-`PrivateDevices`, `PrivateTmp`, and restricted address families. The only
-Hermes write allowances are:
+`PrivateDevices`, `PrivateTmp`, and restricted address families. The Hermes
+write allowance is limited to canonical board storage:
 
 ```text
-/home/ubuntu/.hermes/kanban/boards/codex_app_server
-/home/ubuntu/.hermes/kanban/boards/dashboard
+/home/ubuntu/.hermes/kanban/boards
+/home/ubuntu/.hermes/kanban.db (+ its -wal/-shm sidecars)
 ```
 
 That directory is needed by Hermes' canonical command connection for its
 normal SQLite/WAL operation. The query adapter still opens its own connection
 with URI `mode=ro` and immediately sets `PRAGMA query_only=ON`; it never uses
-the writable command connection. The third write allowance is only the
-service-owned OAuth state directory. Keep `ReadWritePaths`,
-`MCP_KANBAN_READ_BOARDS`, and `MCP_KANBAN_CREATE_BOARDS` synchronized.
+the writable command connection. The second write allowance is only the
+service-owned OAuth state directory. Optional `MCP_KANBAN_*_BOARDS` values can
+still narrow the deployment, but are not required for normal all-board read
+and single-board OAuth write grants. The legacy `default` board is included
+because Hermes canonically exposes it alongside named boards.
 
 ## Verification
 
@@ -79,10 +81,10 @@ POST https://kanban.hermesinthenight.duckdns.org/mcp
 ```
 
 The MCP endpoint must return `401` without a bearer token. A complete test
-must use DCR + PKCE, request `hermes:read hermes:create`, verify eight tools
-(seven read plus `create_task`) and their annotations, call `list_boards`,
-read both allowlisted boards explicitly, create one idempotent test task on
-each controlled board, and read both tasks back. Never copy the runtime
+must use DCR + PKCE, choose read-only or read+write in the OAuth consent page,
+verify eight tools (seven read plus `create_task`) and their annotations, call
+`list_boards`, read two canonical boards, and for write testing use separate
+board-bound grants—one grant per selected board. Never copy the runtime
 password, refresh token, or bearer token into shell history or logs.
 
 For a controlled live check, use clearly prefixed test cards and remove them
@@ -140,13 +142,14 @@ Removal preserves the environment file, OAuth state, Hermes source, databases,
 logs, and the existing Kanban service. Do not delete the state directory if a
 future rollback must preserve ChatGPT registrations.
 
-## Temporary OAuth handshake diagnostics
+## OAuth handshake diagnostics
 
-The current diagnosis branch temporarily enables
-`MCP_OAUTH_DIAGNOSTICS=1` in the systemd unit. This does not grant any scope or
-change OAuth decisions. It emits only bounded scope names, safe status fields,
-and short one-way fingerprints for DCR, `/authorize`, `/token`, refresh, and
-MCP bearer verification events.
+OAuth diagnostics are disabled in the normal systemd unit. If a future
+controlled handshake diagnosis needs them, set `MCP_OAUTH_DIAGNOSTICS=1` only
+for that experiment, then restore `0` and restart. Diagnostics do not grant
+scope or change OAuth decisions; they emit only bounded scope/board names,
+safe status fields, and short one-way fingerprints for DCR, `/authorize`,
+`/token`, refresh, revocation, and MCP bearer verification events.
 
 After installing the committed unit, verify the service and inspect only the
 diagnostic marker:
@@ -159,8 +162,5 @@ sudo journalctl -u hermes-chatgpt-mcp.service -g hermes_oauth_diagnostic --since
 ```
 
 Do not copy general Uvicorn access logs into evidence. The server disables
-Uvicorn access logging while this diagnostic build is running because OAuth
-query strings can contain PKCE and authorization state values. Once the one
-fresh ChatGPT authorization has been captured, remove the temporary
-`MCP_OAUTH_DIAGNOSTICS=1` unit line, restore normal deployment logging policy,
-reload systemd, and restart the service.
+Uvicorn access logging because OAuth query strings can contain PKCE and
+authorization state values. Never record token values or the OAuth state file.

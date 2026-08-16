@@ -20,12 +20,13 @@ development), authorization code, PKCE S256, and only the supported scopes:
 - `offline_access` — OAuth refresh-token renewal only; it is not a Hermes
   authorization scope.
 
-The `scope` returned by DCR is the client's default scope metadata, not a
-maximum permission grant. During `/oauth/authorize`, the resource owner may
-explicitly approve any scope advertised by this authorization server. The
-issued token still contains only the scopes requested and approved in that
-authorization. A token containing only `hermes:read` remains unable to call
-`create_task`.
+`hermes:read` is global to all active canonical boards. The `scope` returned by
+DCR is the client's default scope metadata, not a maximum permission grant.
+During `/oauth/authorize`, the resource owner chooses either read-only access
+to all boards or read plus write access to exactly one selected board. The
+issued token contains only the approved scopes and, for a write grant, signed
+`board` and `board_access=write` claims. A token containing only `hermes:read`
+remains unable to call `create_task`.
 
 The `create_task` handler performs an additional scope check. A valid
 read-only token therefore cannot reach the command adapter. Login comparisons
@@ -48,12 +49,10 @@ are constant-time and failures are generic. No client secret is accepted.
   `idempotentHint=true`.
 - `create_task` is annotated `readOnlyHint=false`, `destructiveHint=false`
   (additive), and `idempotentHint=true`; its idempotency key is mandatory.
-- `MCP_KANBAN_READ_BOARDS` and `MCP_KANBAN_CREATE_BOARDS` are deployment-level
-  allowlists. Hermes has no per-principal board ACL, so this is not presented
-  as user-specific authorization. Read-authorized boards are discoverable;
-  create capability additionally depends on the OAuth token's
-  `hermes:create` scope. Boards outside the read allowlist are intentionally
-  indistinguishable from unknown boards.
+- `MCP_KANBAN_READ_BOARDS` and `MCP_KANBAN_CREATE_BOARDS` remain optional
+  deployment caps. When omitted, all active canonical boards are readable and
+  eligible for a write grant. They are not user ACLs. The effective write
+  boundary is the OAuth grant's one selected board plus `hermes:create`.
 - Strict Pydantic schemas reject unknown fields and bound IDs, title/body
   size, parent count, priority, and all list/graph/activity limits.
 - Tests compare fixture state before/after every query operation and verify
@@ -66,7 +65,8 @@ are constant-time and failures are generic. No client secret is accepted.
 The service persists only what must survive restart:
 
 - DCR client metadata;
-- hashes of active refresh tokens and their client/scope/expiry records.
+- hashes of active refresh tokens and their client/scope/expiry/board records;
+- revoked OAuth grant identifiers.
 
 Access tokens are signed self-contained JWT-like bearer values and are not
 stored. Authorization codes are short-lived one-time values and remain
@@ -77,6 +77,13 @@ refresh tokens are never written to Git or logs.
 
 If the state file exists with broad permissions or an invalid structure, the
 service fails closed instead of silently discarding client registrations.
+
+## OAuth grant revocation
+
+`POST /oauth/revoke` accepts an access or refresh token and invalidates the
+associated grant. Revocation removes all refresh-token records for the grant
+and makes signed access tokens fail validation immediately through their
+persisted grant identifier. The endpoint returns no token-state information.
 
 ## Temporary OAuth diagnostics
 
@@ -102,8 +109,10 @@ configuration values.
 
 systemd runs as the unprivileged `ubuntu` user with `NoNewPrivileges`,
 `ProtectSystem=full`, `ProtectHome=read-only`, private devices/temp space,
-restricted address families, and explicit write paths for only the configured
-create-board directories (currently
-`codex_app_server` and `dashboard`) and OAuth state directory. The service
-binds to loopback; TLS is terminated by the existing OpenResty edge. The
-deployment does not expose other Hermes services.
+restricted address families, and write paths limited to canonical Hermes board
+storage (named-board storage plus the legacy default database/WAL sidecars)
+and the OAuth state directory. The query adapter still uses SQLite `mode=ro`
+and `PRAGMA query_only=ON`; the board-storage allowance is only for Hermes'
+canonical command connection. The service binds to loopback; TLS is
+terminated by the existing OpenResty edge. The deployment does not expose
+other Hermes services.

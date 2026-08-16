@@ -1,12 +1,12 @@
 # hermes-chatgpt-mcp
 
 `hermes-chatgpt-mcp` is an authenticated remote MCP facade for the canonical
-Hermes Kanban service. It keeps the query adapter read-only, discovers an
-explicit service-authorized set of Hermes boards, and exposes one narrowly
-scoped command, `create_task`, through Hermes'
+Hermes Kanban service. It keeps the query adapter read-only, discovers all
+active canonical Hermes boards for reading, and exposes one narrowly scoped
+command, `create_task`, through Hermes'
 `hermes_cli.kanban_db.create_task` API.
 
-## v0.3 scope
+## v0.4 scope
 
 The public surface is seven READ tools plus one WRITE tool:
 
@@ -14,10 +14,12 @@ The public surface is seven READ tools plus one WRITE tool:
   `get_task_graph`, `get_dispatch`, `get_activity`;
 - WRITE: `create_task` only.
 
-There is still no update, delete, claim, assign-after-creation, move, start,
+Read access is global to the active canonical boards. A write authorization is
+bound to exactly one selected board; refresh preserves that board and OAuth
+revocation invalidates the whole grant. There is still no update, delete, claim, assign-after-creation, move, start,
 complete, close, review, approve, reject, retry, dispatch mutation, import, or
 sync-back capability. Hermes remains the semantic authority for boards, task
-status, links, scheduler state, outcomes, and audit activity. v0.3 is still
+status, links, scheduler state, outcomes, and audit activity. v0.4 is still
 a minimal management surface, not a full Kanban controller.
 
 ## Architecture
@@ -30,7 +32,8 @@ OpenResty /mcp and OAuth paths
     │ loopback 127.0.0.1:8789
     ▼
 hermes-chatgpt-mcp (systemd)
-    ├── board resolver: canonical Hermes discovery + service allowlists
+    ├── board resolver: canonical Hermes discovery + optional deployment caps
+    ├── OAuth grant: read all boards or write exactly one selected board
     ├── query path: mode=ro + PRAGMA query_only=ON
     │       ▼
     │   Hermes hermes_cli.kanban_db query API
@@ -53,11 +56,9 @@ rejected alternatives are recorded in
 - Python 3.11.
 - Hermes installed at `/home/ubuntu/hermes-agent`, or `HERMES_AGENT_ROOT`
   pointing to the real source tree.
-- The service user must be able to read every board in the configured read
-  allowlist.
-- The OCI service also needs write access only to the configured create-board
-  directories for Hermes' canonical command connection and to its private
-  OAuth state directory.
+- The service user must be able to read the canonical active board databases.
+- The OCI service needs write access to the Hermes boards root for the
+  canonical command connection and to its private OAuth state directory.
 
 ## Configuration
 
@@ -67,9 +68,10 @@ minimum set:
 ```text
 HERMES_AGENT_ROOT=/home/ubuntu/hermes-agent
 HERMES_KANBAN_HOME=/home/ubuntu/.hermes
-HERMES_KANBAN_BOARD=codex_app_server
-MCP_KANBAN_READ_BOARDS=codex_app_server,dashboard
-MCP_KANBAN_CREATE_BOARDS=codex_app_server,dashboard
+# Omit the following optional caps to use all active canonical boards:
+# HERMES_KANBAN_BOARD=codex_app_server
+# MCP_KANBAN_READ_BOARDS=codex_app_server,dashboard
+# MCP_KANBAN_CREATE_BOARDS=codex_app_server,dashboard
 MCP_PUBLIC_BASE_URL=https://kanban.hermesinthenight.duckdns.org
 MCP_HOST=127.0.0.1
 MCP_PORT=8789
@@ -98,11 +100,12 @@ The MCP endpoint is `/mcp`; liveness is `/healthz`. OAuth metadata is exposed
 at `/.well-known/oauth-authorization-server`, and protected-resource metadata
 at `/.well-known/oauth-protected-resource`.
 
-`HERMES_KANBAN_BOARD` is the default used when `board` is omitted. The two
-`MCP_KANBAN_*_BOARDS` values are deployment-level allowlists resolved through
-Hermes' canonical `list_boards()` and `kanban_db_path()`. An explicit unknown
-or unauthorized board never falls back to the default. If the read allowlist
-is absent, discovery fails safe to the configured default board only.
+When `HERMES_KANBAN_BOARD` is omitted, a read request without `board` follows
+Hermes' current default dynamically. The optional `MCP_KANBAN_*_BOARDS` values
+are deployment caps, not user permissions; when omitted, all active canonical
+boards are readable and eligible for a write grant. An explicit unknown board
+never falls back to the default. `create_task` additionally requires a
+write-capable OAuth grant bound to that exact board.
 
 ## Tests and live proof
 
@@ -129,7 +132,7 @@ HERMES_KANBAN_BOARD=codex_app_server \
 /home/ubuntu/hermes-agent/venv/bin/python scripts/live_smoke.py
 ```
 
-The v0.3 integration tests construct multiple temporary boards with Hermes'
+The v0.4 integration tests construct multiple temporary boards with Hermes'
 `SCHEMA_SQL` and execute the real `kanban_db.create_task` command path; no
 mocked task-creation implementation is used.
 
@@ -145,7 +148,7 @@ HERMES_LIVE_TEST=1 HERMES_LIVE_WRITE_TEST=1 \
 /home/ubuntu/hermes-agent/venv/bin/python scripts/live_multiboard_smoke.py
 ```
 
-The write mode uses unique `[mcp-v03-smoke ...]` titles and cleans up through
+The write mode uses unique `[mcp-v04-smoke ...]` titles and cleans up through
 Hermes' native archive/delete functions in a `finally` block. It is never an
 MCP capability.
 
@@ -153,8 +156,8 @@ MCP capability.
 
 READ tools:
 
-- `list_boards`: bounded discovery of boards in the service read allowlist,
-  including the resolved default and per-token create capability.
+- `list_boards`: bounded discovery of all active canonical boards, including
+  the resolved default and the single-board write capability of the token.
 - `get_board`: selected board metadata and canonical status/assignee counts.
 - `list_tasks`: bounded canonical task listing with status, assignee, tenant,
   session, archive, limit, and order filters.
@@ -191,31 +194,32 @@ supplied only through the environment file. The service advertises `none` as
 its token endpoint authentication method and does not claim support for client
 secrets.
 
-Scopes are separated:
+Scopes and board grants are separate:
 
-- `hermes:read` is required by all seven query tools;
-- `hermes:create` is required by `create_task`, and its grant also includes
-  `hermes:read` because the MCP resource has a resource-wide read guard.
+- `hermes:read` is required by all seven query tools and reads every active
+  canonical board;
+- `hermes:create` is required by `create_task`, but it is never sufficient by
+  itself: the OAuth grant must also contain exactly one selected board with
+  `board_access=write`;
 - `offline_access` is an OAuth protocol scope for refresh-token renewal; it
   grants no Hermes command capability.
 
 A DCR registration's returned `scope` is the client's default scope metadata,
-not a token grant. A later `/oauth/authorize` request may explicitly request
-any server-advertised scope and user consent determines the resulting token.
-Existing read-only access tokens are not upgraded silently; reauthorization is
-required.
+not a token grant. The OAuth consent page offers either read-only access to all
+boards or read plus write access to one selected board. Existing tokens are
+never upgraded silently; selecting another write board requires a new
+authorization, and `/oauth/revoke` invalidates the grant immediately.
 
 A read-only token cannot create a card. The create tool is annotated
 `readOnlyHint=false`, `destructiveHint=false` (additive write), and
 `idempotentHint=true`; the required idempotency key makes safe retries return
 the existing non-archived task instead of creating a duplicate.
 
-Hermes currently has no per-principal board ACL model. Therefore the board
-allowlists are service-level policy: every principal with `hermes:read` can
-see the configured read boards, while `hermes:create` additionally enables
-creation only on the configured create boards. A board outside the read
-allowlist is reported as unavailable, so existence and authorization are not
-distinguished to callers.
+Hermes currently has no per-principal board ACL model. This v0.4 contract is
+therefore intentionally resource-owner/session scoped: `hermes:read` permits
+global reading, while a signed OAuth grant limits `hermes:create` to one
+canonical board. The grant is not a replacement for a future multi-user
+Hermes ACL service.
 
 In ChatGPT, add a custom connector/MCP connection using:
 
@@ -223,14 +227,13 @@ In ChatGPT, add a custom connector/MCP connection using:
 https://kanban.hermesinthenight.duckdns.org/mcp
 ```
 
-Complete OAuth when ChatGPT opens the authorization page. Request both
-`hermes:read` and `hermes:create` when the app should create cards; request
-only `hermes:read` for a read-only connection. ChatGPT may use a frozen tool
-snapshot for an existing app; reconnect or rescan the app after deployment so
-`list_boards` and the current annotations are discovered. If OAuth asks for
-the new create permission, approve it explicitly. An existing connection
-authorized only for `hermes:read` cannot create until it is reauthorized with
-`hermes:create`.
+Complete OAuth when ChatGPT opens the authorization page. The page lists all
+active boards and offers read-only access to all of them or read+write access
+to exactly one selected board. A read-only token can search/read every board;
+`create_task` is available only on the selected write board. To change the
+write board, revoke/reconnect the app and choose the new board. ChatGPT may use
+a frozen tool snapshot for an existing app; reconnect or rescan after
+deployment so the current OAuth metadata and tool annotations are discovered.
 
 The callback must be the URI ChatGPT sends during dynamic registration; the
 implementation accepts the documented
@@ -267,16 +270,14 @@ sudo journalctl -u hermes-chatgpt-mcp.service -f
 The installer preserves the runtime environment and timestamped edge backups
 during rollback. It never modifies Hermes source or Kanban rows itself.
 
-## Limitations of v0.3
+## Limitations of v0.4
 
-- Board ACLs are service-level, not per-user/per-board. Hermes does not expose
-  a canonical principal ACL, so the MCP cannot honestly claim finer isolation.
-- Hermes' canonical board discovery is exposed only through the configured
-  bounded allowlist; this service does not browse arbitrary filesystem paths.
-- DCR clients and refresh-token rotation state persist, but authorization
-  codes are intentionally ephemeral and access tokens expire normally.
-- Existing v0.1 clients registered before the persistence rollout are not
-  recoverable after the first restart and may need ChatGPT reauthorization.
+- Board reads are intentionally global to the configured Hermes resource owner;
+  this is not a per-user ACL model.
+- A write grant covers exactly one board. Board administration and tenant
+  creation are not exposed.
+- DCR clients, refresh-token rotation state, and revoked grant IDs persist;
+  authorization codes remain intentionally ephemeral.
 - This is not a full write/control plane: `create_task` is the only write;
   comments, attachments, scheduler, notification, lifecycle, board
   administration, and task-editing mutations remain unavailable.
