@@ -199,6 +199,12 @@ Scopes are separated:
 - `offline_access` is an OAuth protocol scope for refresh-token renewal; it
   grants no Hermes command capability.
 
+A DCR registration's returned `scope` is the client's default scope metadata,
+not a token grant. A later `/oauth/authorize` request may explicitly request
+any server-advertised scope and user consent determines the resulting token.
+Existing read-only access tokens are not upgraded silently; reauthorization is
+required.
+
 A read-only token cannot create a card. The create tool is annotated
 `readOnlyHint=false`, `destructiveHint=false` (additive write), and
 `idempotentHint=true`; the required idempotency key makes safe retries return

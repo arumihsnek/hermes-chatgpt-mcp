@@ -20,6 +20,13 @@ development), authorization code, PKCE S256, and only the supported scopes:
 - `offline_access` — OAuth refresh-token renewal only; it is not a Hermes
   authorization scope.
 
+The `scope` returned by DCR is the client's default scope metadata, not a
+maximum permission grant. During `/oauth/authorize`, the resource owner may
+explicitly approve any scope advertised by this authorization server. The
+issued token still contains only the scopes requested and approved in that
+authorization. A token containing only `hermes:read` remains unable to call
+`create_task`.
+
 The `create_task` handler performs an additional scope check. A valid
 read-only token therefore cannot reach the command adapter. Login comparisons
 are constant-time and failures are generic. No client secret is accepted.

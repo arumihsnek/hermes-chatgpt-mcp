@@ -123,7 +123,9 @@ the state file. A service restart must therefore preserve the registered
 `client_id`; only authorization codes are intentionally lost. A ChatGPT
 connection that was authorized without `hermes:create` still requires an
 explicit OAuth reauthorization to gain that scope, even though its DCR client
-survives.
+survives. DCR scope metadata is a default, while `/oauth/authorize` validates
+against the server's advertised scopes and the resulting token scope is still
+limited to the explicitly requested and approved values.
 
 ## Rollback and removal
 

@@ -335,7 +335,11 @@ class AuthService:
         client = self.client(client_id)
         if response_type != "code" or redirect_uri not in client.redirect_uris:
             raise OAuthError("invalid authorization request", code="invalid_request")
-        self._scope_string(scope, default=client.scope, allowed=set(client.scope.split()))
+        # DCR scope metadata supplies the client's default scope.  The
+        # resource owner's authorization request may ask for any scope that
+        # this authorization server supports; the issued token still contains
+        # only the scopes explicitly requested and approved here.
+        self._scope_string(scope, default=client.scope, allowed=set(self.supported_scopes))
         if code_challenge_method != "S256" or not code_challenge or len(code_challenge) > 128:
             raise OAuthError("PKCE S256 is required", code="invalid_request")
         return client
@@ -349,7 +353,7 @@ class AuthService:
             code_challenge=code_challenge,
             code_challenge_method="S256",
         )
-        scope_value = self._scope_string(scope, default=client.scope, allowed=set(client.scope.split()))
+        scope_value = self._scope_string(scope, default=client.scope, allowed=set(self.supported_scopes))
         code = secrets.token_urlsafe(32)
         flow_fp = request_fingerprint(client_id, redirect_uri, scope_value, code_challenge)
         with self._lock:
@@ -367,7 +371,7 @@ class AuthService:
             flow_fp=flow_fp,
             code_fp=fingerprint(code),
             requested_scopes=scope_summary(scope, self.supported_scopes),
-            allowed_scopes=scope_summary(client.scope, self.supported_scopes),
+            allowed_scopes=scope_summary(" ".join(self.supported_scopes), self.supported_scopes),
             granted_scopes=scope_summary(scope_value, self.supported_scopes),
             redirect=redirect_identity(redirect_uri),
             client_reused=True,

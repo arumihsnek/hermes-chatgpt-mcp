@@ -146,6 +146,36 @@ def test_create_scope_is_separate_and_creation_grant_also_contains_read():
     assert service.verify_token(create_token).scopes == ["hermes:read", "hermes:create"]
 
 
+def test_authorization_can_request_supported_scope_beyond_dcr_default():
+    service = AuthService(_settings())
+    client = service.register_client(
+        {
+            "client_name": "ChatGPT",
+            "redirect_uris": ["https://chatgpt.com/connector/oauth/callback"],
+            "token_endpoint_auth_method": "none",
+            "grant_types": ["authorization_code"],
+            "response_types": ["code"],
+        }
+    )
+    verifier, challenge = _pkce()
+    scope = "hermes:read hermes:create offline_access"
+
+    code = service.create_authorization_code(
+        client_id=client["client_id"],
+        redirect_uri=client["redirect_uris"][0],
+        scope=scope,
+        code_challenge=challenge,
+    )
+    token = service.exchange_code(
+        code=code,
+        client_id=client["client_id"],
+        redirect_uri=client["redirect_uris"][0],
+        code_verifier=verifier,
+    )
+
+    assert service.verify_token(token).scopes == scope.split()
+
+
 def test_dcr_clients_and_refresh_rotation_survive_auth_service_restart(tmp_path):
     state_file = tmp_path / "oauth" / "state.json"
     settings = replace(_settings(), oauth_state_file=state_file)
