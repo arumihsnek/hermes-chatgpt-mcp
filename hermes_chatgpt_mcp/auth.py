@@ -123,8 +123,9 @@ class AuthService:
     _state_version = 2
     _board_pattern = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 
-    def __init__(self, settings: Settings, policy: AuthPolicy = STABLE_AUTH_POLICY) -> None:
+    def __init__(self, settings: Settings, policy: AuthPolicy | None = None) -> None:
         self.settings = settings
+        policy = policy or (BETA_AUTH_POLICY if settings.surface == "beta" else STABLE_AUTH_POLICY)
         self.policy = policy
         self.scope = policy.read_scope
         self.read_scope = policy.read_scope

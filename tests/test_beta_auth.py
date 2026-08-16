@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from hermes_chatgpt_mcp.auth import AuthService, BETA_AUTH_POLICY, OAuthError
@@ -8,6 +10,12 @@ from tests.test_auth import _settings
 
 def _service() -> AuthService:
     return AuthService(_settings(), policy=BETA_AUTH_POLICY)
+
+
+def test_beta_settings_select_beta_policy_without_explicit_injection():
+    service = AuthService(replace(_settings(), surface="beta"))
+
+    assert service.supported_scopes == BETA_AUTH_POLICY.supported_scopes
 
 
 def test_beta_registration_accepts_management_and_board_administration_scopes():
