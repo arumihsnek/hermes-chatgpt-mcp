@@ -1,0 +1,105 @@
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+from pathlib import Path
+from urllib.parse import urlparse
+
+
+class ConfigurationError(ValueError):
+    """Raised when the service cannot start safely from its configuration."""
+
+
+def _env(name: str, default: str | None = None) -> str | None:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    value = value.strip()
+    return value or default
+
+
+def _positive_int(name: str, default: int, *, maximum: int) -> int:
+    raw = _env(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ConfigurationError(f"{name} must be an integer") from exc
+    if value < 1 or value > maximum:
+        raise ConfigurationError(f"{name} must be between 1 and {maximum}")
+    return value
+
+
+def _url(value: str) -> str:
+    parsed = urlparse(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ConfigurationError("MCP_PUBLIC_BASE_URL must be an absolute HTTP(S) URL")
+    if parsed.query or parsed.fragment:
+        raise ConfigurationError("MCP_PUBLIC_BASE_URL must not contain a query or fragment")
+    if parsed.scheme == "http" and parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
+        raise ConfigurationError("MCP_PUBLIC_BASE_URL must use HTTPS outside local development")
+    return value.rstrip("/")
+
+
+@dataclass(frozen=True)
+class Settings:
+    hermes_agent_root: Path
+    hermes_kanban_home: Path | None
+    default_board: str | None
+    public_base_url: str
+    host: str
+    port: int
+    oauth_username: str
+    oauth_password: str
+    oauth_signing_key: str
+    max_page_size: int = 100
+    max_graph_depth: int = 3
+    max_graph_nodes: int = 100
+    max_body_chars: int = 64_000
+    max_log_bytes: int = 32_000
+    max_activity_items: int = 200
+    oauth_code_ttl_seconds: int = 300
+    oauth_token_ttl_seconds: int = 3600
+
+    @classmethod
+    def from_env(cls) -> "Settings":
+        root_raw = _env("HERMES_AGENT_ROOT", "/home/ubuntu/hermes-agent")
+        assert root_raw is not None
+        root = Path(root_raw).expanduser()
+        if not root.is_dir():
+            raise ConfigurationError("HERMES_AGENT_ROOT must point to a directory")
+
+        public_base_url = _url(_env("MCP_PUBLIC_BASE_URL", "http://127.0.0.1:8789") or "")
+        username = _env("MCP_OAUTH_USERNAME")
+        password = _env("MCP_OAUTH_PASSWORD")
+        signing_key = _env("MCP_OAUTH_SIGNING_KEY")
+        if not username or not password or not signing_key:
+            raise ConfigurationError(
+                "MCP_OAUTH_USERNAME, MCP_OAUTH_PASSWORD, and MCP_OAUTH_SIGNING_KEY are required"
+            )
+        if len(password) < 16:
+            raise ConfigurationError("MCP_OAUTH_PASSWORD must contain at least 16 characters")
+        if len(signing_key) < 32:
+            raise ConfigurationError("MCP_OAUTH_SIGNING_KEY must contain at least 32 characters")
+
+        home_raw = _env("HERMES_KANBAN_HOME")
+        return cls(
+            hermes_agent_root=root,
+            hermes_kanban_home=Path(home_raw).expanduser() if home_raw else None,
+            default_board=_env("HERMES_KANBAN_BOARD"),
+            public_base_url=public_base_url,
+            host=_env("MCP_HOST", "127.0.0.1") or "127.0.0.1",
+            port=_positive_int("MCP_PORT", 8789, maximum=65535),
+            oauth_username=username,
+            oauth_password=password,
+            oauth_signing_key=signing_key,
+            max_page_size=_positive_int("MCP_MAX_PAGE_SIZE", 100, maximum=500),
+            max_graph_depth=_positive_int("MCP_MAX_GRAPH_DEPTH", 3, maximum=8),
+            max_graph_nodes=_positive_int("MCP_MAX_GRAPH_NODES", 100, maximum=500),
+            max_body_chars=_positive_int("MCP_MAX_BODY_CHARS", 64_000, maximum=1_000_000),
+            max_log_bytes=_positive_int("MCP_MAX_LOG_BYTES", 32_000, maximum=1_000_000),
+            max_activity_items=_positive_int("MCP_MAX_ACTIVITY_ITEMS", 200, maximum=2_000),
+            oauth_code_ttl_seconds=_positive_int("MCP_OAUTH_CODE_TTL", 300, maximum=900),
+            oauth_token_ttl_seconds=_positive_int("MCP_OAUTH_TOKEN_TTL", 3600, maximum=86_400),
+        )

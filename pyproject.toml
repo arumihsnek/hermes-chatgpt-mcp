@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hermes-chatgpt-mcp"
+version = "0.1.0"
+description = "Authenticated read-only MCP facade for the canonical Hermes Kanban query surface"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+  "mcp==1.28.1",
+  "pydantic>=2.13,<3",
+  "uvicorn>=0.41,<0.42",
+]
+
+[project.optional-dependencies]
+test = [
+  "httpx>=0.28,<0.29",
+  "pytest>=8,<9",
+]
+
+[project.scripts]
+hermes-chatgpt-mcp = "hermes_chatgpt_mcp.server:main"
+
+[tool.setuptools.packages.find]
+include = ["hermes_chatgpt_mcp*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
