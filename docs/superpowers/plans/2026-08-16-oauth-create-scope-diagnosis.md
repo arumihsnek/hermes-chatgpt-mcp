@@ -67,10 +67,10 @@
 - Consumes: the committed diagnostic flag and existing systemd unit.
 - Produces: one restartable service configuration that records the OAuth handshake in the journal without changing scope policy.
 
-- [ ] Add a test asserting the unit enables only the diagnostic flag and preserves `NoNewPrivileges`, `ProtectHome`, `ProtectSystem`, and existing paths.
-- [ ] Commit the deployment/configuration change separately.
-- [ ] Install/reload only the instrumented unit, restart the existing service, and verify health, PID, cwd, source HEAD, and TLS without printing secrets.
-- [ ] Confirm diagnostic mode is active through a safe startup log marker or equivalent metadata.
+- [x] Add a test asserting the unit enables only the diagnostic flag and preserves `NoNewPrivileges`, `ProtectHome`, `ProtectSystem`, and existing paths.
+- [x] Commit the deployment/configuration change separately.
+- [x] Install/reload only the instrumented unit, restart the existing service, and verify health, PID, cwd, source HEAD, and TLS without printing secrets.
+- [x] Confirm diagnostic mode is active through safe process environment metadata.
 
 ### Task 4: Run and correlate one fresh ChatGPT authorization
 

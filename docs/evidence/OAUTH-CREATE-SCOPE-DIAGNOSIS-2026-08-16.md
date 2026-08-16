@@ -18,6 +18,9 @@ No root cause is declared. The required causal chain must include one authorizat
 - `hermes-chatgpt-mcp.service` is active under systemd, runs with working directory `/home/ubuntu/code/hermes-chatgpt-mcp`, and starts `/home/ubuntu/hermes-agent/venv/bin/python -m hermes_chatgpt_mcp.server`.
 - The SHA-256 of the repository unit and `/etc/systemd/system/hermes-chatgpt-mcp.service` matched during inspection.
 - The OAuth state file is `/var/lib/hermes-chatgpt-mcp/oauth-state.json`, mode `0600`, with its parent directory mode `0700`.
+- Safe diagnostics are deployed from commit `83385d2837da70a3dafede80cda9be898063468c` with `MCP_OAUTH_DIAGNOSTICS=1`; the service restarted successfully at `2026-08-16 18:17:40 UTC`.
+- Post-restart checks returned local health `{"status":"ok"}`, public OAuth metadata, and preserved the same three clients and six refresh records with the same scope distribution.
+- Since that restart, the service journal contains zero `hermes_oauth_diagnostic` events and zero OAuth access-log lines. No fresh ChatGPT authorization has occurred yet.
 
 ### Existing persisted OAuth metadata
 
