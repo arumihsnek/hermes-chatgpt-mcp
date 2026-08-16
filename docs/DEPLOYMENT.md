@@ -35,11 +35,10 @@ silently restore the v0.1 in-memory behavior.
 
 The unit keeps `NoNewPrivileges`, `ProtectSystem=full`, `ProtectHome=read-only`,
 `PrivateDevices`, `PrivateTmp`, and restricted address families. The Hermes
-write allowance is limited to canonical board storage:
+write allowance is limited to named canonical board storage:
 
 ```text
 /home/ubuntu/.hermes/kanban/boards
-/home/ubuntu/.hermes/kanban.db (+ its -wal/-shm sidecars)
 ```
 
 That directory is needed by Hermes' canonical command connection for its
@@ -47,9 +46,10 @@ normal SQLite/WAL operation. The query adapter still opens its own connection
 with URI `mode=ro` and immediately sets `PRAGMA query_only=ON`; it never uses
 the writable command connection. The second write allowance is only the
 service-owned OAuth state directory. Optional `MCP_KANBAN_*_BOARDS` values can
-still narrow the deployment, but are not required for normal all-board read
-and single-board OAuth write grants. The legacy `default` board is included
-because Hermes canonically exposes it alongside named boards.
+still narrow the deployment, but are not required for normal all-named-board
+read and single-board OAuth write grants. Hermes' legacy `default` root
+database is intentionally not exposed because its sidecars are shared with
+other Hermes processes.
 
 ## Verification
 

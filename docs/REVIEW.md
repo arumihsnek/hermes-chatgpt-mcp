@@ -23,7 +23,7 @@ was modified.
 | MCP annotations | Clients need an explicit distinction between query and additive write. | Seven tools advertise `readOnlyHint=true`; create advertises `readOnlyHint=false`, `destructiveHint=false`, and `idempotentHint=true`. |
 | Validation | Unbounded or invented create fields could widen the command surface. | Strict schemas reject extras and bound title/body/parents/IDs/priority; Hermes performs the authoritative normalization and transaction checks. |
 | Retry safety | A remote timeout can cause ChatGPT to retry a write. | `idempotency_key` is mandatory and scoped by Hermes to the selected board database. |
-| Sandbox | Enabling canonical writes must not make the query path writable. | systemd keeps `ProtectSystem=full`, `ProtectHome=read-only`, `NoNewPrivileges`, board-storage-only write paths (including the legacy default DB/WAL files), and a private OAuth state directory. |
+| Sandbox | Enabling canonical writes must not make the query path writable. | systemd keeps `ProtectSystem=full`, `ProtectHome=read-only`, `NoNewPrivileges`, write access only to named-board storage, and a private OAuth state directory; the Hermes legacy root DB/WAL files remain outside the MCP boundary. |
 
 ## Verification evidence
 

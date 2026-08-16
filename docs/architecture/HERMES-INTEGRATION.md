@@ -62,13 +62,20 @@ MCP_KANBAN_READ_BOARDS   = <optional operational cap>
 MCP_KANBAN_CREATE_BOARDS = <optional operational cap>
 ```
 
-When both variables are omitted, every active canonical board is readable and
-eligible for a write grant. Explicit values remain service-level caps, not
-Hermes ACLs. Hermes has no canonical principal-to-board authorization model in
-the inspected checkout, so `hermes:read` is intentionally global to the
-resource owner and the per-board write boundary is carried by the OAuth grant.
-A board outside an explicit read cap is deliberately reported as unavailable
-rather than revealing whether it exists.
+When both variables are omitted, every active *named* canonical board is
+readable and eligible for a write grant. Hermes also returns the root SQLite
+database as a legacy `default` alias, but that alias is not a user-addressable
+board: it has no board metadata and its WAL/SHM sidecars are shared with other
+Hermes processes. The MCP resolver deliberately filters that alias and returns
+`BOARD_NOT_FOUND` if it is requested. This is a boundary around Hermes'
+canonical named-board model, not a parallel registry.
+
+Explicit values remain service-level caps, not Hermes ACLs. Hermes has no
+canonical principal-to-board authorization model in the inspected checkout,
+so `hermes:read` is intentionally global to the resource owner and the
+per-board write boundary is carried by the OAuth grant. A board outside an
+explicit read cap is deliberately reported as unavailable rather than
+revealing whether it exists.
 
 The service never enumerates arbitrary filesystem directories and never
 exposes `db_path`, `default_workdir`, or other path-bearing metadata. The
@@ -90,7 +97,7 @@ ChatGPT
 MCP
    | canonical resolver + optional deployment caps
    v
-active Hermes board
+active named Hermes board
    ├── READ   -> ReadOnlyHermesStore (mode=ro, query_only=ON)
    └── WRITE  -> one-board OAuth grant -> HermesCreateAdapter
                                       -> canonical create_task
@@ -314,8 +321,11 @@ instead of pretending they are a new evidence system.
 ## Storage
 
 Storage is SQLite with WAL sidecars on the OCI host. The live installation
-contains the legacy default database at `/home/ubuntu/.hermes/kanban.db` and
-named board databases under `/home/ubuntu/.hermes/kanban/boards/`.
+contains Hermes' legacy root database at `/home/ubuntu/.hermes/kanban.db` and
+named board databases under `/home/ubuntu/.hermes/kanban/boards/`. The legacy
+root database remains owned by Hermes and is intentionally outside this MCP
+service's board surface; only the named board directory is granted to the
+systemd sandbox.
 
 The service resolves board paths through Hermes' `kanban_home()`/
 `kanban_db_path()` path rules, but opens only existing database files in
@@ -390,9 +400,9 @@ The reproducible deployment artifacts are kept in this repository:
   unauthenticated/authenticated MCP probes without printing secrets.
 
 The service is independently restartable from Hermes. Its host dependencies
-are the canonical Hermes source, the active canonical board storage, and its
-own OAuth state directory. Optional board caps can narrow this set, but the
-OCI default exposes all active boards for read discovery. The command path
+are the canonical Hermes source, the active named-board storage, and its own
+OAuth state directory. Optional board caps can narrow this set, but the OCI
+default exposes all active named boards for read discovery. The command path
 does not expose the Hermes HTTP API or grant general filesystem/database
 access.
 

@@ -84,25 +84,6 @@ PY
 sudo -n chown ubuntu:ubuntu "$env_file"
 sudo -n chmod 0600 "$env_file"
 
-# systemd exposes the legacy Hermes DB and its WAL sidecars as individual
-# writable paths. SQLite may remove these sidecars when no connection is
-# active, so recreate only missing files before namespace setup; never
-# truncate an existing sidecar that another Hermes process may be using.
-sudo -n -u ubuntu /usr/bin/python3 - <<'PY'
-from __future__ import annotations
-
-from pathlib import Path
-
-root = Path("/home/ubuntu/.hermes")
-for name in ("kanban.db-wal", "kanban.db-shm"):
-    path = root / name
-    if path.is_symlink():
-        raise SystemExit(f"refusing symlinked SQLite sidecar: {path}")
-    if not path.exists():
-        path.touch(mode=0o600)
-    path.chmod(0o600)
-PY
-
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
 sudo -n /usr/bin/python3 - "$edge_config" "$include_inside" "$timestamp" "$marker_begin" "$marker_end" <<'PY'
 from __future__ import annotations

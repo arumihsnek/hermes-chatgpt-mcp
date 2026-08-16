@@ -156,8 +156,9 @@ MCP capability.
 
 READ tools:
 
-- `list_boards`: bounded discovery of all active canonical boards, including
-  the resolved default and the single-board write capability of the token.
+- `list_boards`: bounded discovery of all active named canonical boards and
+  the single-board write capability of the token. Hermes' legacy root
+  `default` database alias is intentionally not exposed as a board.
 - `get_board`: selected board metadata and canonical status/assignee counts.
 - `list_tasks`: bounded canonical task listing with status, assignee, tenant,
   session, archive, limit, and order filters.

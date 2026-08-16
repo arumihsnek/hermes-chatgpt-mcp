@@ -9,6 +9,8 @@ from typing import Any, Literal
 from .config import ConfigurationError, Settings
 from .hermes import ReadOnlyHermesStore, load_kanban_module
 
+_LEGACY_DEFAULT_SLUG = "default"
+
 
 class BoardResolutionError(LookupError):
     """A safe, stable error raised while resolving an MCP board request."""
@@ -109,6 +111,14 @@ class HermesBoardResolver:
             try:
                 slug = ReadOnlyHermesStore.validate_board_slug(str(raw.get("slug") or ""))
             except ValueError:
+                continue
+            # Hermes includes the root kanban.db as a legacy ``default``
+            # alias. It is not a named board: it has no board metadata and
+            # its WAL/SHM sidecars are shared with unrelated Hermes
+            # processes. The MCP surface exposes the canonical named-board
+            # model only, keeping that legacy storage outside its filesystem
+            # and authorization boundary.
+            if slug == _LEGACY_DEFAULT_SLUG:
                 continue
             if slug in seen:
                 continue

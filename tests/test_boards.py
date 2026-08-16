@@ -100,6 +100,28 @@ def test_missing_read_allowlist_discovers_all_canonical_boards(tmp_path, monkeyp
     assert resolver.create_allowed("board-b") is True
 
 
+def test_legacy_default_alias_is_not_exposed_as_a_named_board(tmp_path, monkeypatch):
+    _write_board(tmp_path, "board-a", name="Board A")
+    _write_board(tmp_path, "board-b", name="Board B")
+    original = kanban_db.list_boards
+
+    def with_legacy_default(*, include_archived=False):
+        return [{"slug": "default", "name": "Default project"}] + original(
+            include_archived=include_archived,
+        )
+
+    monkeypatch.setattr(kanban_db, "list_boards", with_legacy_default)
+    monkeypatch.setenv("HERMES_KANBAN_HOME", str(tmp_path))
+    settings = _board_settings(tmp_path, read=None, create=None)
+
+    resolver = HermesBoardResolver(settings, hermes_module=kanban_db)
+
+    assert [handle.slug for handle in resolver.list_handles()] == ["board-a", "board-b"]
+    with pytest.raises(BoardResolutionError) as error:
+        resolver.resolve("default", operation="read")
+    assert error.value.code == "BOARD_NOT_FOUND"
+
+
 def test_create_allowlist_must_be_readable(tmp_path, monkeypatch):
     _write_board(tmp_path, "board-a", name="Board A")
     _write_board(tmp_path, "board-b", name="Board B")
