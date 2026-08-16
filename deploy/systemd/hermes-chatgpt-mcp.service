@@ -11,8 +11,8 @@ WorkingDirectory=/home/ubuntu/code/hermes-chatgpt-mcp
 EnvironmentFile=/home/ubuntu/.hermes/hermes-chatgpt-mcp.env
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=MCP_OAUTH_STATE_FILE=/var/lib/hermes-chatgpt-mcp/oauth-state.json
-# Temporary, opt-in-safe OAuth handshake diagnostics for the 2026-08-16 experiment.
-Environment=MCP_OAUTH_DIAGNOSTICS=1
+# OAuth diagnostics are disabled during normal operation.
+Environment=MCP_OAUTH_DIAGNOSTICS=0
 ExecStart=/home/ubuntu/hermes-agent/venv/bin/python -m hermes_chatgpt_mcp.server
 Restart=on-failure
 RestartSec=5
@@ -24,7 +24,9 @@ ProtectSystem=full
 ProtectHome=read-only
 StateDirectory=hermes-chatgpt-mcp
 StateDirectoryMode=0700
-ReadWritePaths=/home/ubuntu/.hermes/kanban/boards/codex_app_server /home/ubuntu/.hermes/kanban/boards/dashboard /var/lib/hermes-chatgpt-mcp
+# Named boards live below kanban/boards; the legacy canonical ``default``
+# board and its SQLite WAL sidecars live at the Hermes root.
+ReadWritePaths=/home/ubuntu/.hermes/kanban/boards /home/ubuntu/.hermes/kanban.db /home/ubuntu/.hermes/kanban.db-wal /home/ubuntu/.hermes/kanban.db-shm /var/lib/hermes-chatgpt-mcp
 PrivateDevices=yes
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 RestrictSUIDSGID=yes

@@ -55,12 +55,13 @@ if path.exists():
         if "=" in line and not line.lstrip().startswith("#"):
             key, value = line.split("=", 1)
             values.setdefault(key.strip(), value.strip())
+# v0.4 uses all canonical active boards by default. Remove the old bounded
+# v0.3 deployment caps and static default so Hermes' current default can move.
+for legacy_key in ("HERMES_KANBAN_BOARD", "MCP_KANBAN_READ_BOARDS", "MCP_KANBAN_CREATE_BOARDS"):
+    values.pop(legacy_key, None)
 defaults = {
     "HERMES_AGENT_ROOT": "/home/ubuntu/hermes-agent",
     "HERMES_KANBAN_HOME": "/home/ubuntu/.hermes",
-    "HERMES_KANBAN_BOARD": "codex_app_server",
-    "MCP_KANBAN_READ_BOARDS": "codex_app_server,dashboard",
-    "MCP_KANBAN_CREATE_BOARDS": "codex_app_server,dashboard",
     "MCP_PUBLIC_BASE_URL": "https://kanban.hermesinthenight.duckdns.org",
     "MCP_HOST": "127.0.0.1",
     "MCP_PORT": "8789",
@@ -72,8 +73,7 @@ defaults = {
 for key, value in defaults.items():
     values.setdefault(key, value)
 ordered = [
-    "HERMES_AGENT_ROOT", "HERMES_KANBAN_HOME", "HERMES_KANBAN_BOARD",
-    "MCP_KANBAN_READ_BOARDS", "MCP_KANBAN_CREATE_BOARDS",
+    "HERMES_AGENT_ROOT", "HERMES_KANBAN_HOME",
     "MCP_PUBLIC_BASE_URL", "MCP_HOST", "MCP_PORT", "MCP_OAUTH_USERNAME",
     "MCP_OAUTH_PASSWORD", "MCP_OAUTH_SIGNING_KEY", "MCP_OAUTH_STATE_FILE",
 ]
