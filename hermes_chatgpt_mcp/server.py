@@ -12,6 +12,7 @@ from mcp.server.fastmcp.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
 from starlette.requests import Request
+from starlette.middleware.cors import CORSMiddleware
 from starlette.routing import request_response
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
@@ -395,7 +396,12 @@ def create_app(
     for route in app.routes:
         if getattr(route, "path", None) == protected_resource_path:
             route.endpoint = protected_resource_metadata
-            route.app = request_response(protected_resource_metadata)
+            route.app = CORSMiddleware(
+                request_response(protected_resource_metadata),
+                allow_origins=["*"],
+                allow_methods=["GET", "OPTIONS"],
+                allow_headers=["MCP-Protocol-Version"],
+            )
             break
     app.state.hermes_mcp_auth = auth_service
     app.state.hermes_mcp = mcp
