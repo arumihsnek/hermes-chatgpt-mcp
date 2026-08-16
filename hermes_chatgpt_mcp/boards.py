@@ -240,6 +240,16 @@ class HermesBoardResolver:
 
         return HermesCreateAdapter(self.store(handle))
 
+    def board_admin_adapter(self):
+        from .command import HermesBoardAdminAdapter
+
+        return HermesBoardAdminAdapter(self.hermes)
+
+    def management_adapter(self, handle: BoardHandle):
+        from .command import HermesCardManagementAdapter
+
+        return HermesCardManagementAdapter(handle, self.hermes)
+
     def create_allowed(self, slug: str) -> bool:
         return self.create_policy is None or slug in self.create_policy
 
@@ -286,6 +296,16 @@ class SingleBoardResolver:
 
     def command_adapter(self, handle: BoardHandle):
         return self._command_adapter
+
+    def board_admin_adapter(self):
+        from .command import HermesBoardAdminAdapter
+
+        return HermesBoardAdminAdapter(self.adapter.store.hermes)
+
+    def management_adapter(self, handle: BoardHandle):
+        from .command import HermesCardManagementAdapter
+
+        return HermesCardManagementAdapter(handle, self.adapter.store.hermes)
 
     def create_allowed(self, slug: str) -> bool:
         return slug == self.handle.slug

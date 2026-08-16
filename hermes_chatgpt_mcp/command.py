@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from typing import Iterable
+from typing import Any, Iterable
 
+from .boards import BoardHandle
 from .hermes import ReadOnlyHermesStore
-from .schemas import CreateTaskResult
+from .schemas import AddCommentResult, AssignTaskResult, CreateBoardResult, CreateTaskResult
 
 
 class HermesCreateAdapter:
@@ -83,4 +84,73 @@ class HermesCreateAdapter:
             child_ids=canonical_children,
             created_by=getattr(task, "created_by", None),
             created_at=int(getattr(task, "created_at", 0) or 0),
+        )
+
+
+class HermesBoardAdminAdapter:
+    """Narrow boundary for canonical Hermes board creation."""
+
+    def __init__(self, hermes: Any) -> None:
+        self.hermes = hermes
+
+    def create_board(
+        self,
+        slug: str,
+        name: str | None = None,
+        description: str | None = None,
+        icon: str | None = None,
+        color: str | None = None,
+    ) -> CreateBoardResult:
+        metadata = self.hermes.create_board(
+            slug, name=name, description=description, icon=icon, color=color
+        )
+        return CreateBoardResult(
+            slug=str(metadata["slug"]),
+            name=str(metadata["name"]),
+            description=str(metadata["description"]),
+            icon=metadata.get("icon") or None,
+            color=metadata.get("color") or None,
+            created=True,
+            is_default=str(metadata["slug"]) == "default",
+        )
+
+
+class HermesCardManagementAdapter:
+    """Narrow boundary for canonical Hermes comment and assignment commands."""
+
+    provenance = "chatgpt_mcp"
+
+    def __init__(self, handle: BoardHandle, hermes: Any) -> None:
+        self.handle = handle
+        self.hermes = hermes
+
+    def add_comment(self, task_id: str, body: str) -> AddCommentResult:
+        with self.hermes.connect_closing(db_path=self.handle.db_path, board=self.handle.slug) as conn:
+            comment_id = self.hermes.add_comment(conn, task_id, self.provenance, body)
+            comment = next(
+                (item for item in self.hermes.list_comments(conn, task_id) if item.id == comment_id),
+                None,
+            )
+        if comment is None:
+            raise RuntimeError("Hermes did not return the created comment")
+        return AddCommentResult(
+            board=self.handle.slug,
+            task_id=str(comment.task_id),
+            comment_id=int(comment.id),
+            author=str(comment.author),
+            created_at=int(comment.created_at),
+        )
+
+    def assign_task(self, task_id: str, assignee: str | None) -> AssignTaskResult:
+        with self.hermes.connect_closing(db_path=self.handle.db_path, board=self.handle.slug) as conn:
+            if not self.hermes.assign_task(conn, task_id, assignee):
+                raise ValueError(f"unknown task {task_id}")
+            task = self.hermes.get_task(conn, task_id)
+        if task is None:
+            raise RuntimeError("Hermes did not return the assigned task")
+        return AssignTaskResult(
+            board=self.handle.slug,
+            task_id=str(task.id),
+            assignee=task.assignee,
+            status=str(task.status),
         )
