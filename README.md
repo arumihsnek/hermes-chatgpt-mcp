@@ -164,6 +164,8 @@ Scopes are separated:
 - `hermes:read` is required by all six query tools;
 - `hermes:create` is required by `create_task`, and its grant also includes
   `hermes:read` because the MCP resource has a resource-wide read guard.
+- `offline_access` is an OAuth protocol scope for refresh-token renewal; it
+  grants no Hermes command capability.
 
 A read-only token cannot create a card. The create tool is annotated
 `readOnlyHint=false`, `destructiveHint=false` (additive write), and

@@ -157,14 +157,14 @@ def test_dcr_clients_and_refresh_rotation_survive_auth_service_restart(tmp_path)
             "token_endpoint_auth_method": "none",
             "grant_types": ["authorization_code", "refresh_token"],
             "response_types": ["code"],
-            "scope": "hermes:read hermes:create",
+            "scope": "hermes:read hermes:create offline_access",
         }
     )
     verifier, challenge = _pkce()
     code = first.create_authorization_code(
         client_id=client["client_id"],
         redirect_uri=client["redirect_uris"][0],
-        scope="hermes:read hermes:create",
+        scope="hermes:read hermes:create offline_access",
         code_challenge=challenge,
     )
     bundle = first.exchange_code_bundle(
@@ -182,7 +182,7 @@ def test_dcr_clients_and_refresh_rotation_survive_auth_service_restart(tmp_path)
         refresh_token=bundle["refresh_token"],
         client_id=client["client_id"],
     )
-    assert rotated["scope"] == "hermes:read hermes:create"
+    assert rotated["scope"] == "hermes:read hermes:create offline_access"
     with pytest.raises(OAuthError, match="invalid refresh token"):
         second.refresh_bundle(
             refresh_token=bundle["refresh_token"],

@@ -229,6 +229,8 @@ ChatGPT MCP client. The integration owns the MCP authorization boundary:
 - separate `hermes:create` scope, checked only by `create_task`. A creation
   grant requests both scopes because the MCP resource is globally protected by
   `hermes:read`; a read-only grant remains unable to create.
+- `offline_access` is advertised only as the OAuth refresh-token protocol
+  scope; it does not authorize any Hermes operation.
 
 DCR client registrations and refresh-token rotation state are persisted in a
 0600 service-owned state file under `/var/lib/hermes-chatgpt-mcp/`. Access

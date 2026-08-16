@@ -79,6 +79,17 @@ def test_invalid_parent_does_not_create_a_task(tmp_path, monkeypatch):
     assert after == before
 
 
+def test_missing_board_fails_closed_without_initializing_a_database(tmp_path, monkeypatch):
+    fixture = make_hermes_fixture(tmp_path)
+    command, _ = _adapters(fixture, monkeypatch)
+    fixture.db_path.unlink()
+
+    with pytest.raises(FileNotFoundError, match="board database"):
+        command.create_task(title="must not initialize")
+
+    assert not fixture.db_path.exists()
+
+
 def test_create_schema_rejects_unknown_fields_and_excessive_payloads():
     with pytest.raises(ValidationError):
         CreateTaskInput(title="x", update_task={"title": "forbidden"})

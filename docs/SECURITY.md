@@ -17,6 +17,8 @@ development), authorization code, PKCE S256, and only the supported scopes:
 - `hermes:read` — six query tools;
 - `hermes:create` — `create_task`, always granted together with
   `hermes:read`.
+- `offline_access` — OAuth refresh-token renewal only; it is not a Hermes
+  authorization scope.
 
 The `create_task` handler performs an additional scope check. A valid
 read-only token therefore cannot reach the command adapter. Login comparisons

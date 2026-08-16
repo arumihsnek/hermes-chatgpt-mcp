@@ -66,7 +66,7 @@ async def _test_health_metadata_auth_and_exact_tool_contract(tmp_path):
             protected = await client.get("/.well-known/oauth-protected-resource")
             assert protected.status_code == 200
             assert [value.rstrip("/") for value in protected.json()["authorization_servers"]] == [settings.public_base_url]
-            assert set(protected.json()["scopes_supported"]) == {"hermes:read", "hermes:create"}
+            assert set(protected.json()["scopes_supported"]) == {"hermes:read", "hermes:create", "offline_access"}
 
             metadata = await client.get("/.well-known/oauth-authorization-server")
             assert metadata.status_code == 200
@@ -107,4 +107,4 @@ async def _test_health_metadata_auth_and_exact_tool_contract(tmp_path):
     assert create["annotations"]["destructiveHint"] is False
     assert create["annotations"]["idempotentHint"] is False
     assert all(tool["inputSchema"].get("additionalProperties", True) is False for tool in tools)
-    assert set(metadata.json()["scopes_supported"]) == {"hermes:read", "hermes:create"}
+    assert set(metadata.json()["scopes_supported"]) == {"hermes:read", "hermes:create", "offline_access"}
