@@ -8,7 +8,9 @@ The fresh ChatGPT authorization was observed with safe diagnostics enabled. The
 server did not receive `hermes:create` in the authorization request. The
 existing read-only client record was reused, and the server faithfully carried
 the read-only scope through consent and authorization-code token issuance. No
-OAuth policy or permission behavior was changed.
+OAuth token was upgraded automatically. A server-side interoperability fix is
+now deployed, but a complete post-fix ChatGPT token and `create_task` call are
+still pending.
 
 ## HECHOS OBSERVADOS
 
@@ -201,15 +203,24 @@ this instrumentation.
 
 ## CORRECCIÓN
 
-No behavior correction was applied. In particular, the server was not changed
-to grant `hermes:create` when it is absent, `hermes:read` was not made
-sufficient for `create_task`, and no allowlist or Hermes code was modified.
+Commit `02d6826` changes the authorization boundary so DCR `scope` metadata is
+the client's default scope, not a maximum scope. `/authorize` now accepts only
+scopes in the server's global advertised set, and only the explicitly
+requested/approved scopes enter the authorization code and token.
 
-A remediation must make the client/DCR registration request the write scope
-explicitly, or provide a protocol-compliant way to register or upgrade a
-client with user consent. Server-side compensation, such as making DCR default
-to `hermes:create`, would violate the client-scope boundary and was
-intentionally not implemented.
+The fix was deployed by restarting the existing systemd service. A live GET to
+`/oauth/authorize` using the previously read-only persisted client and
+`hermes:read hermes:create offline_access` returned HTTP `200` with the
+authorization form. No `invalid_scope` event followed that request.
+
+The server was not changed to issue `hermes:create` by default, and
+`hermes:read` remains insufficient for `create_task`. No client records were
+upgraded in storage and no Hermes code was modified.
+
+The DCR registration request does not need to include the write scope when the
+client later requests it explicitly at `/authorize`. The authorization server
+still never grants an unrequested scope, and DCR does not default to
+`hermes:create`.
 
 ## EVIDENCIA AUSENTE
 
@@ -222,15 +233,19 @@ intentionally not implemented.
   event, but no separate grant-reuse flag was emitted.
 
 These absences do not change the first disappearance point: the scope was
-already missing from `/authorize`.
+already missing from the client metadata in the original DCR/reuse flows; the
+post-fix authorization boundary now accepts the later explicit request.
 
 ## TESTS AND DEPLOYMENT CHECKS
 
 - Baseline before source changes: `52 passed`.
 - After safe instrumentation: `57 passed`.
+- After the scope-boundary correction: `59 passed`.
 - `git diff --check`: passed.
 - `systemd-analyze verify deploy/systemd/hermes-chatgpt-mcp.service`: exit `0`;
   unrelated warnings referred to pre-existing external units.
 - Local health endpoint: passed.
+- Live `/oauth/authorize` with the existing client and full requested scope:
+  HTTP `200` after the correction.
 - Public OAuth metadata: passed and advertised `hermes:read`, `hermes:create`,
   and `offline_access`.
