@@ -90,8 +90,8 @@ path. The query connection never calls Hermes' writable `connect()` or
 The service adds two configuration values:
 
 - `MCP_KANBAN_READ_BOARDS`: comma-separated canonical slugs. An omitted value
-  means all non-archived boards discovered by Hermes are readable in local
-  development.
+  fails safe to only the configured default board; it never enumerates every
+  Hermes board by accident.
 - `MCP_KANBAN_CREATE_BOARDS`: comma-separated canonical slugs. An omitted
   value means only the configured default board is creatable.
 
@@ -245,4 +245,3 @@ Tests will use two isolated fixture boards and the real Hermes
 
 The existing v0.2 36-test suite remains a required regression gate. No real
 board is changed until the isolated fixture and local integration tests pass.
-

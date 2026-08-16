@@ -69,6 +69,9 @@ read-allowlisted boards, and `hermes:create` enables creation only on the
 create allowlist. A board outside the read allowlist is deliberately reported
 as unavailable rather than revealing whether it exists.
 
+If the read allowlist is omitted, the resolver fails safe to only the configured
+default board; it never enumerates every canonical board by accident.
+
 The live installation's configured default remains `codex_app_server`; the
 second controlled board is `dashboard`. The service never enumerates arbitrary
 filesystem directories and never exposes `db_path`, `default_workdir`, or

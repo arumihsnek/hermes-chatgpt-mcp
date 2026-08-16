@@ -101,7 +101,8 @@ at `/.well-known/oauth-protected-resource`.
 `HERMES_KANBAN_BOARD` is the default used when `board` is omitted. The two
 `MCP_KANBAN_*_BOARDS` values are deployment-level allowlists resolved through
 Hermes' canonical `list_boards()` and `kanban_db_path()`. An explicit unknown
-or unauthorized board never falls back to the default.
+or unauthorized board never falls back to the default. If the read allowlist
+is absent, discovery fails safe to the configured default board only.
 
 ## Tests and live proof
 

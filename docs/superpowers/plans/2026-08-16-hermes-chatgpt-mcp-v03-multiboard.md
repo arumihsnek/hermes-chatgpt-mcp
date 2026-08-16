@@ -86,7 +86,7 @@ kanban_create_boards: tuple[str, ...] | None = None
 max_board_count: int = 50
 ~~~
 
-Parse MCP_KANBAN_READ_BOARDS and MCP_KANBAN_CREATE_BOARDS as comma-separated canonical slugs, reject malformed or empty entries, and bound MCP_MAX_BOARD_COUNT. Keep v0.2 behavior when the variables are absent.
+Parse MCP_KANBAN_READ_BOARDS and MCP_KANBAN_CREATE_BOARDS as comma-separated canonical slugs, reject malformed or empty entries, and bound MCP_MAX_BOARD_COUNT. When the variables are absent, fail safe to the configured default board rather than enumerating every Hermes board.
 
 - [ ] Implement the canonical resolver:
 
@@ -344,4 +344,3 @@ systemctl is-active hermes-chatgpt-mcp.service
 
 Validate health, TLS, OAuth discovery/DCR/PKCE, eight tools and annotations, read-only scope denial, create scope success, explicit A/B reads, one create in A, one create in B, idempotency, activity, dispatch, and post-restart DCR/refresh persistence. Clean only the two identifiable test cards through canonical Hermes APIs and verify both boards return to their pre-test fingerprints.
 - [ ] Review the final diff for SQL writes, implicit fallback, path leakage, missing scope checks, cross-board adapter reuse, unbounded output, hidden management tools, and systemd write expansion. Re-run pytest -q after any correction and commit review corrections separately.
-

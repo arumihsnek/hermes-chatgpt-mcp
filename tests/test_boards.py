@@ -70,6 +70,19 @@ def test_default_board_uses_configured_board(tmp_path, monkeypatch):
     assert resolver.resolve(None, operation="read").slug == "board-a"
 
 
+def test_missing_read_allowlist_fails_safe_to_default_board(tmp_path, monkeypatch):
+    _write_board(tmp_path, "board-a", name="Board A")
+    _write_board(tmp_path, "board-b", name="Board B")
+    monkeypatch.setenv("HERMES_KANBAN_HOME", str(tmp_path))
+    settings = _board_settings(tmp_path, read=None, create=None)
+
+    resolver = HermesBoardResolver(settings, hermes_module=kanban_db)
+
+    assert [handle.slug for handle in resolver.list_handles()] == ["board-a"]
+    assert resolver.create_allowed("board-a") is True
+    assert resolver.create_allowed("board-b") is False
+
+
 def test_create_allowlist_must_be_readable(tmp_path, monkeypatch):
     _write_board(tmp_path, "board-a", name="Board A")
     _write_board(tmp_path, "board-b", name="Board B")

@@ -55,22 +55,25 @@ class HermesBoardResolver:
                 "HERMES_KANBAN_HOME does not match Hermes canonical board home"
             )
         self.max_board_count = settings.max_board_count
+        self.default_slug = self._configured_default()
+        # Fail closed when the deployment omitted a board allowlist. The
+        # default board remains usable for local compatibility, but the
+        # resolver must never enumerate every Hermes board by accident.
         self.read_policy = (
             set(settings.kanban_read_boards)
             if settings.kanban_read_boards is not None
-            else None
+            else {self.default_slug}
         )
-        self.default_slug = self._configured_default()
         self.create_policy = (
             set(settings.kanban_create_boards)
             if settings.kanban_create_boards is not None
             else {self.default_slug}
         )
-        if self.read_policy is not None and not self.create_policy.issubset(self.read_policy):
+        if not self.create_policy.issubset(self.read_policy):
             raise ConfigurationError(
                 "MCP_KANBAN_CREATE_BOARDS must be a subset of MCP_KANBAN_READ_BOARDS"
             )
-        if self.read_policy is not None and self.default_slug not in self.read_policy:
+        if self.default_slug not in self.read_policy:
             raise ConfigurationError("configured default board must be readable")
         self._creation_locks: dict[str, threading.Lock] = {}
         self._lock = threading.Lock()
@@ -156,12 +159,12 @@ class HermesBoardResolver:
         entries = self._canonical_entry_map()
         handles: list[BoardHandle] = []
         for slug, entry in entries.items():
-            if self.read_policy is not None and slug not in self.read_policy:
+            if slug not in self.read_policy:
                 continue
             try:
                 handles.append(self._handle(entry))
             except BoardResolutionError:
-                if self.read_policy is not None and slug in self.read_policy:
+                if slug in self.read_policy:
                     raise ConfigurationError("authorized board database is unavailable")
         return handles[: self.max_board_count]
 
@@ -177,7 +180,7 @@ class HermesBoardResolver:
         except (TypeError, ValueError) as exc:
             raise BoardResolutionError("BOARD_NOT_FOUND", "requested board is unavailable") from exc
         entries = self._canonical_entry_map()
-        if slug not in entries or (self.read_policy is not None and slug not in self.read_policy):
+        if slug not in entries or slug not in self.read_policy:
             raise BoardResolutionError("BOARD_NOT_FOUND", "requested board is unavailable")
         if operation == "create" and slug not in self.create_policy:
             raise BoardResolutionError("BOARD_NOT_ALLOWED", "creation is not allowed on this board")
