@@ -55,6 +55,11 @@ class BoardSummary(StrictModel):
     capabilities: BoardCapabilities
 
 
+class BoardListView(StrictModel):
+    items: list[BoardSummary] = Field(max_length=50)
+    default_board: BoardSlug
+
+
 AssigneeName = Annotated[str, Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")]
 TenantName = Annotated[str, Field(min_length=1, max_length=128)]
 SessionId = Annotated[str, Field(min_length=1, max_length=256)]

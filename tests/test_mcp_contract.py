@@ -91,6 +91,7 @@ async def _test_health_metadata_auth_and_exact_tool_contract(tmp_path):
 
     tools = listed["result"]["tools"]
     assert {tool["name"] for tool in tools} == {
+        "list_boards",
         "get_board",
         "list_tasks",
         "get_task",
@@ -101,10 +102,14 @@ async def _test_health_metadata_auth_and_exact_tool_contract(tmp_path):
     }
     readonly = [tool for tool in tools if tool["name"] != "create_task"]
     create = next(tool for tool in tools if tool["name"] == "create_task")
+    list_boards = next(tool for tool in tools if tool["name"] == "list_boards")
     assert all(tool["annotations"]["readOnlyHint"] is True for tool in readonly)
     assert all(tool["annotations"]["destructiveHint"] is False for tool in readonly)
     assert create["annotations"]["readOnlyHint"] is False
     assert create["annotations"]["destructiveHint"] is False
     assert create["annotations"]["idempotentHint"] is False
+    assert list_boards["annotations"]["readOnlyHint"] is True
+    assert list_boards["annotations"]["destructiveHint"] is False
+    assert list_boards["inputSchema"]["properties"] == {}
     assert all(tool["inputSchema"].get("additionalProperties", True) is False for tool in tools)
     assert set(metadata.json()["scopes_supported"]) == {"hermes:read", "hermes:create", "offline_access"}

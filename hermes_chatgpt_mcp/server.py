@@ -18,13 +18,16 @@ from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Re
 
 from .adapter import HermesReadOnlyAdapter, TaskNotFoundError
 from .auth import AuthService, BearerTokenVerifier, OAuthError
+from .boards import BoardHandle, BoardResolutionError, HermesBoardResolver, SingleBoardResolver
 from .command import HermesCreateAdapter
 from .config import Settings
-from .hermes import ReadOnlyHermesStore
 from .schemas import (
     ActivityInput,
     ActivityView,
+    BoardCapabilities,
+    BoardListView,
     BoardQuery,
+    BoardSummary,
     BoardView,
     CreateTaskInput,
     CreateTaskResult,
@@ -102,24 +105,18 @@ def create_app(
     adapter: HermesReadOnlyAdapter | None = None,
     *,
     command_adapter: HermesCreateAdapter | None = None,
+    board_resolver: HermesBoardResolver | SingleBoardResolver | None = None,
     settings: Settings | None = None,
     auth_service: AuthService | None = None,
 ):
     settings = settings or Settings.from_env()
-    if adapter is None:
-        store = ReadOnlyHermesStore.from_hermes(
-            hermes_agent_root=settings.hermes_agent_root,
-            hermes_kanban_home=settings.hermes_kanban_home,
-            board=settings.default_board,
-        )
-        adapter = HermesReadOnlyAdapter(
-            store,
-            max_body_chars=settings.max_body_chars,
-            max_log_bytes=settings.max_log_bytes,
-            max_activity_items=settings.max_activity_items,
-        )
-    if command_adapter is None:
-        command_adapter = HermesCreateAdapter(adapter.store)
+    if board_resolver is None:
+        if adapter is not None:
+            if command_adapter is None:
+                command_adapter = HermesCreateAdapter(adapter.store)
+            board_resolver = SingleBoardResolver(adapter, command_adapter, settings)
+        else:
+            board_resolver = HermesBoardResolver(settings)
     auth_service = auth_service or AuthService(settings)
     auth_settings = AuthSettings(
         issuer_url=settings.public_base_url,
@@ -155,34 +152,78 @@ def create_app(
         openWorldHint=False,
     )
 
-    def ensure_board(board: str | None) -> None:
-        if board is not None and board != adapter.store.board:
-            raise ToolError("requested board is not configured for this service")
+    def tool_error(code: str, message: str) -> ToolError:
+        return ToolError(json.dumps({"code": code, "message": message}, separators=(",", ":")))
+
+    def resolve_board(board: str | None, *, operation: str) -> BoardHandle:
+        try:
+            return board_resolver.resolve(board, operation=operation)  # type: ignore[arg-type]
+        except BoardResolutionError as exc:
+            raise tool_error(exc.code, exc.message) from exc
+        except Exception as exc:
+            logger.error("Hermes board resolution failed: %s", type(exc).__name__)
+            raise tool_error("BACKEND_ERROR", "Hermes board resolution failed") from exc
 
     async def run_query(callback, *args, **kwargs):
         try:
             return callback(*args, **kwargs)
         except TaskNotFoundError as exc:
-            raise ToolError("task not found") from exc
+            raise tool_error("TASK_NOT_FOUND", "task was not found on the selected board") from exc
         except (ValueError, FileNotFoundError, LookupError) as exc:
-            raise ToolError("invalid or unavailable Hermes query") from exc
+            raise tool_error("BACKEND_ERROR", "invalid or unavailable Hermes query") from exc
         except Exception as exc:  # pragma: no cover - exercised by integration failures
             logger.error("Hermes read query failed: %s", type(exc).__name__)
-            raise ToolError("Hermes query failed") from exc
+            raise tool_error("BACKEND_ERROR", "Hermes query failed") from exc
 
     async def run_command(callback, *args, **kwargs):
         try:
             return callback(*args, **kwargs)
         except (ValueError, FileNotFoundError, LookupError) as exc:
-            raise ToolError("invalid or unavailable Hermes task creation request") from exc
+            raise tool_error("CONFLICT", "Hermes rejected the task creation request") from exc
         except Exception as exc:  # pragma: no cover - exercised by integration failures
             logger.error("Hermes create command failed: %s", type(exc).__name__)
-            raise ToolError("Hermes task creation failed") from exc
+            raise tool_error("BACKEND_ERROR", "Hermes task creation failed") from exc
 
     def require_scope(scope: str) -> None:
         token = get_access_token()
         if token is None or scope not in token.scopes:
-            raise ToolError(f"insufficient scope: {scope}")
+            raise tool_error("SCOPE_REQUIRED", f"scope required: {scope}")
+
+    def has_create_scope() -> bool:
+        token = get_access_token()
+        return token is not None and AuthService.create_scope in token.scopes
+
+    def board_summary(handle: BoardHandle) -> BoardSummary:
+        view = board_resolver.query_adapter(handle).get_board()
+        return BoardSummary(
+            slug=handle.slug,
+            name=handle.name,
+            description=handle.description,
+            project_id=handle.project_id,
+            created_at=handle.created_at,
+            is_default=handle.is_default,
+            task_counts=view.task_counts,
+            capabilities=BoardCapabilities(
+                read=True,
+                create=has_create_scope() and board_resolver.create_allowed(handle.slug),
+            ),
+        )
+
+    @mcp.tool(
+        name="list_boards",
+        description="Discover the bounded Hermes boards authorized by this MCP deployment.",
+        annotations=readonly,
+        structured_output=True,
+    )
+    async def list_boards() -> BoardListView:
+        try:
+            items = [board_summary(handle) for handle in board_resolver.list_handles()]
+            return BoardListView(items=items, default_board=board_resolver.default_slug)
+        except ToolError:
+            raise
+        except Exception as exc:
+            logger.error("Hermes board listing failed: %s", type(exc).__name__)
+            raise tool_error("BACKEND_ERROR", "Hermes board listing failed") from exc
 
     @mcp.tool(
         name="get_board",
@@ -191,8 +232,8 @@ def create_app(
         structured_output=True,
     )
     async def get_board(request: BoardQuery) -> BoardView:
-        ensure_board(request.board)
-        return await run_query(adapter.get_board)
+        handle = resolve_board(request.board, operation="read")
+        return await run_query(board_resolver.query_adapter(handle).get_board)
 
     @mcp.tool(
         name="list_tasks",
@@ -201,9 +242,9 @@ def create_app(
         structured_output=True,
     )
     async def list_tasks(request: ListTasksInput) -> TaskListView:
-        ensure_board(request.board)
+        handle = resolve_board(request.board, operation="read")
         return await run_query(
-            adapter.list_tasks,
+            board_resolver.query_adapter(handle).list_tasks,
             assignee=request.assignee,
             status=request.status.value if request.status else None,
             tenant=request.tenant,
@@ -220,8 +261,8 @@ def create_app(
         structured_output=True,
     )
     async def get_task(request: TaskInput) -> TaskDetail:
-        ensure_board(request.board)
-        return await run_query(adapter.get_task, request.task_id)
+        handle = resolve_board(request.board, operation="read")
+        return await run_query(board_resolver.query_adapter(handle).get_task, request.task_id)
 
     @mcp.tool(
         name="get_task_graph",
@@ -230,8 +271,13 @@ def create_app(
         structured_output=True,
     )
     async def get_task_graph(request: GraphInput) -> TaskGraphView:
-        ensure_board(request.board)
-        return await run_query(adapter.get_task_graph, request.task_id, depth=request.depth, max_nodes=request.max_nodes)
+        handle = resolve_board(request.board, operation="read")
+        return await run_query(
+            board_resolver.query_adapter(handle).get_task_graph,
+            request.task_id,
+            depth=request.depth,
+            max_nodes=request.max_nodes,
+        )
 
     @mcp.tool(
         name="get_dispatch",
@@ -240,8 +286,8 @@ def create_app(
         structured_output=True,
     )
     async def get_dispatch(request: TaskInput) -> DispatchView:
-        ensure_board(request.board)
-        return await run_query(adapter.get_dispatch, request.task_id)
+        handle = resolve_board(request.board, operation="read")
+        return await run_query(board_resolver.query_adapter(handle).get_dispatch, request.task_id)
 
     @mcp.tool(
         name="get_activity",
@@ -250,8 +296,13 @@ def create_app(
         structured_output=True,
     )
     async def get_activity(request: ActivityInput) -> ActivityView:
-        ensure_board(request.board)
-        return await run_query(adapter.get_activity, request.task_id, max_items=request.max_items, log_bytes=request.log_bytes)
+        handle = resolve_board(request.board, operation="read")
+        return await run_query(
+            board_resolver.query_adapter(handle).get_activity,
+            request.task_id,
+            max_items=request.max_items,
+            log_bytes=request.log_bytes,
+        )
 
     @mcp.tool(
         name="create_task",
@@ -263,20 +314,21 @@ def create_app(
         structured_output=True,
     )
     async def create_task(request: CreateTaskInput) -> CreateTaskResult:
-        ensure_board(request.board)
         require_scope(AuthService.create_scope)
-        return await run_command(
-            command_adapter.create_task,
-            title=request.title,
-            body=request.body,
-            parent_ids=request.parent_ids,
-            assignee=request.assignee,
-            priority=request.priority,
-            tenant=request.tenant,
-            session_id=request.session_id,
-            triage=request.triage,
-            idempotency_key=request.idempotency_key,
-        )
+        handle = resolve_board(request.board, operation="create")
+        with board_resolver.creation_lock(handle.slug):
+            return await run_command(
+                board_resolver.command_adapter(handle).create_task,
+                title=request.title,
+                body=request.body,
+                parent_ids=request.parent_ids,
+                assignee=request.assignee,
+                priority=request.priority,
+                tenant=request.tenant,
+                session_id=request.session_id,
+                triage=request.triage,
+                idempotency_key=request.idempotency_key,
+            )
 
     @mcp.custom_route("/healthz", methods=["GET"], include_in_schema=False)
     async def healthz(request: Request) -> Response:

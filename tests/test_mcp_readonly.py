@@ -52,6 +52,7 @@ async def _test_every_mcp_tool_preserves_fixture_state(tmp_path):
     app = create_app(_adapter(fixture), settings=settings, auth_service=auth)
     token = auth.issue_access_token(client_id="readonly-test", subject="test")
     calls = [
+        ("list_boards", {}),
         ("get_board", {"request": {}}),
         ("list_tasks", {"request": {"limit": 10, "include_archived": True}}),
         ("get_task", {"request": {"task_id": "review-task"}}),

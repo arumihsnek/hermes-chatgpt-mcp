@@ -203,6 +203,60 @@ class HermesBoardResolver:
             },
         )
 
+    def command_adapter(self, handle: BoardHandle):
+        from .command import HermesCreateAdapter
+
+        return HermesCreateAdapter(self.store(handle))
+
+    def create_allowed(self, slug: str) -> bool:
+        return slug in self.create_policy
+
     def creation_lock(self, slug: str) -> threading.Lock:
         with self._lock:
             return self._creation_locks.setdefault(slug, threading.Lock())
+
+
+class SingleBoardResolver:
+    """Compatibility resolver for callers injecting one adapter."""
+
+    def __init__(self, adapter: Any, command_adapter: Any, settings: Settings) -> None:
+        metadata = adapter._metadata()
+        self.adapter = adapter
+        self._command_adapter = command_adapter
+        self.settings = settings
+        self.default_slug = adapter.store.board
+        self.handle = BoardHandle(
+            slug=adapter.store.board,
+            name=str(metadata.get("name") or adapter.store.board)[:512],
+            description=str(metadata.get("description") or "")[:2_000],
+            project_id=(str(metadata["project_id"])[:128] if metadata.get("project_id") else None),
+            created_at=(int(metadata["created_at"]) if isinstance(metadata.get("created_at"), int) else None),
+            is_default=adapter.store.board == "default",
+            db_path=adapter.store.db_path,
+        )
+        self._creation_lock = threading.Lock()
+
+    def resolve(
+        self,
+        requested: str | None,
+        *,
+        operation: Literal["read", "create"],
+    ) -> BoardHandle:
+        if requested is not None and requested != self.handle.slug:
+            raise BoardResolutionError("BOARD_NOT_FOUND", "requested board is unavailable")
+        return self.handle
+
+    def list_handles(self) -> list[BoardHandle]:
+        return [self.handle]
+
+    def query_adapter(self, handle: BoardHandle):
+        return self.adapter
+
+    def command_adapter(self, handle: BoardHandle):
+        return self._command_adapter
+
+    def create_allowed(self, slug: str) -> bool:
+        return slug == self.handle.slug
+
+    def creation_lock(self, slug: str) -> threading.Lock:
+        return self._creation_lock
