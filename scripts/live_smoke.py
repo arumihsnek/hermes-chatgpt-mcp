@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import os
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -22,6 +23,16 @@ def _fingerprint(paths: list[Path]) -> str:
         if path.is_file():
             digest.update(path.read_bytes())
     return digest.hexdigest()
+
+
+def _settled_fingerprint(paths: list[Path], expected: str, *, timeout: float = 3.0) -> str:
+    """Allow SQLite to remove transient WAL/SHM coordination sidecars."""
+    current = _fingerprint(paths)
+    deadline = time.monotonic() + timeout
+    while current != expected and time.monotonic() < deadline:
+        time.sleep(0.1)
+        current = _fingerprint(paths)
+    return current
 
 
 def main() -> int:
@@ -50,7 +61,7 @@ def main() -> int:
     graph = adapter.get_task_graph(task_id, depth=1, max_nodes=25)
     dispatch = adapter.get_dispatch(task_id)
     activity = adapter.get_activity(task_id, max_items=25, log_bytes=4_000)
-    after = _fingerprint(tracked_paths)
+    after = _settled_fingerprint(tracked_paths, before)
     if after != before:
         raise SystemExit("FAIL: live read-only fingerprint changed")
 
