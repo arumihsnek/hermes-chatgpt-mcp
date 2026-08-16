@@ -50,6 +50,7 @@ def test_board_admin_creates_canonical_directory_without_changing_current_board(
     fixture = make_hermes_fixture(tmp_path)
     monkeypatch.setenv("HERMES_KANBAN_HOME", str(fixture.root))
     adapter = HermesBoardAdminAdapter(kanban_db)
+    current_board_before = kanban_db.get_current_board()
 
     result = adapter.create_board(
         "second-board",
@@ -59,6 +60,7 @@ def test_board_admin_creates_canonical_directory_without_changing_current_board(
         color="blue",
     )
 
+    assert kanban_db.get_current_board() == current_board_before
     board_dir = fixture.root / "kanban" / "boards" / "second-board"
     assert result.model_dump() == {
         "slug": "second-board",
