@@ -1,0 +1,73 @@
+from __future__ import annotations
+
+import pytest
+
+from hermes_chatgpt_mcp.auth import AuthService, BETA_AUTH_POLICY, OAuthError
+from tests.test_auth import _settings
+
+
+def _service() -> AuthService:
+    return AuthService(_settings(), policy=BETA_AUTH_POLICY)
+
+
+def test_beta_registration_accepts_management_and_board_administration_scopes():
+    client = _service().register_client(
+        {
+            "redirect_uris": ["http://localhost/callback"],
+            "token_endpoint_auth_method": "none",
+            "scope": "hermes:read hermes:manage hermes:board:create",
+        }
+    )
+
+    assert client["scope"] == "hermes:read hermes:manage hermes:board:create"
+
+
+def test_beta_registration_default_does_not_grant_board_administration():
+    client = _service().register_client(
+        {
+            "redirect_uris": ["http://localhost/callback"],
+            "token_endpoint_auth_method": "none",
+        }
+    )
+
+    assert client["scope"] == "hermes:read hermes:create"
+    assert "hermes:board:create" not in client["scope"].split()
+
+
+def test_beta_management_scope_requires_one_write_board_grant():
+    service = _service()
+
+    with pytest.raises(OAuthError, match="selected board"):
+        service.issue_access_token(
+            client_id="manager",
+            subject="user",
+            scopes=["hermes:read", "hermes:manage"],
+        )
+
+    token = service.issue_access_token(
+        client_id="manager",
+        subject="user",
+        scopes=["hermes:read", "hermes:manage"],
+        board="board-a",
+        board_access="write",
+    )
+    assert service.verified_claims(token)["board"] == "board-a"  # type: ignore[index]
+
+
+def test_beta_board_administration_scope_never_carries_a_board_claim():
+    service = _service()
+    token = service.issue_access_token(
+        client_id="administrator",
+        subject="user",
+        scopes=["hermes:read", "hermes:board:create"],
+    )
+    assert "board" not in service.verified_claims(token)  # type: ignore[operator]
+
+    with pytest.raises(OAuthError, match="board administration"):
+        service.issue_access_token(
+            client_id="administrator",
+            subject="user",
+            scopes=["hermes:read", "hermes:board:create"],
+            board="board-a",
+            board_access="write",
+        )

@@ -37,6 +37,22 @@ def test_settings_parse_bounded_values(monkeypatch):
     assert settings.max_board_count == 12
     assert settings.oauth_diagnostics is True
     assert str(settings.oauth_state_file) == "/var/lib/hermes-chatgpt-mcp/oauth-state.json"
+    assert settings.surface == "stable"
+    assert settings.board_create_enabled is False
+
+
+def test_settings_parse_beta_surface_and_board_create_flag(monkeypatch):
+    monkeypatch.setenv("HERMES_AGENT_ROOT", "/home/ubuntu/hermes-agent")
+    monkeypatch.setenv("MCP_OAUTH_USERNAME", "chatgpt")
+    monkeypatch.setenv("MCP_OAUTH_PASSWORD", "a" * 24)
+    monkeypatch.setenv("MCP_OAUTH_SIGNING_KEY", "b" * 48)
+    monkeypatch.setenv("MCP_SURFACE", "beta")
+    monkeypatch.setenv("MCP_BOARD_CREATE_ENABLED", "true")
+
+    settings = Settings.from_env()
+
+    assert settings.surface == "beta"
+    assert settings.board_create_enabled is True
 
 
 def test_settings_reject_oversized_page_limit(monkeypatch):

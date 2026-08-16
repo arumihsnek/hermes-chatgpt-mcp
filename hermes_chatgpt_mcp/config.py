@@ -4,6 +4,7 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlparse
 
 
@@ -45,6 +46,13 @@ def _boolean(name: str, default: bool = False) -> bool:
     if normalized in {"0", "false", "no", "off"}:
         return False
     raise ConfigurationError(f"{name} must be a boolean")
+
+
+def _surface() -> Literal["stable", "beta"]:
+    value = _env("MCP_SURFACE", "stable")
+    if value not in {"stable", "beta"}:
+        raise ConfigurationError("MCP_SURFACE must be stable or beta")
+    return value
 
 
 def _board_set(name: str) -> tuple[str, ...] | None:
@@ -97,6 +105,8 @@ class Settings:
     kanban_create_boards: tuple[str, ...] | None = None
     max_board_count: int = 50
     oauth_diagnostics: bool = False
+    surface: Literal["stable", "beta"] = "stable"
+    board_create_enabled: bool = False
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -144,4 +154,6 @@ class Settings:
             kanban_create_boards=_board_set("MCP_KANBAN_CREATE_BOARDS"),
             max_board_count=_positive_int("MCP_MAX_BOARD_COUNT", 50, maximum=50),
             oauth_diagnostics=_boolean("MCP_OAUTH_DIAGNOSTICS"),
+            surface=_surface(),
+            board_create_enabled=_boolean("MCP_BOARD_CREATE_ENABLED"),
         )
