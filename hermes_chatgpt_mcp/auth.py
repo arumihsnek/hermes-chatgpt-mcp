@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 from mcp.server.auth.provider import AccessToken
 
 from .config import Settings
+from .diagnostics import emit, fingerprint, redirect_identity, request_fingerprint, scope_summary
 
 
 class OAuthError(ValueError):
@@ -296,6 +297,19 @@ class AuthService:
         with self._lock:
             self._clients[client_id] = client
             self._persist_locked()
+        emit(
+            self.settings,
+            "dcr",
+            client_fp=fingerprint(client_id),
+            requested_scopes=scope_summary(payload.get("scope") or self.scope, self.supported_scopes),
+            granted_scopes=scope_summary(requested_scope, self.supported_scopes),
+            allowed_scopes=scope_summary(requested_scope, self.supported_scopes),
+            redirect=redirect_identity(redirects[0]),
+            grant_types=",".join(grant_types),
+            new_registration=True,
+            client_reused=False,
+            outcome="success",
+        )
         return {
             "client_id": client_id,
             "client_id_issued_at": issued_at,
@@ -337,6 +351,7 @@ class AuthService:
         )
         scope_value = self._scope_string(scope, default=client.scope, allowed=set(client.scope.split()))
         code = secrets.token_urlsafe(32)
+        flow_fp = request_fingerprint(client_id, redirect_uri, scope_value, code_challenge)
         with self._lock:
             self._codes[code] = _Code(
                 client_id=client_id,
@@ -345,6 +360,20 @@ class AuthService:
                 code_challenge=code_challenge,
                 expires_at=int(time.time()) + self.settings.oauth_code_ttl_seconds,
             )
+        emit(
+            self.settings,
+            "authorize.grant",
+            client_fp=fingerprint(client_id),
+            flow_fp=flow_fp,
+            code_fp=fingerprint(code),
+            requested_scopes=scope_summary(scope, self.supported_scopes),
+            allowed_scopes=scope_summary(client.scope, self.supported_scopes),
+            granted_scopes=scope_summary(scope_value, self.supported_scopes),
+            redirect=redirect_identity(redirect_uri),
+            client_reused=True,
+            grant_reused=False,
+            outcome="success",
+        )
         return code
 
     def issue_access_token(self, *, client_id: str, subject: str, scopes: list[str] | None = None) -> str:
@@ -375,6 +404,14 @@ class AuthService:
                 expires_at=int(time.time()) + 30 * 24 * 3600,
             )
             self._persist_locked()
+        emit(
+            self.settings,
+            "token.refresh.issue",
+            client_fp=fingerprint(client_id),
+            refresh_fp=fingerprint(token),
+            granted_scopes=scope_summary(scope, self.supported_scopes),
+            outcome="success",
+        )
         return token
 
     def exchange_code(self, *, code: str, client_id: str, redirect_uri: str, code_verifier: str) -> str:
@@ -393,11 +430,23 @@ class AuthService:
             if not hmac.compare_digest(expected, entry.code_challenge):
                 raise OAuthError("PKCE verification failed", code="invalid_grant")
             entry.used = True
-        return self.issue_access_token(
+        access_token = self.issue_access_token(
             client_id=client_id,
             subject=client.client_name,
             scopes=entry.scope.split(),
         )
+        emit(
+            self.settings,
+            "token.authorization_code",
+            client_fp=fingerprint(client_id),
+            flow_fp=request_fingerprint(client_id, entry.redirect_uri, entry.scope, entry.code_challenge),
+            code_fp=fingerprint(code),
+            token_fp=fingerprint(access_token),
+            granted_scopes=scope_summary(entry.scope, self.supported_scopes),
+            effective_scopes=scope_summary(entry.scope, self.supported_scopes),
+            outcome="success",
+        )
+        return access_token
 
     def exchange_code_bundle(self, *, code: str, client_id: str, redirect_uri: str, code_verifier: str) -> dict:
         access_token = self.exchange_code(code=code, client_id=client_id, redirect_uri=redirect_uri, code_verifier=code_verifier)
@@ -423,6 +472,13 @@ class AuthService:
             if entry is not None:
                 self._persist_locked()
         if entry is None or entry.client_id != client_id:
+            emit(
+                self.settings,
+                "token.refresh.exchange",
+                client_fp=fingerprint(client_id),
+                refresh_fp=fingerprint(refresh_token),
+                outcome="invalid_grant",
+            )
             raise OAuthError("invalid refresh token", code="invalid_grant")
         access_token = self.issue_access_token(
             client_id=client_id,
@@ -430,6 +486,17 @@ class AuthService:
             scopes=entry.scope.split(),
         )
         new_refresh = self._issue_refresh_token(client_id=client_id, subject=entry.subject, scope=entry.scope)
+        emit(
+            self.settings,
+            "token.refresh.exchange",
+            client_fp=fingerprint(client_id),
+            refresh_fp=fingerprint(refresh_token),
+            new_refresh_fp=fingerprint(new_refresh),
+            token_fp=fingerprint(access_token),
+            original_scopes=scope_summary(entry.scope, self.supported_scopes),
+            effective_scopes=scope_summary(entry.scope, self.supported_scopes),
+            outcome="success",
+        )
         return {
             "access_token": access_token,
             "token_type": "Bearer",
@@ -494,4 +561,21 @@ class BearerTokenVerifier:
         self.service = service
 
     async def verify_token(self, token: str) -> AccessToken | None:
-        return self.service.verify_token(token)
+        access = self.service.verify_token(token)
+        if access is None:
+            emit(
+                self.service.settings,
+                "mcp.bearer",
+                token_fp=fingerprint(token),
+                outcome="rejected",
+            )
+        else:
+            emit(
+                self.service.settings,
+                "mcp.bearer",
+                client_fp=fingerprint(access.client_id),
+                token_fp=fingerprint(token),
+                effective_scopes=scope_summary(" ".join(access.scopes), self.service.supported_scopes),
+                outcome="accepted",
+            )
+        return access

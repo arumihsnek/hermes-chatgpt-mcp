@@ -21,6 +21,7 @@ from .auth import AuthService, BearerTokenVerifier, OAuthError
 from .boards import BoardHandle, BoardResolutionError, HermesBoardResolver, SingleBoardResolver
 from .command import HermesCreateAdapter
 from .config import Settings
+from .diagnostics import emit, fingerprint, redirect_identity, request_fingerprint, scope_summary
 from .schemas import (
     ActivityInput,
     ActivityView,
@@ -356,13 +357,50 @@ def create_app(
     async def oauth_register(request: Request) -> Response:
         try:
             payload = await _bounded_json(request)
-            return JSONResponse(auth_service.register_client(payload), status_code=201, headers={"Cache-Control": "no-store"})
+            redirect_uris = payload.get("redirect_uris") if isinstance(payload, dict) else None
+            redirect = redirect_identity(redirect_uris[0]) if isinstance(redirect_uris, list) and redirect_uris else None
+            emit(
+                settings,
+                "dcr.request",
+                requested_scopes=payload.get("scope") if isinstance(payload, dict) else None,
+                redirect=redirect,
+                grant_types=",".join(str(value) for value in (payload.get("grant_types") or [])) if isinstance(payload, dict) else None,
+                outcome="received",
+            )
+            result = auth_service.register_client(payload)
+            emit(
+                settings,
+                "dcr.response",
+                client_fp=fingerprint(result["client_id"]),
+                granted_scopes=result.get("scope"),
+                redirect=redirect_identity(result["redirect_uris"][0]),
+                grant_types=",".join(result.get("grant_types", [])),
+                new_registration=True,
+                client_reused=False,
+                http_status=201,
+                outcome="success",
+            )
+            return JSONResponse(result, status_code=201, headers={"Cache-Control": "no-store"})
         except OAuthError as exc:
+            emit(settings, "dcr.response", error_code=exc.code, http_status=400, outcome="error")
             return _json_error(exc)
 
     @mcp.custom_route("/oauth/authorize", methods=["GET"], include_in_schema=False)
     async def oauth_authorize_get(request: Request) -> Response:
         query = {key: request.query_params.get(key, "") for key in ("client_id", "redirect_uri", "response_type", "scope", "state", "code_challenge", "code_challenge_method", "resource")}
+        flow_fp = request_fingerprint(query["client_id"], query["redirect_uri"], query["scope"], query["code_challenge"])
+        emit(
+            settings,
+            "authorize.request",
+            client_fp=fingerprint(query["client_id"]),
+            flow_fp=flow_fp,
+            requested_scopes=query["scope"],
+            redirect=redirect_identity(query["redirect_uri"]),
+            response_type=query["response_type"],
+            code_challenge_method=query["code_challenge_method"],
+            resource=redirect_identity(query["resource"]),
+            outcome="received",
+        )
         try:
             if query["resource"] and query["resource"].rstrip("/") != settings.public_base_url:
                 raise OAuthError("invalid resource", code="invalid_target")
@@ -374,8 +412,10 @@ def create_app(
                 code_challenge=query["code_challenge"],
                 code_challenge_method=query["code_challenge_method"],
             )
+            emit(settings, "authorize.request", flow_fp=flow_fp, http_status=200, outcome="accepted")
             return HTMLResponse(auth_service.authorization_form(query=query), headers={"Cache-Control": "no-store"})
         except OAuthError as exc:
+            emit(settings, "authorize.request", flow_fp=flow_fp, error_code=exc.code, http_status=400, outcome="error")
             return _json_error(exc)
 
     @mcp.custom_route("/oauth/authorize", methods=["POST"], include_in_schema=False)
@@ -384,6 +424,19 @@ def create_app(
             form = await _bounded_form(request)
             if not hmac_compare(form.get("username", ""), settings.oauth_username) or not hmac_compare(form.get("password", ""), settings.oauth_password):
                 return HTMLResponse("Authorization failed", status_code=401, headers={"Cache-Control": "no-store"})
+            flow_fp = request_fingerprint(form.get("client_id", ""), form.get("redirect_uri", ""), form.get("scope", ""), form.get("code_challenge", ""))
+            emit(
+                settings,
+                "authorize.consent",
+                client_fp=fingerprint(form.get("client_id", "")),
+                flow_fp=flow_fp,
+                requested_scopes=form.get("scope"),
+                redirect=redirect_identity(form.get("redirect_uri", "")),
+                response_type=form.get("response_type", ""),
+                code_challenge_method=form.get("code_challenge_method", ""),
+                resource=redirect_identity(form.get("resource", "")),
+                outcome="credentials_accepted",
+            )
             if form.get("resource") and form["resource"].rstrip("/") != settings.public_base_url:
                 raise OAuthError("invalid resource", code="invalid_target")
             auth_service.validate_authorization_request(
@@ -400,15 +453,38 @@ def create_app(
                 scope=form["scope"],
                 code_challenge=form["code_challenge"],
             )
+            emit(
+                settings,
+                "authorize.response",
+                client_fp=fingerprint(form["client_id"]),
+                flow_fp=flow_fp,
+                code_fp=fingerprint(code),
+                granted_scopes=form.get("scope"),
+                redirect=redirect_identity(form["redirect_uri"]),
+                http_status=303,
+                outcome="approved",
+            )
             return RedirectResponse(_redirect_with_code(form["redirect_uri"], code=code, state=form.get("state", "")), status_code=303)
         except OAuthError as exc:
+            emit(settings, "authorize.response", error_code=exc.code, http_status=400, outcome="error")
             return _json_error(exc)
 
     @mcp.custom_route("/oauth/token", methods=["POST"], include_in_schema=False)
     async def oauth_token(request: Request) -> Response:
+        form: dict[str, str] = {}
         try:
             form = await _bounded_form(request)
             grant_type = form.get("grant_type", "")
+            emit(
+                settings,
+                "token.request",
+                client_fp=fingerprint(form.get("client_id", "")),
+                code_fp=fingerprint(form.get("code", "")) if grant_type == "authorization_code" else None,
+                refresh_fp=fingerprint(form.get("refresh_token", "")) if grant_type == "refresh_token" else None,
+                requested_scopes=form.get("scope"),
+                grant_type=grant_type,
+                outcome="received",
+            )
             if grant_type == "authorization_code":
                 result = auth_service.exchange_code_bundle(
                     code=form.get("code", ""),
@@ -420,8 +496,33 @@ def create_app(
                 result = auth_service.refresh_bundle(refresh_token=form.get("refresh_token", ""), client_id=form.get("client_id", ""))
             else:
                 raise OAuthError("unsupported grant type", code="unsupported_grant_type")
+            emit(
+                settings,
+                "token.response",
+                client_fp=fingerprint(form.get("client_id", "")),
+                code_fp=fingerprint(form.get("code", "")) if grant_type == "authorization_code" else None,
+                refresh_fp=fingerprint(form.get("refresh_token", "")) if grant_type == "refresh_token" else None,
+                token_fp=fingerprint(result.get("access_token", "")),
+                new_refresh_fp=fingerprint(result["refresh_token"]) if result.get("refresh_token") else None,
+                granted_scopes=result.get("scope"),
+                effective_scopes=result.get("scope"),
+                grant_type=grant_type,
+                http_status=200,
+                outcome="success",
+            )
             return JSONResponse(result, headers={"Cache-Control": "no-store"})
         except OAuthError as exc:
+            emit(
+                settings,
+                "token.response",
+                client_fp=fingerprint(form.get("client_id", "")) if form else None,
+                code_fp=fingerprint(form.get("code", "")) if form.get("code") else None,
+                refresh_fp=fingerprint(form.get("refresh_token", "")) if form.get("refresh_token") else None,
+                grant_type=form.get("grant_type", "") if form else None,
+                error_code=exc.code,
+                http_status=400,
+                outcome="error",
+            )
             return _json_error(exc)
 
     _strictify_tools(mcp)
@@ -477,6 +578,7 @@ def main() -> None:
         host=settings.host,
         port=settings.port,
         log_level=os.environ.get("MCP_LOG_LEVEL", "info").lower(),
+        access_log=False,
     )
 
 

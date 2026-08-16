@@ -25,6 +25,7 @@ def test_settings_parse_bounded_values(monkeypatch):
     monkeypatch.setenv("MCP_KANBAN_READ_BOARDS", "board-a,board-b")
     monkeypatch.setenv("MCP_KANBAN_CREATE_BOARDS", "board-a")
     monkeypatch.setenv("MCP_MAX_BOARD_COUNT", "12")
+    monkeypatch.setenv("MCP_OAUTH_DIAGNOSTICS", "true")
 
     settings = Settings.from_env()
 
@@ -34,6 +35,7 @@ def test_settings_parse_bounded_values(monkeypatch):
     assert settings.kanban_read_boards == ("board-a", "board-b")
     assert settings.kanban_create_boards == ("board-a",)
     assert settings.max_board_count == 12
+    assert settings.oauth_diagnostics is True
     assert str(settings.oauth_state_file) == "/var/lib/hermes-chatgpt-mcp/oauth-state.json"
 
 
@@ -45,4 +47,15 @@ def test_settings_reject_oversized_page_limit(monkeypatch):
     monkeypatch.setenv("MCP_MAX_PAGE_SIZE", "501")
 
     with pytest.raises(ConfigurationError, match="MCP_MAX_PAGE_SIZE"):
+        Settings.from_env()
+
+
+def test_settings_reject_invalid_oauth_diagnostics_flag(monkeypatch):
+    monkeypatch.setenv("HERMES_AGENT_ROOT", "/home/ubuntu/hermes-agent")
+    monkeypatch.setenv("MCP_OAUTH_USERNAME", "chatgpt")
+    monkeypatch.setenv("MCP_OAUTH_PASSWORD", "a" * 24)
+    monkeypatch.setenv("MCP_OAUTH_SIGNING_KEY", "b" * 48)
+    monkeypatch.setenv("MCP_OAUTH_DIAGNOSTICS", "maybe")
+
+    with pytest.raises(ConfigurationError, match="MCP_OAUTH_DIAGNOSTICS"):
         Settings.from_env()

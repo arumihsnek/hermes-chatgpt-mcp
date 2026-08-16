@@ -35,6 +35,18 @@ def _positive_int(name: str, default: int, *, maximum: int) -> int:
     return value
 
 
+def _boolean(name: str, default: bool = False) -> bool:
+    raw = _env(name)
+    if raw is None:
+        return default
+    normalized = raw.lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ConfigurationError(f"{name} must be a boolean")
+
+
 def _board_set(name: str) -> tuple[str, ...] | None:
     raw = os.environ.get(name)
     if raw is None or not raw.strip():
@@ -84,6 +96,7 @@ class Settings:
     kanban_read_boards: tuple[str, ...] | None = None
     kanban_create_boards: tuple[str, ...] | None = None
     max_board_count: int = 50
+    oauth_diagnostics: bool = False
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -130,4 +143,5 @@ class Settings:
             kanban_read_boards=_board_set("MCP_KANBAN_READ_BOARDS"),
             kanban_create_boards=_board_set("MCP_KANBAN_CREATE_BOARDS"),
             max_board_count=_positive_int("MCP_MAX_BOARD_COUNT", 50, maximum=50),
+            oauth_diagnostics=_boolean("MCP_OAUTH_DIAGNOSTICS"),
         )
