@@ -148,7 +148,7 @@ def create_app(
         title="Create Hermes task",
         readOnlyHint=False,
         destructiveHint=False,
-        idempotentHint=False,
+        idempotentHint=True,
         openWorldHint=False,
     )
 

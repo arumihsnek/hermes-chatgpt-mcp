@@ -129,5 +129,5 @@ class Settings:
             oauth_state_file=Path(state_raw).expanduser() if state_raw else None,
             kanban_read_boards=_board_set("MCP_KANBAN_READ_BOARDS"),
             kanban_create_boards=_board_set("MCP_KANBAN_CREATE_BOARDS"),
-            max_board_count=_positive_int("MCP_MAX_BOARD_COUNT", 50, maximum=500),
+            max_board_count=_positive_int("MCP_MAX_BOARD_COUNT", 50, maximum=50),
         )

@@ -14,7 +14,7 @@ expiry, signature, and `hermes:read`. OAuth registration accepts public
 `none` clients, exact registered HTTPS redirect URIs (or localhost HTTP for
 development), authorization code, PKCE S256, and only the supported scopes:
 
-- `hermes:read` — six query tools;
+- `hermes:read` — seven query tools, including bounded `list_boards`;
 - `hermes:create` — `create_task`, always granted together with
   `hermes:read`.
 - `offline_access` — OAuth refresh-token renewal only; it is not a Hermes
@@ -33,18 +33,26 @@ are constant-time and failures are generic. No client secret is accepted.
 - `HermesCreateAdapter` is a separate class with one public method and calls
   only Hermes' canonical `kanban_db.create_task`; this repository contains no
   task-table write SQL.
-- The MCP tool allowlist contains exactly seven tools. No update/delete/claim/
+- The MCP tool allowlist contains exactly eight tools: seven read tools and
+  one create tool. No update/delete/claim/
   assign/move/start/complete/review/approve/reject/retry/import/sync tool is
   registered.
 - Read tools are annotated `readOnlyHint=true`, `destructiveHint=false`, and
   `idempotentHint=true`.
 - `create_task` is annotated `readOnlyHint=false`, `destructiveHint=false`
-  (additive), and `idempotentHint=false` because an idempotency key is
-  optional.
+  (additive), and `idempotentHint=true`; its idempotency key is mandatory.
+- `MCP_KANBAN_READ_BOARDS` and `MCP_KANBAN_CREATE_BOARDS` are deployment-level
+  allowlists. Hermes has no per-principal board ACL, so this is not presented
+  as user-specific authorization. Read-authorized boards are discoverable;
+  create capability additionally depends on the OAuth token's
+  `hermes:create` scope. Boards outside the read allowlist are intentionally
+  indistinguishable from unknown boards.
 - Strict Pydantic schemas reject unknown fields and bound IDs, title/body
   size, parent count, priority, and all list/graph/activity limits.
 - Tests compare fixture state before/after every query operation and verify
-  that denied/invalid creation calls do not add tasks.
+  that denied/invalid creation calls do not add tasks. Multi-board tests use
+  real Hermes fixture databases to prove A/B routing, idempotency, event
+  creation, cross-board task isolation, and no fallback.
 
 ## OAuth persistence
 
@@ -75,7 +83,8 @@ configuration values.
 
 systemd runs as the unprivileged `ubuntu` user with `NoNewPrivileges`,
 `ProtectSystem=full`, `ProtectHome=read-only`, private devices/temp space,
-restricted address families, and explicit write paths for only the selected
-Hermes board and OAuth state directory. The service binds to loopback; TLS is
-terminated by the existing OpenResty edge. The deployment does not expose
-other Hermes services.
+restricted address families, and explicit write paths for only the configured
+create-board directories (currently
+`codex_app_server` and `dashboard`) and OAuth state directory. The service
+binds to loopback; TLS is terminated by the existing OpenResty edge. The
+deployment does not expose other Hermes services.

@@ -107,7 +107,9 @@ async def _test_health_metadata_auth_and_exact_tool_contract(tmp_path):
     assert all(tool["annotations"]["destructiveHint"] is False for tool in readonly)
     assert create["annotations"]["readOnlyHint"] is False
     assert create["annotations"]["destructiveHint"] is False
-    assert create["annotations"]["idempotentHint"] is False
+    assert create["annotations"]["idempotentHint"] is True
+    create_request_schema = create["inputSchema"]["$defs"]["CreateTaskInput"]
+    assert "idempotency_key" in create_request_schema["required"]
     assert list_boards["annotations"]["readOnlyHint"] is True
     assert list_boards["annotations"]["destructiveHint"] is False
     assert list_boards["inputSchema"]["properties"] == {}

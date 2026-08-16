@@ -18,7 +18,8 @@ The installer:
 1. installs the systemd unit and root-owned OpenResty location include;
 2. creates or preserves `/home/ubuntu/.hermes/hermes-chatgpt-mcp.env` as
    `ubuntu:ubuntu`, mode `0600`, without printing its values;
-3. configures the selected `codex_app_server` board and loopback port;
+3. configures the canonical board resolver with the bounded OCI allowlists
+   `codex_app_server,dashboard` and loopback port;
 4. validates OpenResty inside the running 1Panel container;
 5. reloads systemd and restarts the service;
 6. waits for loopback health and reloads OpenResty through
@@ -34,18 +35,19 @@ silently restore the v0.1 in-memory behavior.
 
 The unit keeps `NoNewPrivileges`, `ProtectSystem=full`, `ProtectHome=read-only`,
 `PrivateDevices`, `PrivateTmp`, and restricted address families. The only
-Hermes write allowance is:
+Hermes write allowances are:
 
 ```text
 /home/ubuntu/.hermes/kanban/boards/codex_app_server
+/home/ubuntu/.hermes/kanban/boards/dashboard
 ```
 
 That directory is needed by Hermes' canonical command connection for its
 normal SQLite/WAL operation. The query adapter still opens its own connection
 with URI `mode=ro` and immediately sets `PRAGMA query_only=ON`; it never uses
-the writable command connection. The second write allowance is only the
-service-owned OAuth state directory. Change the board `ReadWritePaths` line
-and the environment together if the deployed board changes.
+the writable command connection. The third write allowance is only the
+service-owned OAuth state directory. Keep `ReadWritePaths`,
+`MCP_KANBAN_READ_BOARDS`, and `MCP_KANBAN_CREATE_BOARDS` synchronized.
 
 ## Verification
 
@@ -77,10 +79,15 @@ POST https://kanban.hermesinthenight.duckdns.org/mcp
 ```
 
 The MCP endpoint must return `401` without a bearer token. A complete test
-must use DCR + PKCE, request `hermes:read hermes:create`, verify seven tools
-and their annotations, call all six read tools, call `create_task`, and read
-the created task back. Never copy the runtime password or bearer tokens into
-shell history or logs.
+must use DCR + PKCE, request `hermes:read hermes:create`, verify eight tools
+(seven read plus `create_task`) and their annotations, call `list_boards`,
+read both allowlisted boards explicitly, create one idempotent test task on
+each controlled board, and read both tasks back. Never copy the runtime
+password, refresh token, or bearer token into shell history or logs.
+
+For a controlled live check, use clearly prefixed test cards and remove them
+afterward only through Hermes' native administrative/test cleanup path. Never
+add a public delete tool to make cleanup convenient.
 
 ## Restart persistence check
 
@@ -98,10 +105,12 @@ refresh token must be rejected after rotation, and the new token must carry
 the same requested scopes. Authorization codes are intentionally not persisted
 and should expire or become invalid across a restart.
 
-An existing v0.1 ChatGPT registration lived only in the old process memory.
-The first restart after this rollout may therefore require ChatGPT to run its
-OAuth flow again; registrations made after the state file is active survive
-future restarts.
+The current deployment persists DCR registrations and refresh-token hashes in
+the state file. A service restart must therefore preserve the registered
+`client_id`; only authorization codes are intentionally lost. A ChatGPT
+connection that was authorized without `hermes:create` still requires an
+explicit OAuth reauthorization to gain that scope, even though its DCR client
+survives.
 
 ## Rollback and removal
 

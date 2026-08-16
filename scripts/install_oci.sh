@@ -59,6 +59,8 @@ defaults = {
     "HERMES_AGENT_ROOT": "/home/ubuntu/hermes-agent",
     "HERMES_KANBAN_HOME": "/home/ubuntu/.hermes",
     "HERMES_KANBAN_BOARD": "codex_app_server",
+    "MCP_KANBAN_READ_BOARDS": "codex_app_server,dashboard",
+    "MCP_KANBAN_CREATE_BOARDS": "codex_app_server,dashboard",
     "MCP_PUBLIC_BASE_URL": "https://kanban.hermesinthenight.duckdns.org",
     "MCP_HOST": "127.0.0.1",
     "MCP_PORT": "8789",
@@ -71,6 +73,7 @@ for key, value in defaults.items():
     values.setdefault(key, value)
 ordered = [
     "HERMES_AGENT_ROOT", "HERMES_KANBAN_HOME", "HERMES_KANBAN_BOARD",
+    "MCP_KANBAN_READ_BOARDS", "MCP_KANBAN_CREATE_BOARDS",
     "MCP_PUBLIC_BASE_URL", "MCP_HOST", "MCP_PORT", "MCP_OAUTH_USERNAME",
     "MCP_OAUTH_PASSWORD", "MCP_OAUTH_SIGNING_KEY", "MCP_OAUTH_STATE_FILE",
 ]

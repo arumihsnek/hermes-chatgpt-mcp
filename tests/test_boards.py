@@ -80,6 +80,16 @@ def test_create_allowlist_must_be_readable(tmp_path, monkeypatch):
         HermesBoardResolver(settings, hermes_module=kanban_db)
 
 
+def test_default_board_must_be_readable(tmp_path, monkeypatch):
+    _write_board(tmp_path, "board-a", name="Board A")
+    _write_board(tmp_path, "board-b", name="Board B")
+    monkeypatch.setenv("HERMES_KANBAN_HOME", str(tmp_path))
+    settings = _board_settings(tmp_path, read=("board-b",), create=())
+
+    with pytest.raises(ConfigurationError, match="default board"):
+        HermesBoardResolver(settings, hermes_module=kanban_db)
+
+
 def test_unreadable_board_is_omitted_from_discovery(tmp_path, monkeypatch):
     resolver = _resolver(tmp_path, monkeypatch)
 

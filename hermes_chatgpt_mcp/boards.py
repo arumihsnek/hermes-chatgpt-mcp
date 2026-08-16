@@ -70,6 +70,8 @@ class HermesBoardResolver:
             raise ConfigurationError(
                 "MCP_KANBAN_CREATE_BOARDS must be a subset of MCP_KANBAN_READ_BOARDS"
             )
+        if self.read_policy is not None and self.default_slug not in self.read_policy:
+            raise ConfigurationError("configured default board must be readable")
         self._creation_locks: dict[str, threading.Lock] = {}
         self._lock = threading.Lock()
         self._validate_configured_boards()

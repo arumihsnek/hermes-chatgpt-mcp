@@ -22,12 +22,18 @@ def test_settings_parse_bounded_values(monkeypatch):
     monkeypatch.setenv("MCP_OAUTH_SIGNING_KEY", "b" * 48)
     monkeypatch.setenv("MCP_MAX_PAGE_SIZE", "25")
     monkeypatch.setenv("MCP_PORT", "9876")
+    monkeypatch.setenv("MCP_KANBAN_READ_BOARDS", "board-a,board-b")
+    monkeypatch.setenv("MCP_KANBAN_CREATE_BOARDS", "board-a")
+    monkeypatch.setenv("MCP_MAX_BOARD_COUNT", "12")
 
     settings = Settings.from_env()
 
     assert settings.public_base_url == "https://mcp.example.test"
     assert settings.max_page_size == 25
     assert settings.port == 9876
+    assert settings.kanban_read_boards == ("board-a", "board-b")
+    assert settings.kanban_create_boards == ("board-a",)
+    assert settings.max_board_count == 12
     assert str(settings.oauth_state_file) == "/var/lib/hermes-chatgpt-mcp/oauth-state.json"
 
 

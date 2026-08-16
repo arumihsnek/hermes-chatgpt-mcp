@@ -1,22 +1,24 @@
 # hermes-chatgpt-mcp
 
 `hermes-chatgpt-mcp` is an authenticated remote MCP facade for the canonical
-Hermes Kanban service. It keeps the v0.1 query adapter read-only and adds the
-single, narrowly-scoped v0.2 command `create_task` through Hermes'
+Hermes Kanban service. It keeps the query adapter read-only, discovers an
+explicit service-authorized set of Hermes boards, and exposes one narrowly
+scoped command, `create_task`, through Hermes'
 `hermes_cli.kanban_db.create_task` API.
 
-## v0.2 scope
+## v0.3 scope
 
-The public surface is six READ tools plus one WRITE tool:
+The public surface is seven READ tools plus one WRITE tool:
 
-- READ: `get_board`, `list_tasks`, `get_task`, `get_task_graph`,
-  `get_dispatch`, `get_activity`;
+- READ: `list_boards`, `get_board`, `list_tasks`, `get_task`,
+  `get_task_graph`, `get_dispatch`, `get_activity`;
 - WRITE: `create_task` only.
 
 There is still no update, delete, claim, assign-after-creation, move, start,
 complete, close, review, approve, reject, retry, dispatch mutation, import, or
-sync-back capability. Hermes remains the semantic authority for task status,
-links, scheduler state, outcomes, and audit activity.
+sync-back capability. Hermes remains the semantic authority for boards, task
+status, links, scheduler state, outcomes, and audit activity. v0.3 is still
+a minimal management surface, not a full Kanban controller.
 
 ## Architecture
 
@@ -28,6 +30,7 @@ OpenResty /mcp and OAuth paths
     │ loopback 127.0.0.1:8789
     ▼
 hermes-chatgpt-mcp (systemd)
+    ├── board resolver: canonical Hermes discovery + service allowlists
     ├── query path: mode=ro + PRAGMA query_only=ON
     │       ▼
     │   Hermes hermes_cli.kanban_db query API
@@ -50,10 +53,11 @@ rejected alternatives are recorded in
 - Python 3.11.
 - Hermes installed at `/home/ubuntu/hermes-agent`, or `HERMES_AGENT_ROOT`
   pointing to the real source tree.
-- The service user must be able to read the selected Hermes board.
-- The OCI service also needs write access only to the selected board directory
-  for Hermes' canonical command connection and to its private OAuth state
-  directory.
+- The service user must be able to read every board in the configured read
+  allowlist.
+- The OCI service also needs write access only to the configured create-board
+  directories for Hermes' canonical command connection and to its private
+  OAuth state directory.
 
 ## Configuration
 
@@ -64,6 +68,8 @@ minimum set:
 HERMES_AGENT_ROOT=/home/ubuntu/hermes-agent
 HERMES_KANBAN_HOME=/home/ubuntu/.hermes
 HERMES_KANBAN_BOARD=codex_app_server
+MCP_KANBAN_READ_BOARDS=codex_app_server,dashboard
+MCP_KANBAN_CREATE_BOARDS=codex_app_server,dashboard
 MCP_PUBLIC_BASE_URL=https://kanban.hermesinthenight.duckdns.org
 MCP_HOST=127.0.0.1
 MCP_PORT=8789
@@ -92,20 +98,27 @@ The MCP endpoint is `/mcp`; liveness is `/healthz`. OAuth metadata is exposed
 at `/.well-known/oauth-authorization-server`, and protected-resource metadata
 at `/.well-known/oauth-protected-resource`.
 
+`HERMES_KANBAN_BOARD` is the default used when `board` is omitted. The two
+`MCP_KANBAN_*_BOARDS` values are deployment-level allowlists resolved through
+Hermes' canonical `list_boards()` and `kanban_db_path()`. An explicit unknown
+or unauthorized board never falls back to the default.
+
 ## Tests and live proof
 
 The suite includes unit, command-adapter, contract, OAuth persistence,
-scope-isolation, integration-fixture, and before/after read-only fingerprint
-tests:
+scope-isolation, multi-board A/B routing, integration-fixture, and
+before/after read-only fingerprint tests:
 
 ```bash
 /home/ubuntu/hermes-agent/venv/bin/python -m pytest -q
 /home/ubuntu/hermes-agent/venv/bin/python -m compileall -q hermes_chatgpt_mcp tests scripts
 ```
 
-The live read smoke is opt-in and requires an explicit board; it calls all six
-canonical operations against the real Hermes installation and checks
-DB/WAL/metadata fingerprints:
+The live read smoke is opt-in and requires an explicit board; it calls the six
+task-scoped canonical read operations against the real Hermes installation and
+checks DB/WAL/metadata fingerprints. Multi-board routing additionally uses the
+MCP fixture/integration tests and the deployment checklist to exercise
+`list_boards`, board A, and board B:
 
 ```bash
 HERMES_LIVE_TEST=1 \
@@ -115,7 +128,7 @@ HERMES_KANBAN_BOARD=codex_app_server \
 /home/ubuntu/hermes-agent/venv/bin/python scripts/live_smoke.py
 ```
 
-The v0.2 integration tests construct a temporary board with Hermes'
+The v0.3 integration tests construct multiple temporary boards with Hermes'
 `SCHEMA_SQL` and execute the real `kanban_db.create_task` command path; no
 mocked task-creation implementation is used.
 
@@ -123,7 +136,9 @@ mocked task-creation implementation is used.
 
 READ tools:
 
-- `get_board`: configured board metadata and canonical status/assignee counts.
+- `list_boards`: bounded discovery of boards in the service read allowlist,
+  including the resolved default and per-token create capability.
+- `get_board`: selected board metadata and canonical status/assignee counts.
 - `list_tasks`: bounded canonical task listing with status, assignee, tenant,
   session, archive, limit, and order filters.
 - `get_task`: task body and canonical fields, direct parents/children, run
@@ -138,8 +153,8 @@ READ tools:
 WRITE tool:
 
 - `create_task`: creates exactly one card through Hermes' canonical command
-  operation. It accepts the configured board, title, body, parent task IDs,
-  initial assignee, priority, tenant, session ID, triage flag, and optional
+  operation. It accepts the selected board, title, body, parent task IDs,
+  initial assignee, priority, tenant, session ID, triage flag, and a required
   idempotency key. Hermes supplies the task ID, canonical status, `created`
   event, parent links, notification inheritance, and `created_by=chatgpt_mcp`.
 
@@ -161,7 +176,7 @@ secrets.
 
 Scopes are separated:
 
-- `hermes:read` is required by all six query tools;
+- `hermes:read` is required by all seven query tools;
 - `hermes:create` is required by `create_task`, and its grant also includes
   `hermes:read` because the MCP resource has a resource-wide read guard.
 - `offline_access` is an OAuth protocol scope for refresh-token renewal; it
@@ -169,7 +184,15 @@ Scopes are separated:
 
 A read-only token cannot create a card. The create tool is annotated
 `readOnlyHint=false`, `destructiveHint=false` (additive write), and
-`idempotentHint=false` because the idempotency key is optional.
+`idempotentHint=true`; the required idempotency key makes safe retries return
+the existing non-archived task instead of creating a duplicate.
+
+Hermes currently has no per-principal board ACL model. Therefore the board
+allowlists are service-level policy: every principal with `hermes:read` can
+see the configured read boards, while `hermes:create` additionally enables
+creation only on the configured create boards. A board outside the read
+allowlist is reported as unavailable, so existence and authorization are not
+distinguished to callers.
 
 In ChatGPT, add a custom connector/MCP connection using:
 
@@ -178,12 +201,13 @@ https://kanban.hermesinthenight.duckdns.org/mcp
 ```
 
 Complete OAuth when ChatGPT opens the authorization page. Request both
-`hermes:read` and `hermes:create` when creating or updating the app. ChatGPT
-may use a frozen tool snapshot for an existing app; rescan/recreate or
-reconnect the app after deployment so the seventh tool and new scope are
-discovered. An existing v0.1 authorization may also require reauthorization
-because its DCR client was created before persistent state and before the
-create scope existed.
+`hermes:read` and `hermes:create` when the app should create cards; request
+only `hermes:read` for a read-only connection. ChatGPT may use a frozen tool
+snapshot for an existing app; reconnect or rescan the app after deployment so
+`list_boards` and the current annotations are discovered. If OAuth asks for
+the new create permission, approve it explicitly. An existing connection
+authorized only for `hermes:read` cannot create until it is reauthorized with
+`hermes:create`.
 
 The callback must be the URI ChatGPT sends during dynamic registration; the
 implementation accepts the documented
@@ -220,16 +244,19 @@ sudo journalctl -u hermes-chatgpt-mcp.service -f
 The installer preserves the runtime environment and timestamped edge backups
 during rollback. It never modifies Hermes source or Kanban rows itself.
 
-## Limitations of v0.2
+## Limitations of v0.3
 
-- One configured board is served per process; changing
-  `HERMES_KANBAN_BOARD` requires a service restart.
+- Board ACLs are service-level, not per-user/per-board. Hermes does not expose
+  a canonical principal ACL, so the MCP cannot honestly claim finer isolation.
+- Hermes' canonical board discovery is exposed only through the configured
+  bounded allowlist; this service does not browse arbitrary filesystem paths.
 - DCR clients and refresh-token rotation state persist, but authorization
   codes are intentionally ephemeral and access tokens expire normally.
 - Existing v0.1 clients registered before the persistence rollout are not
   recoverable after the first restart and may need ChatGPT reauthorization.
 - This is not a full write/control plane: `create_task` is the only write;
-  scheduler, notification, and task-editing mutations remain unavailable.
+  comments, attachments, scheduler, notification, lifecycle, board
+  administration, and task-editing mutations remain unavailable.
 - The service depends on the installed Hermes command/query module and its
   SQLite schema; a Hermes upgrade should rerun reconnaissance and the live
   smoke before promotion.

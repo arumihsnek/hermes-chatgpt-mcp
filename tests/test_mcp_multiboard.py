@@ -14,6 +14,7 @@ from hermes_chatgpt_mcp.server import create_app
 
 from hermes_cli import kanban_db
 
+from .fixtures import tree_fingerprint
 from .test_auth import _settings
 from .test_boards import _write_board
 
@@ -83,9 +84,17 @@ async def _test_list_boards_returns_only_authorized_canonical_boards(tmp_path, m
     transport = httpx.ASGITransport(app=app)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(transport=transport, base_url=settings.public_base_url) as client:
+            # Prime SQLite's WAL/SHM coordination sidecars before taking the
+            # semantic before-snapshot; opening a WAL database read-only may
+            # create those transient files without changing board state.
+            warmed = await _rpc(client, token, "tools/call", {"name": "list_boards", "arguments": {}}, 0)
+            assert warmed["result"].get("isError") is not True
+            before = tree_fingerprint(tmp_path)
             result = await _rpc(client, token, "tools/call", {"name": "list_boards", "arguments": {}}, 1)
+    after = tree_fingerprint(tmp_path)
 
     assert result["result"].get("isError") is not True
+    assert after == before
     boards = result["result"]["structuredContent"]["items"]
     assert [board["slug"] for board in boards] == ["board-a", "board-b"]
     assert [board["is_default"] for board in boards] == [True, False]
@@ -104,11 +113,14 @@ async def _test_read_tools_route_to_explicit_board_a_and_b(tmp_path, monkeypatch
     transport = httpx.ASGITransport(app=app)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(transport=transport, base_url=settings.public_base_url) as client:
+            boards = await _rpc(client, token, "tools/call", {"name": "list_boards", "arguments": {}}, 0)
             board_a = await _rpc(client, token, "tools/call", {"name": "get_board", "arguments": {"request": {"board": "board-a"}}}, 1)
             board_b = await _rpc(client, token, "tools/call", {"name": "get_board", "arguments": {"request": {"board": "board-b"}}}, 2)
             tasks_a = await _rpc(client, token, "tools/call", {"name": "list_tasks", "arguments": {"request": {"board": "board-a", "limit": 20}}}, 3)
             tasks_b = await _rpc(client, token, "tools/call", {"name": "list_tasks", "arguments": {"request": {"board": "board-b", "limit": 20}}}, 4)
 
+    assert [item["slug"] for item in boards["result"]["structuredContent"]["items"]] == ["board-a", "board-b"]
+    assert all(item["capabilities"] == {"read": True, "create": False} for item in boards["result"]["structuredContent"]["items"])
     assert board_a["result"]["structuredContent"]["slug"] == "board-a"
     assert board_b["result"]["structuredContent"]["slug"] == "board-b"
     assert [item["title"] for item in tasks_a["result"]["structuredContent"]["items"]] == ["A-only task"]

@@ -12,6 +12,7 @@ def test_systemd_unit_keeps_query_command_and_oauth_state_boundaries():
     assert "StateDirectoryMode=0700" in unit
     assert "/var/lib/hermes-chatgpt-mcp" in unit
     assert "/home/ubuntu/.hermes/kanban/boards/codex_app_server" in unit
+    assert "/home/ubuntu/.hermes/kanban/boards/dashboard" in unit
     assert "ReadWritePaths=/home/ubuntu/.hermes\n" not in unit
 
 
@@ -20,3 +21,5 @@ def test_oci_installer_preserves_private_oauth_state_configuration():
     assert '"MCP_OAUTH_STATE_FILE": "/var/lib/hermes-chatgpt-mcp/oauth-state.json"' in installer
     assert 'path.chmod(0o600)' in installer
     assert "systemctl restart" in installer
+    assert '"MCP_KANBAN_READ_BOARDS": "codex_app_server,dashboard"' in installer
+    assert '"MCP_KANBAN_CREATE_BOARDS": "codex_app_server,dashboard"' in installer
