@@ -806,7 +806,11 @@ class AuthService:
                 f'{html.escape(str(item.get("name") or slug))}</option>'
             )
         board_select = "".join(option_parts)
-        write_available = self.create_scope in query.get("scope", "").split()
+        requested_scopes = set(query.get("scope", "").split())
+        board_command_scopes = {self.create_scope}
+        if self.manage_scope in self.supported_scopes:
+            board_command_scopes.add(self.manage_scope)
+        write_available = bool(requested_scopes & board_command_scopes)
         access_controls = (
             "<fieldset><legend>Access</legend>"
             "<label><input type='radio' name='access_mode' value='read' checked> Read all boards</label>"

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from typing import Literal
 from urllib.parse import parse_qs, urlencode, urlparse, urlsplit, urlunsplit
 
 from mcp.server.auth.settings import AuthSettings
@@ -23,17 +24,27 @@ from .command import HermesCreateAdapter
 from .config import Settings
 from .diagnostics import emit, fingerprint, redirect_identity, request_fingerprint, scope_summary
 from .schemas import (
+    AddCommentInput,
+    AddCommentResult,
     ActivityInput,
     ActivityView,
+    AssignTaskInput,
+    AssignTaskResult,
+    BetaBoardCapabilities,
+    BetaBoardListView,
+    BetaBoardSummary,
     BoardCapabilities,
     BoardListView,
     BoardQuery,
     BoardSummary,
     BoardView,
+    CreateBoardInput,
+    CreateBoardResult,
     CreateTaskInput,
     CreateTaskResult,
     DispatchView,
     GraphInput,
+    GlobalCapabilities,
     TaskDetail,
     TaskGraphView,
     TaskInput,
@@ -109,7 +120,11 @@ def create_app(
     board_resolver: HermesBoardResolver | SingleBoardResolver | None = None,
     settings: Settings | None = None,
     auth_service: AuthService | None = None,
+    surface: Literal["stable", "beta"] = "stable",
 ):
+    if surface not in {"stable", "beta"}:
+        raise ValueError("surface must be stable or beta")
+    beta = surface == "beta"
     settings = settings or Settings.from_env()
     if board_resolver is None:
         if adapter is not None:
@@ -122,16 +137,20 @@ def create_app(
     auth_settings = AuthSettings(
         issuer_url=settings.public_base_url,
         resource_server_url=settings.public_base_url,
-        required_scopes=[AuthService.scope],
+        required_scopes=[auth_service.read_scope],
     )
     public_host = urlparse(settings.public_base_url).netloc
     public_hostname = urlparse(settings.public_base_url).hostname or ""
     mcp = FastMCP(
         "hermes-chatgpt-mcp",
         instructions=(
-            "Hermes Kanban queries plus one explicitly authorized create_task operation. "
-            "This server cannot update, delete, dispatch, claim, assign, move, start, complete, "
-            "review, approve, reject, retry, import, or sync tasks."
+            "Hermes Kanban queries plus explicitly authorized narrow board and card commands."
+            if beta
+            else (
+                "Hermes Kanban queries plus one explicitly authorized create_task operation. "
+                "This server cannot update, delete, dispatch, claim, assign, move, start, complete, "
+                "review, approve, reject, retry, import, or sync tasks."
+            )
         ),
         token_verifier=BearerTokenVerifier(auth_service),
         auth=auth_settings,
@@ -152,14 +171,35 @@ def create_app(
         idempotentHint=True,
         openWorldHint=False,
     )
+    board_admin_annotations = ToolAnnotations(
+        title="Create Hermes board",
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    )
+    manage_annotations = ToolAnnotations(
+        title="Manage Hermes card",
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=False,
+        openWorldHint=False,
+    )
 
     def tool_error(code: str, message: str) -> ToolError:
         return ToolError(json.dumps({"code": code, "message": message}, separators=(",", ":")))
 
-    def resolve_board(board: str | None, *, operation: str) -> BoardHandle:
+    def resolve_board(
+        board: str | None,
+        *,
+        operation: Literal["read", "create", "manage"],
+    ) -> BoardHandle:
         try:
-            if operation == "create":
-                granted_board = write_grant_board()
+            if operation in {"create", "manage"}:
+                required_scope = (
+                    auth_service.create_scope if operation == "create" else auth_service.manage_scope
+                )
+                granted_board = write_grant_board(required_scope)
                 if granted_board is None:
                     raise tool_error(
                         "BOARD_WRITE_SELECTION_REQUIRED",
@@ -171,7 +211,7 @@ def create_app(
                         "write access is authorized for one different board",
                     )
                 board = granted_board
-            return board_resolver.resolve(board, operation=operation)  # type: ignore[arg-type]
+            return board_resolver.resolve(board, operation=operation)
         except ToolError:
             raise
         except BoardResolutionError as exc:
@@ -200,18 +240,40 @@ def create_app(
             logger.error("Hermes create command failed: %s", type(exc).__name__)
             raise tool_error("BACKEND_ERROR", "Hermes task creation failed") from exc
 
+    async def run_beta_command(callback, *args, task_command: bool = False, **kwargs):
+        try:
+            return callback(*args, **kwargs)
+        except TaskNotFoundError as exc:
+            raise tool_error("TASK_NOT_FOUND", "task was not found on the selected board") from exc
+        except ValueError as exc:
+            if task_command and str(exc).startswith("unknown task "):
+                raise tool_error("TASK_NOT_FOUND", "task was not found on the selected board") from exc
+            raise tool_error("CONFLICT", "Hermes rejected the command request") from exc
+        except RuntimeError as exc:
+            if task_command and "currently running (claimed)" in str(exc):
+                raise tool_error("CONFLICT", "Hermes rejected the command request") from exc
+            logger.error("Hermes beta command failed: %s", type(exc).__name__)
+            raise tool_error("BACKEND_ERROR", "Hermes command failed") from exc
+        except (FileNotFoundError, LookupError) as exc:
+            raise tool_error("CONFLICT", "Hermes rejected the command request") from exc
+        except Exception as exc:  # pragma: no cover - exercised by integration failures
+            logger.error("Hermes beta command failed: %s", type(exc).__name__)
+            raise tool_error("BACKEND_ERROR", "Hermes command failed") from exc
+
     def require_scope(scope: str) -> None:
         token = get_access_token()
         if token is None or scope not in token.scopes:
             raise tool_error("SCOPE_REQUIRED", f"scope required: {scope}")
 
-    def has_create_scope() -> bool:
+    def has_command_scope(scope: str, board: str | None = None) -> bool:
         token = get_access_token()
-        return token is not None and AuthService.create_scope in token.scopes and write_grant_board() is not None
+        if token is None or scope not in token.scopes:
+            return False
+        return board is None or write_grant_board(scope) == board
 
-    def write_grant_board() -> str | None:
+    def write_grant_board(required_scope: str | None = None) -> str | None:
         token = get_access_token()
-        if token is None or AuthService.create_scope not in token.scopes:
+        if token is None or (required_scope is not None and required_scope not in token.scopes):
             return None
         claims = auth_service.verified_claims(token.token) or {}
         board = claims.get("board")
@@ -219,8 +281,27 @@ def create_app(
             return None
         return board
 
-    def board_summary(handle: BoardHandle) -> BoardSummary:
+    def board_summary(handle: BoardHandle, *, beta: bool) -> BoardSummary | BetaBoardSummary:
         view = board_resolver.query_adapter(handle).get_board()
+        can_create = (
+            has_command_scope(auth_service.create_scope, handle.slug)
+            and board_resolver.create_allowed(handle.slug)
+        )
+        if beta:
+            return BetaBoardSummary(
+                slug=handle.slug,
+                name=handle.name,
+                description=handle.description,
+                project_id=handle.project_id,
+                created_at=handle.created_at,
+                is_default=handle.is_default,
+                task_counts=view.task_counts,
+                capabilities=BetaBoardCapabilities(
+                    read=True,
+                    create=can_create,
+                    manage=has_command_scope(auth_service.manage_scope, handle.slug),
+                ),
+            )
         return BoardSummary(
             slug=handle.slug,
             name=handle.name,
@@ -231,30 +312,60 @@ def create_app(
             task_counts=view.task_counts,
             capabilities=BoardCapabilities(
                 read=True,
-                create=has_create_scope() and write_grant_board() == handle.slug and board_resolver.create_allowed(handle.slug),
+                create=can_create,
             ),
         )
 
-    @mcp.tool(
-        name="list_boards",
-        description="Discover the bounded Hermes boards authorized by this MCP deployment.",
-        annotations=readonly,
-        structured_output=True,
-    )
-    async def list_boards() -> BoardListView:
-        try:
-            items = [board_summary(handle) for handle in board_resolver.list_handles()]
-            default_board = (
-                board_resolver.current_default_slug()
-                if isinstance(board_resolver, HermesBoardResolver)
-                else board_resolver.default_slug
-            )
-            return BoardListView(items=items, default_board=default_board)
-        except ToolError:
-            raise
-        except Exception as exc:
-            logger.error("Hermes board listing failed: %s", type(exc).__name__)
-            raise tool_error("BACKEND_ERROR", "Hermes board listing failed") from exc
+    def list_board_items() -> tuple[list[BoardSummary | BetaBoardSummary], str]:
+        items = [board_summary(handle, beta=beta) for handle in board_resolver.list_handles()]
+        default_board = (
+            board_resolver.current_default_slug()
+            if isinstance(board_resolver, HermesBoardResolver)
+            else board_resolver.default_slug
+        )
+        return items, default_board
+
+    if beta:
+        @mcp.tool(
+            name="list_boards",
+            description="Discover bounded Hermes boards and beta command capabilities.",
+            annotations=readonly,
+            structured_output=True,
+        )
+        async def list_boards() -> BetaBoardListView:
+            try:
+                items, default_board = list_board_items()
+                return BetaBoardListView(
+                    items=items,  # type: ignore[arg-type]
+                    default_board=default_board,
+                    global_capabilities=GlobalCapabilities(
+                        create_board=(
+                            settings.board_create_enabled
+                            and has_command_scope(auth_service.board_create_scope)
+                        )
+                    ),
+                )
+            except ToolError:
+                raise
+            except Exception as exc:
+                logger.error("Hermes board listing failed: %s", type(exc).__name__)
+                raise tool_error("BACKEND_ERROR", "Hermes board listing failed") from exc
+    else:
+        @mcp.tool(
+            name="list_boards",
+            description="Discover the bounded Hermes boards authorized by this MCP deployment.",
+            annotations=readonly,
+            structured_output=True,
+        )
+        async def list_boards() -> BoardListView:
+            try:
+                items, default_board = list_board_items()
+                return BoardListView(items=items, default_board=default_board)  # type: ignore[arg-type]
+            except ToolError:
+                raise
+            except Exception as exc:
+                logger.error("Hermes board listing failed: %s", type(exc).__name__)
+                raise tool_error("BACKEND_ERROR", "Hermes board listing failed") from exc
 
     @mcp.tool(
         name="get_board",
@@ -345,7 +456,7 @@ def create_app(
         structured_output=True,
     )
     async def create_task(request: CreateTaskInput) -> CreateTaskResult:
-        require_scope(AuthService.create_scope)
+        require_scope(auth_service.create_scope)
         handle = resolve_board(request.board, operation="create")
         with board_resolver.creation_lock(handle.slug):
             return await run_command(
@@ -359,6 +470,59 @@ def create_app(
                 session_id=request.session_id,
                 triage=request.triage,
                 idempotency_key=request.idempotency_key,
+            )
+
+    if beta:
+        @mcp.tool(
+            name="create_board",
+            description="Create one canonical Hermes board; requires hermes:board:create.",
+            annotations=board_admin_annotations,
+            structured_output=True,
+        )
+        async def create_board(request: CreateBoardInput) -> CreateBoardResult:
+            require_scope(auth_service.board_create_scope)
+            if not settings.board_create_enabled:
+                raise tool_error("BOARD_CREATE_DISABLED", "board creation is disabled")
+            with board_resolver.creation_lock(request.slug):
+                return await run_beta_command(
+                    board_resolver.board_admin_adapter().create_board,
+                    request.slug,
+                    name=request.name,
+                    description=request.description,
+                    icon=request.icon,
+                    color=request.color,
+                )
+
+        @mcp.tool(
+            name="add_comment",
+            description="Add one provenance-bound task comment; requires hermes:manage.",
+            annotations=manage_annotations,
+            structured_output=True,
+        )
+        async def add_comment(request: AddCommentInput) -> AddCommentResult:
+            require_scope(auth_service.manage_scope)
+            handle = resolve_board(request.board, operation="manage")
+            return await run_beta_command(
+                board_resolver.management_adapter(handle).add_comment,
+                request.task_id,
+                request.body,
+                task_command=True,
+            )
+
+        @mcp.tool(
+            name="assign_task",
+            description="Assign one task through Hermes; requires hermes:manage.",
+            annotations=manage_annotations,
+            structured_output=True,
+        )
+        async def assign_task(request: AssignTaskInput) -> AssignTaskResult:
+            require_scope(auth_service.manage_scope)
+            handle = resolve_board(request.board, operation="manage")
+            return await run_beta_command(
+                board_resolver.management_adapter(handle).assign_task,
+                request.task_id,
+                request.assignee,
+                task_command=True,
             )
 
     @mcp.custom_route("/healthz", methods=["GET"], include_in_schema=False)
@@ -379,7 +543,7 @@ def create_app(
                 "grant_types_supported": ["authorization_code", "refresh_token"],
                 "code_challenge_methods_supported": ["S256"],
                 "token_endpoint_auth_methods_supported": ["none"],
-                "scopes_supported": list(AuthService.supported_scopes),
+                "scopes_supported": list(auth_service.supported_scopes),
             },
             headers={"Cache-Control": "public, max-age=300"},
         )
@@ -501,10 +665,18 @@ def create_app(
             access_mode = form.get("access_mode", "read")
             selected_board: str | None = None
             write_grant = False
+            command_scopes = {
+                auth_service.create_scope,
+                *({auth_service.manage_scope} if beta else set()),
+            }
             if access_mode == "write":
-                if AuthService.create_scope not in requested_scope.split():
+                if not command_scopes.intersection(requested_scope.split()):
                     raise OAuthError(
-                        "client did not request hermes:create; re-register the MCP client",
+                        (
+                            "client did not request a board command scope; re-register the MCP client"
+                            if beta
+                            else "client did not request hermes:create; re-register the MCP client"
+                        ),
                         code="invalid_scope",
                     )
                 selected_board = form.get("board") or None
@@ -515,8 +687,8 @@ def create_app(
                 write_grant = True
             elif access_mode == "read":
                 requested_scope = " ".join(
-                    scope for scope in AuthService.supported_scopes
-                    if scope in requested_scope.split() and scope != AuthService.create_scope
+                    scope for scope in auth_service.supported_scopes
+                    if scope in requested_scope.split() and scope not in command_scopes
                 )
             else:
                 raise OAuthError("invalid access mode", code="invalid_request")
@@ -630,7 +802,7 @@ def create_app(
             {
                 "resource": settings.public_base_url,
                 "authorization_servers": [settings.public_base_url],
-                "scopes_supported": list(AuthService.supported_scopes),
+                "scopes_supported": list(auth_service.supported_scopes),
                 "bearer_methods_supported": ["header"],
             },
             headers={"Cache-Control": "public, max-age=300"},

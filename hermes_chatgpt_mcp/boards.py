@@ -196,7 +196,7 @@ class HermesBoardResolver:
         self,
         requested: str | None,
         *,
-        operation: Literal["read", "create"],
+        operation: Literal["read", "create", "manage"],
     ) -> BoardHandle:
         slug = self.current_default_slug() if requested is None else requested
         try:
@@ -282,7 +282,7 @@ class SingleBoardResolver:
         self,
         requested: str | None,
         *,
-        operation: Literal["read", "create"],
+        operation: Literal["read", "create", "manage"],
     ) -> BoardHandle:
         if requested is not None and requested != self.handle.slug:
             raise BoardResolutionError("BOARD_NOT_FOUND", "requested board is unavailable")
