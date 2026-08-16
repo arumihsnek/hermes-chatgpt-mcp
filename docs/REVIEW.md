@@ -27,15 +27,19 @@ was modified.
 
 ## Verification evidence
 
-- Local suite: `60 passed`.
+- Local suite: `63 passed`.
 - Compile check: `compileall` passed.
 - Multi-board fixture proof: all active fixture boards are discovered, reads are
   isolated, explicit unknown slugs do not fall back, and writes are bound to
   one board per grant.
 - OAuth proof: read-only token denial, write-board claims, refresh preservation,
   old-grant rejection after revocation, and state persistence tests pass.
-- The OCI deployment must be rechecked after installing this revision; a live
-  ChatGPT authorization is intentionally not inferred from fixture tests.
+- OCI deployment recheck passed: systemd is active with zero restart loops,
+  OpenResty syntax and TLS passed, the service exposes all 12 currently active
+  boards for read, and a read-only create probe was denied without a write.
+- A fresh interactive ChatGPT authorization after this deployment is not
+  inferred from local or service probes; it must be completed before claiming
+  live ChatGPT write success.
 
 ## Deliberate non-exposure
 
