@@ -1,0 +1,33 @@
+[Unit]
+Description=Hermes ChatGPT read-only MCP service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/code/hermes-chatgpt-mcp
+EnvironmentFile=/home/ubuntu/.hermes/hermes-chatgpt-mcp.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/home/ubuntu/hermes-agent/venv/bin/python -m hermes_chatgpt_mcp.server
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/.hermes/kanban/boards/codex_app_server
+PrivateDevices=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=hermes-chatgpt-mcp
+
+[Install]
+WantedBy=multi-user.target
