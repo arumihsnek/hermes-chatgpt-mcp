@@ -63,3 +63,23 @@ def test_docs_preserve_stable_behavior_and_one_board_beta_boundary() -> None:
         "pending",
     ):
         assert marker in text, f"missing stable-preservation/beta-operation marker: {marker}"
+
+
+def test_stable_only_claims_and_beta_board_claim_exception_are_explicit() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    security = (ROOT / "docs/SECURITY.md").read_text(encoding="utf-8")
+    integration = (ROOT / "docs/architecture/HERMES-INTEGRATION.md").read_text(
+        encoding="utf-8"
+    )
+    readme = " ".join(readme.split())
+    security = " ".join(security.split())
+    integration = " ".join(integration.split())
+
+    assert "The stable public surface is seven READ tools plus one WRITE tool:" in readme
+    assert "Stable WRITE tool:" in readme
+    assert "Every beta board-bound command is checked against the signed OAuth one-board claim" in readme
+    assert "The global `create_board` command is the explicit exception" in readme
+    assert "Every beta write is checked against the signed OAuth board claim" not in readme
+    assert "On the stable surface, the MCP tool allowlist contains exactly eight tools:" in security
+    assert "On the stable surface, the create tool is the only public mutator" in integration
+    assert "On the stable surface, only `HermesCreateAdapter.create_task`" in integration

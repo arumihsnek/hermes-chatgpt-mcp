@@ -83,7 +83,7 @@ current OCI installation follows Hermes' current default dynamically; a
 static `HERMES_KANBAN_BOARD` remains available only as an explicit deployment
 override.
 
-## Board discovery and resolution (v0.4)
+## Stable board discovery and resolution (v0.4)
 
 The resolver is `hermes_chatgpt_mcp.boards.HermesBoardResolver`. It loads the
 Hermes module, verifies that the configured Kanban home is Hermes'
@@ -112,7 +112,7 @@ The semantics are explicit:
   default;
 - read discovery includes all active canonical boards unless an explicit
   deployment cap is configured;
-- `create_task` requires `hermes:create` plus signed `board=<slug>` and
+- on the stable surface, `create_task` requires `hermes:create` plus signed `board=<slug>` and
   `board_access=write` claims. A request for another board returns
   `BOARD_SESSION_MISMATCH` and never falls back;
 - discovery is bounded by `MCP_MAX_BOARD_COUNT` and returns only safe metadata,
@@ -164,7 +164,7 @@ These identifiers are deliberately not conflated:
 
 | Field | Hermes meaning | Authorization meaning |
 | --- | --- | --- |
-| `board` | Selects the canonical Kanban database and board metadata namespace. | Read is global by default; write is bound to the one OAuth-selected board. |
+| `board` | Selects the canonical Kanban database and board metadata namespace. | Read is global by default; board-bound command writes use the one OAuth-selected board. |
 | `tenant` | Optional task column used by Hermes for task grouping/filtering. | Not an ACL and not a substitute for board authorization. |
 | `session_id` | Optional originating Hermes agent/chat session identifier stored on the task. | Not an OAuth principal and not an ACL. |
 | `project_id` | Canonical project/workspace routing metadata inherited by Hermes where applicable. | Not exposed as an authorization control. |
@@ -232,7 +232,7 @@ The adapter uses Hermes dataclasses and query functions for domain fidelity;
 its own code is limited to input bounds, read-only connection lifecycle,
 recursive graph hydration, serialization, and dispatch presentation.
 
-## Canonical command path — create_task (v0.4)
+## Stable canonical command path — create_task (v0.4)
 
 Hermes has a canonical create operation in
 `hermes_cli.kanban_db.create_task`. The native CLI command
@@ -241,11 +241,11 @@ define a second task model. The integration therefore calls the canonical
 function directly from a separate command adapter rather than shelling out to
 the CLI or issuing SQL of its own.
 
-The command adapter opens a normal Hermes command connection with
+The stable command adapter opens a normal Hermes command connection with
 `kanban_db.connect_closing(board=<configured board>)`. This is deliberately
-not the `ReadOnlyHermesStore` and is the only code path in this repository
-allowed to obtain a writable Hermes connection. The command adapter exposes
-one method, `create_task`, and does not import or dispatch any other Hermes
+not the `ReadOnlyHermesStore`; on the stable surface it is the only code path
+allowed to obtain a writable Hermes connection. The command adapter exposes one
+method, `create_task`, and does not import or dispatch any other Hermes
 mutator.
 
 The canonical operation supplies the following semantics that the MCP layer
@@ -284,7 +284,7 @@ parent existence checks, transaction, and invariants. Errors are returned as
 sanitized MCP tool errors and never expose SQL, filesystem paths, or stack
 traces.
 
-## Query/command separation Gate A (v0.4)
+## Stable query/command separation Gate A (v0.4)
 
 The selected boundary is:
 
@@ -306,11 +306,12 @@ Hermes pure queries                  Hermes kanban_db.create_task()
 The two paths do not share a connection or adapter. A read token cannot call
 `create_task`; the MCP handler checks `hermes:create` in addition to the
 resource-wide `hermes:read` requirement. The seven query tools retain their
-read-only annotations and scope. The create tool is the only public mutator
-and is annotated `readOnlyHint=false`, `destructiveHint=false` (additive
-write), and `idempotentHint=true`; its required idempotency key maps retries
-to Hermes' existing non-archived task. A create request cannot select a board
-other than the board claim in its OAuth grant.
+read-only annotations and scope. On the stable surface, the create tool is the
+only public mutator and is annotated `readOnlyHint=false`,
+`destructiveHint=false` (additive write), and `idempotentHint=true`; its
+required idempotency key maps retries to Hermes' existing non-archived task. A
+stable create request cannot select a board other than the board claim in its
+OAuth grant.
 
 The service sandbox grants write access only to the canonical boards storage
 and the service-owned OAuth state directory. The query adapter continues to
@@ -503,7 +504,7 @@ Hermes CLI, and never implements a parallel lifecycle/dispatcher.
 | Canonicality | Uses Hermes `Task`, `Run`, `Event`, board path resolution, and pure query functions. |
 | Isolation | The integration receives `HERMES_AGENT_ROOT` and `HERMES_KANBAN_HOME`; it resolves canonical board paths and grants only the command sandbox write boundary. |
 | Read-only | SQLite URI `mode=ro`, `PRAGMA query_only=ON`, no `init_db`/writable `connect` from the query adapter, seven explicitly registered read tools, and a state-hash invariant test. |
-| Command safety | Only `HermesCreateAdapter.create_task` can obtain the canonical writable connection; no SQL write is present in the MCP repository. |
+| Command safety | On the stable surface, only `HermesCreateAdapter.create_task` can obtain the canonical writable connection; no SQL write is present in the MCP repository. |
 | Scope isolation | Resource authentication requires `hermes:read`; `create_task` additionally requires `hermes:create`; read-only tokens are denied. |
 | Persistence | DCR clients and refresh-token hashes survive service restart in a mode-600 service state file; authorization codes remain ephemeral. |
 | Stability | External schemas use board/task/graph/activity concepts and preserve raw Hermes status rather than exposing internal mutator methods. |
@@ -513,9 +514,10 @@ Hermes CLI, and never implements a parallel lifecycle/dispatcher.
 
 ## Required Hermes changes
 
-None. Hermes already exposes the canonical `kanban_db.create_task` operation
-and its transaction/audit semantics. The integration only supplies a narrow
-adapter and does not add ChatGPT-specific code to Hermes.
+For the stable surface, none. Hermes already exposes the canonical
+`kanban_db.create_task` operation and its transaction/audit semantics. The beta
+surface likewise calls Hermes' canonical board-management operations through
+narrow adapters; no ChatGPT-specific code is added to Hermes.
 
 ## Rejected alternatives
 

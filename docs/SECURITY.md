@@ -10,12 +10,13 @@ loopback port 8791 with its own include and service. The existing HermesKanban
 `/` route, database files, and internal Hermes ports remain separate. Beta
 DNS/TLS/OCI success is pending and is not asserted here.
 
-## Authentication and scopes
+## Stable authentication and scopes
 
-All MCP requests require a bearer token validated for issuer, audience,
-expiry, signature, and `hermes:read`. OAuth registration accepts public
-`none` clients, exact registered HTTPS redirect URIs (or localhost HTTP for
-development), authorization code, PKCE S256, and only the supported scopes:
+On the stable surface, all MCP requests require a bearer token validated for
+issuer, audience, expiry, signature, and `hermes:read`. Stable OAuth
+registration accepts public `none` clients, exact registered HTTPS redirect
+URIs (or localhost HTTP for development), authorization code, PKCE S256, and
+only the supported scopes:
 
 - `hermes:read` — seven query tools, including bounded `list_boards`;
 - `hermes:create` — `create_task`, always granted together with
@@ -31,7 +32,7 @@ issued token contains only the approved scopes and, for a write grant, signed
 `board` and `board_access=write` claims. A token containing only `hermes:read`
 remains unable to call `create_task`.
 
-The `create_task` handler performs an additional scope check. A valid
+The stable `create_task` handler performs an additional scope check. A valid
 read-only token therefore cannot reach the command adapter. Login comparisons
 are constant-time and failures are generic. No client secret is accepted.
 
@@ -77,6 +78,9 @@ environment files are also separate. Authorization codes remain ephemeral.
 
 ## Query/command defense in depth
 
+The read/command separation applies to both surfaces. The exact eight-tool
+allowlist and single-mutator statements below are stable-only.
+
 - `ReadOnlyHermesStore` is the only query storage boundary and uses SQLite URI
   `mode=ro` plus immediate `PRAGMA query_only=ON`.
 - The query adapter never calls Hermes `connect`, `init_db`, `write_txn`,
@@ -84,8 +88,8 @@ environment files are also separate. Authorization codes remain ephemeral.
 - `HermesCreateAdapter` is a separate class with one public method and calls
   only Hermes' canonical `kanban_db.create_task`; this repository contains no
   task-table write SQL.
-- The MCP tool allowlist contains exactly eight tools: seven read tools and
-  one create tool. No update/delete/claim/
+- On the stable surface, the MCP tool allowlist contains exactly eight tools:
+  seven read tools and one create tool. No update/delete/claim/
   assign/move/start/complete/review/approve/reject/retry/import/sync tool is
   registered.
 - Read tools are annotated `readOnlyHint=true`, `destructiveHint=false`, and
@@ -94,8 +98,9 @@ environment files are also separate. Authorization codes remain ephemeral.
   (additive), and `idempotentHint=true`; its idempotency key is mandatory.
 - `MCP_KANBAN_READ_BOARDS` and `MCP_KANBAN_CREATE_BOARDS` remain optional
   deployment caps. When omitted, all active canonical boards are readable and
-  eligible for a write grant. They are not user ACLs. The effective write
-  boundary is the OAuth grant's one selected board plus `hermes:create`.
+  eligible for a write grant. They are not user ACLs. For stable
+  `create_task`, the effective write boundary is the OAuth grant's one selected
+  board plus `hermes:create`.
 - Strict Pydantic schemas reject unknown fields and bound IDs, title/body
   size, parent count, priority, and all list/graph/activity limits.
 - Tests compare fixture state before/after every query operation and verify

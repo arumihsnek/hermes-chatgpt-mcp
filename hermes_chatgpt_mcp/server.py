@@ -460,7 +460,12 @@ def create_app(
         name="create_task",
         description=(
             "Create exactly one Hermes Kanban task through Hermes' canonical command path. "
-            "This is the only mutating tool and requires hermes:create in addition to hermes:read."
+            + (
+                "This is the only mutating tool on the stable surface and requires "
+                "hermes:create in addition to hermes:read."
+                if not beta
+                else "This beta command requires hermes:create in addition to hermes:read."
+            )
         ),
         annotations=create_annotations,
         structured_output=True,

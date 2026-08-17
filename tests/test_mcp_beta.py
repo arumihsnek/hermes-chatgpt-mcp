@@ -234,6 +234,14 @@ async def _test_stable_default_and_beta_tool_discovery_are_exact(tmp_path, monke
         "hermes:board:create",
         "offline_access",
     }
+    beta_create_description = next(
+        tool["description"] for tool in tools if tool["name"] == "create_task"
+    )
+    assert "only mutating tool" not in beta_create_description.lower()
+    stable_create_description = next(
+        tool["description"] for tool in stable_tools if tool["name"] == "create_task"
+    )
+    assert "only mutating tool on the stable surface" in stable_create_description.lower()
     mutation_tools = {
         tool["name"]: tool
         for tool in tools

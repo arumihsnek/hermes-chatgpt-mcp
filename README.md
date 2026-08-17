@@ -1,22 +1,23 @@
 # hermes-chatgpt-mcp
 
 `hermes-chatgpt-mcp` is an authenticated remote MCP facade for the canonical
-Hermes Kanban service. It keeps the query adapter read-only, discovers all
-active canonical Hermes boards for reading, and exposes one narrowly scoped
-command, `create_task`, through Hermes'
+Hermes Kanban service. Its stable surface keeps the query adapter read-only,
+discovers all active canonical Hermes boards for reading, and exposes one
+narrowly scoped command, `create_task`, through Hermes'
 `hermes_cli.kanban_db.create_task` API.
 
-## v0.4 scope
+## Stable v0.4 scope
 
-The public surface is seven READ tools plus one WRITE tool:
+The stable public surface is seven READ tools plus one WRITE tool:
 
 - READ: `list_boards`, `get_board`, `list_tasks`, `get_task`,
   `get_task_graph`, `get_dispatch`, `get_activity`;
 - WRITE: `create_task` only.
 
-Read access is global to the active canonical boards. A write authorization is
-bound to exactly one selected board; refresh preserves that board and OAuth
-revocation invalidates the whole grant. There is still no update, delete, claim, assign-after-creation, move, start,
+On the stable surface, read access is global to the active canonical boards. A
+write authorization is bound to exactly one selected board; refresh preserves
+that board and OAuth revocation invalidates the whole grant. There is still no
+update, delete, claim, assign-after-creation, move, start,
 complete, close, review, approve, reject, retry, dispatch mutation, import, or
 sync-back capability. Hermes remains the semantic authority for boards, task
 status, links, scheduler state, outcomes, and audit activity. v0.4 is still
@@ -53,7 +54,7 @@ OpenResty /mcp and OAuth paths
     ▼
 hermes-chatgpt-mcp (systemd)
     ├── board resolver: canonical Hermes discovery + optional deployment caps
-    ├── OAuth grant: read all boards or write exactly one selected board
+    ├── stable OAuth grant: read all boards or write exactly one selected board
     ├── query path: mode=ro + PRAGMA query_only=ON
     │       ▼
     │   Hermes hermes_cli.kanban_db query API
@@ -174,7 +175,7 @@ MCP capability.
 
 ## MCP tools
 
-READ tools:
+Stable READ tools:
 
 - `list_boards`: bounded discovery of all active named canonical boards and
   the single-board write capability of the token. Hermes' legacy root
@@ -191,7 +192,7 @@ READ tools:
 - `get_activity`: bounded events/ledger, comments, runs/outcomes, worker-log
   tail, result/summary, and attachment metadata.
 
-WRITE tool:
+Stable WRITE tool:
 
 - `create_task`: creates exactly one card through Hermes' canonical command
   operation. It accepts the selected board, title, body, parent task IDs,
@@ -224,10 +225,12 @@ does not grant task-write access** to the new board. After creating a board,
 authorize a command grant for that board before creating a card, comment, or
 assignment.
 
-Every beta write is checked against the signed OAuth board claim before an
-adapter is constructed. An omitted board on a command request uses the board
-in that grant. An explicit different board fails with
-`BOARD_SESSION_MISMATCH`; it does not fall back to Hermes' current default.
+Every beta board-bound command is checked against the signed OAuth one-board
+claim before an adapter is constructed. The global `create_board` command is
+the explicit exception: it uses a global `hermes:board:create` grant and has no
+board claim. An omitted board on a board-bound command uses the board in that
+grant. An explicit different board fails with `BOARD_SESSION_MISMATCH`; it does
+not fall back to Hermes' current default.
 For example, if a grant selected `other-board` while Hermes currently reports
 `seq66_looper`, a request explicitly naming `seq66_looper` is expected to fail
 with `BOARD_SESSION_MISMATCH`. That result means the selected OAuth board and
@@ -256,7 +259,9 @@ supplied only through the environment file. The service advertises `none` as
 its token endpoint authentication method and does not claim support for client
 secrets.
 
-Scopes and board grants are separate:
+### Stable scopes and board grants
+
+For the stable surface, scopes and board grants are separate:
 
 - `hermes:read` is required by all seven query tools and reads every active
   canonical board;
@@ -416,13 +421,14 @@ change-controlled operator action after stable health is confirmed.
 
 - Board reads are intentionally global to the configured Hermes resource owner;
   this is not a per-user ACL model.
-- A write grant covers exactly one board. Board administration and tenant
-  creation are not exposed.
+- On the stable surface, a write grant covers exactly one board. Board
+  administration and tenant creation are not exposed.
 - DCR clients, refresh-token rotation state, and revoked grant IDs persist;
   authorization codes remain intentionally ephemeral.
-- This is not a full write/control plane: `create_task` is the only write;
-  comments, attachments, scheduler, notification, lifecycle, board
-  administration, and task-editing mutations remain unavailable.
+- On the stable surface, this is not a full write/control plane: `create_task`
+  is the only write; comments, attachments, scheduler, notification,
+  lifecycle, board administration, and task-editing mutations remain
+  unavailable. Beta adds only the documented board-management tools.
 - The service depends on the installed Hermes command/query module and its
   SQLite schema; a Hermes upgrade should rerun reconnaissance and the live
   smoke before promotion.
