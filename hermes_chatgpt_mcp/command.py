@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+import contextlib
+import fcntl
+import json
+import os
+import re
 from typing import Any, Iterable
+from collections.abc import Callable
+from pathlib import Path
 
-from .boards import BoardHandle
+from .boards import BoardHandle, _canonical_board_slug
 from .hermes import ReadOnlyHermesStore
 from .schemas import AddCommentResult, AssignTaskResult, CreateBoardResult, CreateTaskResult
 
@@ -90,8 +97,108 @@ class HermesCreateAdapter:
 class HermesBoardAdminAdapter:
     """Narrow boundary for canonical Hermes board creation."""
 
-    def __init__(self, hermes: Any) -> None:
+    def __init__(
+        self,
+        hermes: Any,
+        *,
+        max_board_count: int | None = None,
+        active_named_board_count: Callable[[], int] | None = None,
+    ) -> None:
         self.hermes = hermes
+        self.max_board_count = max_board_count
+        self.active_named_board_count = active_named_board_count
+
+    @contextlib.contextmanager
+    def _canonical_creation_lock(self, slug: str):
+        """Serialize this adapter's board identity boundary across processes."""
+        boards_root_factory = getattr(self.hermes, "boards_root", None)
+        if not callable(boards_root_factory):
+            yield
+            return
+        lock_root = Path(boards_root_factory()).expanduser().resolve() / ".mcp-create-locks"
+        lock_root.mkdir(parents=True, exist_ok=True)
+        lock_path = lock_root / f"{slug}.lock"
+        descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            yield
+        finally:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+            finally:
+                os.close(descriptor)
+
+    def _archived_slug_exists(self, slug: str) -> bool:
+        boards_root_factory = getattr(self.hermes, "boards_root", None)
+        if not callable(boards_root_factory):
+            return False
+        archive_root = Path(boards_root_factory()).expanduser().resolve() / "_archived"
+        try:
+            archive_root.stat()
+        except FileNotFoundError:
+            return False
+        except OSError as exc:
+            raise ValueError("archived board state is unavailable") from exc
+        if not archive_root.is_dir():
+            raise ValueError("archived board state is unavailable")
+        try:
+            children = tuple(archive_root.iterdir())
+        except OSError as exc:
+            raise ValueError("archived board state is unavailable") from exc
+        archive_name = re.compile(rf"{re.escape(slug)}-\d+(?:-\d+)?$")
+        for child in children:
+            if not child.is_dir():
+                continue
+            metadata_path = child / "board.json"
+            try:
+                metadata = json.loads(metadata_path.read_text(encoding="utf-8")) if metadata_path.is_file() else None
+            except (OSError, ValueError):
+                metadata = None
+            if isinstance(metadata, dict):
+                try:
+                    if _canonical_board_slug(str(metadata.get("slug") or "")) == slug:
+                        return True
+                except ValueError:
+                    pass
+            if archive_name.fullmatch(child.name):
+                return True
+        return False
+
+    def _existing_board(self, slug: str) -> dict[str, Any] | None:
+        try:
+            entries = self.hermes.list_boards(include_archived=True)
+        except Exception as exc:
+            raise ValueError("Hermes board discovery is unavailable") from exc
+        if not isinstance(entries, list):
+            raise ValueError("Hermes board discovery is unavailable")
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            try:
+                entry_slug = _canonical_board_slug(str(entry.get("slug") or ""))
+            except ValueError:
+                continue
+            if entry_slug != slug:
+                continue
+            if bool(entry.get("archived")):
+                raise ValueError("board slug is reserved by an archived board")
+            return entry
+        if self._archived_slug_exists(slug):
+            raise ValueError("board slug is reserved by an archived board")
+        return None
+
+    @staticmethod
+    def _result(metadata: dict[str, Any], *, fallback_slug: str) -> CreateBoardResult:
+        result_slug = _canonical_board_slug(str(metadata.get("slug") or fallback_slug))
+        return CreateBoardResult(
+            slug=result_slug,
+            name=str(metadata["name"]),
+            description=str(metadata["description"]),
+            icon=metadata.get("icon") or None,
+            color=metadata.get("color") or None,
+            created=True,
+            is_default=result_slug == "default",
+        )
 
     def create_board(
         self,
@@ -101,28 +208,20 @@ class HermesBoardAdminAdapter:
         icon: str | None = None,
         color: str | None = None,
     ) -> CreateBoardResult:
-        lookup_slug = str(slug).strip().lower()
-        existing = next(
-            (
-                entry
-                for entry in self.hermes.list_boards(include_archived=False)
-                if isinstance(entry, dict)
-                and str(entry.get("slug")).strip().lower() == lookup_slug
-            ),
-            None,
-        )
-        metadata = existing or self.hermes.create_board(
-            slug, name=name, description=description, icon=icon, color=color
-        )
-        return CreateBoardResult(
-            slug=str(metadata["slug"]),
-            name=str(metadata["name"]),
-            description=str(metadata["description"]),
-            icon=metadata.get("icon") or None,
-            color=metadata.get("color") or None,
-            created=True,
-            is_default=str(metadata["slug"]) == "default",
-        )
+        lookup_slug = _canonical_board_slug(slug)
+        if lookup_slug == "default":
+            raise ValueError("the legacy default board is reserved")
+        with self._canonical_creation_lock(lookup_slug):
+            existing = self._existing_board(lookup_slug)
+            if existing is not None:
+                return self._result(existing, fallback_slug=lookup_slug)
+            if self.max_board_count is not None and self.active_named_board_count is not None:
+                if self.active_named_board_count() >= self.max_board_count:
+                    raise ValueError("maximum active named board count reached")
+            metadata = self.hermes.create_board(
+                lookup_slug, name=name, description=description, icon=icon, color=color
+            )
+            return self._result(metadata, fallback_slug=lookup_slug)
 
 
 class HermesCardManagementAdapter:

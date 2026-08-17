@@ -456,6 +456,69 @@ async def _test_board_creation_requires_admin_scope_and_feature_gate(tmp_path, m
     assert tree_fingerprint(disabled_fixture.root) == before
 
 
+def test_create_board_normalizes_slug_before_acquiring_route_lock(tmp_path, monkeypatch):
+    asyncio.run(_test_create_board_normalizes_slug_before_acquiring_route_lock(tmp_path, monkeypatch))
+
+
+async def _test_create_board_normalizes_slug_before_acquiring_route_lock(tmp_path, monkeypatch):
+    fixture, settings, auth, resolver, app = _beta_app(tmp_path, monkeypatch)
+    administrator = _token(auth, "administrator", ["hermes:read", "hermes:board:create"])
+    observed: list[str] = []
+    original_creation_lock = resolver.creation_lock
+
+    def recording_creation_lock(slug):
+        observed.append(slug)
+        return original_creation_lock(slug)
+
+    monkeypatch.setattr(resolver, "creation_lock", recording_creation_lock)
+    transport = httpx.ASGITransport(app=app)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=transport, base_url=settings.public_base_url) as client:
+            result = await _rpc(
+                client,
+                administrator,
+                "tools/call",
+                {"name": "create_board", "arguments": {"request": {"slug": "Case-Locked-Board"}}},
+                1,
+            )
+
+    assert result["result"].get("isError") is not True, result
+    assert observed == ["case-locked-board"]
+
+
+def test_public_board_creation_returns_safe_conflicts_for_reserved_and_archived_slugs(tmp_path, monkeypatch):
+    asyncio.run(_test_public_board_creation_returns_safe_conflicts_for_reserved_and_archived_slugs(tmp_path, monkeypatch))
+
+
+async def _test_public_board_creation_returns_safe_conflicts_for_reserved_and_archived_slugs(tmp_path, monkeypatch):
+    fixture, settings, auth, _, app = _beta_app(tmp_path, monkeypatch)
+    kanban_db.create_board("archived-public-board", name="Archived Public Board")
+    kanban_db.remove_board("archived-public-board", archive=True)
+    administrator = _token(auth, "administrator", ["hermes:read", "hermes:board:create"])
+    transport = httpx.ASGITransport(app=app)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=transport, base_url=settings.public_base_url) as client:
+            reserved = await _rpc(
+                client,
+                administrator,
+                "tools/call",
+                {"name": "create_board", "arguments": {"request": {"slug": "default"}}},
+                1,
+            )
+            archived = await _rpc(
+                client,
+                administrator,
+                "tools/call",
+                {"name": "create_board", "arguments": {"request": {"slug": "ARCHIVED-PUBLIC-BOARD"}}},
+                2,
+            )
+
+    _assert_tool_error(reserved, "CONFLICT", forbidden_path=fixture.root)
+    _assert_tool_error(archived, "CONFLICT", forbidden_path=fixture.root)
+    assert not (fixture.root / "kanban" / "boards" / "default").exists()
+    assert not (fixture.root / "kanban" / "boards" / "archived-public-board").exists()
+
+
 def test_management_commands_are_one_board_bound_and_return_safe_errors(tmp_path, monkeypatch):
     asyncio.run(_test_management_commands_are_one_board_bound_and_return_safe_errors(tmp_path, monkeypatch))
 

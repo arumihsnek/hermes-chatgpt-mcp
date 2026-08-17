@@ -100,6 +100,13 @@ service_backup=""
 include_backup=""
 edge_backup=""
 env_backup=""
+rollback_failed=0
+rollback_errors=()
+
+rollback_error() {
+    rollback_failed=1
+    rollback_errors+=("$1")
+}
 
 rollback() {
     local exit_status=$?
@@ -107,57 +114,149 @@ rollback() {
     trap - EXIT
     if [[ "$mutation_started" == 1 && "$install_complete" == 0 ]]; then
         if [[ "$service_started_by_installer" == 1 ]]; then
-            sudo -n systemctl stop "$service_name" 2>/dev/null || true
+            if ! sudo -n systemctl stop "$service_name" 2>/dev/null; then
+                rollback_error "service stop"
+            fi
         fi
         if [[ "$service_was_present" == 0 ]]; then
-            sudo -n systemctl disable "$service_name" 2>/dev/null || true
+            if ! sudo -n systemctl disable "$service_name" 2>/dev/null; then
+                rollback_error "service disable"
+            fi
         elif [[ "$service_was_enabled" == 0 ]]; then
-            sudo -n systemctl disable "$service_name" 2>/dev/null || true
+            if ! sudo -n systemctl disable "$service_name" 2>/dev/null; then
+                rollback_error "service disable"
+            fi
         fi
 
         if [[ "$service_was_present" == 1 ]]; then
-            sudo -n install -o root -g root -m 0644 "$service_backup" "$service_target" || true
+            if ! sudo -n install -o root -g root -m 0644 "$service_backup" "$service_target"; then
+                rollback_error "service restore"
+            fi
         else
-            sudo -n rm -f "$service_target" || true
+            if ! sudo -n rm -f "$service_target"; then
+                rollback_error "service removal"
+            fi
         fi
         if [[ "$include_was_present" == 1 ]]; then
-            sudo -n install -o root -g root -m 0644 "$include_backup" "$include_target" || true
+            if ! sudo -n install -o root -g root -m 0644 "$include_backup" "$include_target"; then
+                rollback_error "include restore"
+            fi
         else
-            sudo -n rm -f "$include_target" || true
+            if ! sudo -n rm -f "$include_target"; then
+                rollback_error "include removal"
+            fi
         fi
         if [[ "$edge_was_present" == 1 ]]; then
             if sudo -n install -o root -g root -m 0644 "$edge_backup" "$edge_config"; then
                 edge_restored=1
+            else
+                rollback_error "edge restore"
             fi
         else
             if sudo -n rm -f "$edge_config"; then
                 edge_restored=1
+            else
+                rollback_error "edge removal"
+            fi
+        fi
+
+        if [[ "$env_was_present" == 1 ]]; then
+            if ! sudo -n install -o ubuntu -g ubuntu -m 0600 "$env_backup" "$env_file"; then
+                rollback_error "environment restore"
+            fi
+        else
+            if ! sudo -n rm -f "$env_file"; then
+                rollback_error "environment removal"
+            fi
+        fi
+        if [[ "$state_dir_was_present" == 0 ]]; then
+            if ! sudo -n rm -rf -- "$state_dir"; then
+                rollback_error "state removal"
+            fi
+        fi
+        if ! sudo -n systemctl daemon-reload 2>/dev/null; then
+            rollback_error "systemd reload"
+        fi
+
+        if [[ "$service_was_present" == 1 ]]; then
+            if ! sudo -n test -f "$service_target" || ! sudo -n cmp -s "$service_backup" "$service_target"; then
+                rollback_error "service revalidation"
+            fi
+        elif sudo -n test -e "$service_target"; then
+            rollback_error "service absence revalidation"
+        fi
+        if [[ "$include_was_present" == 1 ]]; then
+            if ! sudo -n test -f "$include_target" || ! sudo -n cmp -s "$include_backup" "$include_target"; then
+                rollback_error "include revalidation"
+            fi
+        elif sudo -n test -e "$include_target"; then
+            rollback_error "include absence revalidation"
+        fi
+        if [[ "$env_was_present" == 1 ]]; then
+            if ! sudo -n test -f "$env_file" || ! sudo -n cmp -s "$env_backup" "$env_file"; then
+                rollback_error "environment revalidation"
+            fi
+        elif sudo -n test -e "$env_file"; then
+            rollback_error "environment absence revalidation"
+        fi
+        if [[ "$state_dir_was_present" == 1 ]]; then
+            if ! sudo -n test -d "$state_dir"; then
+                rollback_error "state revalidation"
+            fi
+        elif sudo -n test -e "$state_dir"; then
+            rollback_error "state absence revalidation"
+        fi
+        if [[ "$edge_was_present" == 1 ]]; then
+            if ! sudo -n test -f "$edge_config" || ! sudo -n cmp -s "$edge_backup" "$edge_config"; then
+                rollback_error "edge revalidation"
+            fi
+        elif sudo -n test -e "$edge_config"; then
+            rollback_error "edge absence revalidation"
+        fi
+        if [[ "$edge_was_present" == 1 && "$edge_restored" == 1 ]]; then
+            if ! sudo -n /usr/bin/python3 "$edge_helper" validate \
+                --edge "$edge_config" --include "$include_inside" --hostname "$beta_hostname"; then
+                rollback_error "edge semantic revalidation"
+            fi
+            rollback_exec_id="hermes-chatgpt-mcp-beta-rollback-syntax-$(date +%s)"
+            if ! sudo -n ctr -n moby tasks exec --exec-id "$rollback_exec_id" "$openresty_container" \
+                /usr/local/openresty/bin/openresty -t -c /usr/local/openresty/nginx/conf/nginx.conf; then
+                rollback_error "edge syntax revalidation"
             fi
         fi
         if [[ "$edge_reload_attempted" == 1 && "$edge_restored" == 1 ]]; then
-            rollback_exec_id="hermes-chatgpt-mcp-beta-rollback-syntax-$(date +%s)"
-            if sudo -n /usr/bin/python3 "$edge_helper" validate \
-                --edge "$edge_config" --include "$include_inside" --hostname "$beta_hostname" \
-                && sudo -n ctr -n moby tasks exec --exec-id "$rollback_exec_id" "$openresty_container" \
-                    /usr/local/openresty/bin/openresty -t -c /usr/local/openresty/nginx/conf/nginx.conf; then
-                sudo -n /usr/local/bin/reload-openresty-1panel.sh || true
+            if ! sudo -n /usr/local/bin/reload-openresty-1panel.sh; then
+                rollback_error "rollback reload"
             fi
         fi
-        if [[ "$env_was_present" == 1 ]]; then
-            sudo -n install -o ubuntu -g ubuntu -m 0600 "$env_backup" "$env_file" || true
-        else
-            sudo -n rm -f "$env_file" || true
-        fi
-        if [[ "$state_dir_was_present" == 0 ]]; then
-            sudo -n rmdir "$state_dir" 2>/dev/null || true
-        fi
-        sudo -n systemctl daemon-reload 2>/dev/null || true
         if [[ "$service_was_active" == 1 ]]; then
-            sudo -n systemctl start "$service_name" 2>/dev/null || true
+            if ! sudo -n systemctl start "$service_name" 2>/dev/null; then
+                rollback_error "service restart"
+            fi
+        fi
+        if [[ "$service_was_active" == 1 ]]; then
+            if ! sudo -n systemctl is-active --quiet "$service_name"; then
+                rollback_error "service active-state revalidation"
+            fi
+        elif sudo -n systemctl is-active --quiet "$service_name"; then
+            rollback_error "service inactive-state revalidation"
+        fi
+        if [[ "$service_was_enabled" == 1 ]]; then
+            if ! sudo -n systemctl is-enabled --quiet "$service_name"; then
+                rollback_error "service enabled-state revalidation"
+            fi
+        elif sudo -n systemctl is-enabled --quiet "$service_name"; then
+            rollback_error "service disabled-state revalidation"
         fi
     fi
     if [[ -n "$rollback_dir" ]]; then
-        sudo -n rm -rf "$rollback_dir" 2>/dev/null || true
+        if ! sudo -n rm -rf -- "$rollback_dir" 2>/dev/null; then
+            rollback_error "rollback cleanup"
+        fi
+    fi
+    if [[ "$rollback_failed" == 1 ]]; then
+        echo "beta rollback incomplete; safe diagnostic: ${rollback_errors[*]}" >&2
+        exit_status=1
     fi
     exit "$exit_status"
 }

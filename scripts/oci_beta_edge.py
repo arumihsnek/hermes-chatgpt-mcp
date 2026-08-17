@@ -113,6 +113,20 @@ def _server_bounds(text: str, hostname: str) -> tuple[int, int, int, list[int]]:
     if len(selected) != 1:
         raise EdgeConfigError(f"expected exactly one direct server_name for {hostname}")
     start, end, body_depth = selected[0]
+    listen_directives = re.finditer(r"(?m)^[ \t]*listen[ \t]+([^;]+);", directives)
+    tls_443 = False
+    for listen in listen_directives:
+        if not start < listen.start() < end or depths[listen.start()] != body_depth:
+            continue
+        arguments = listen.group(1).split()
+        if len(arguments) < 2 or "ssl" not in arguments[1:]:
+            continue
+        endpoint = arguments[0]
+        if endpoint == "443" or endpoint.endswith(":443"):
+            tls_443 = True
+            break
+    if not tls_443:
+        raise EdgeConfigError("beta server must have a direct TLS listen on port 443")
     return start, end, body_depth, depths
 
 

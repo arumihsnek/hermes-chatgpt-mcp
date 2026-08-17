@@ -100,6 +100,32 @@ def test_missing_read_allowlist_discovers_all_canonical_boards(tmp_path, monkeyp
     assert resolver.create_allowed("board-b") is True
 
 
+def test_max_board_count_counts_exposed_named_boards_and_blocks_before_create(tmp_path, monkeypatch):
+    from hermes_cli import kanban_db
+
+    _write_board(tmp_path, "board-a", name="Board A")
+    monkeypatch.setenv("HERMES_KANBAN_HOME", str(tmp_path))
+    settings = replace(
+        _board_settings(tmp_path, read=None, create=None),
+        max_board_count=1,
+    )
+    resolver = HermesBoardResolver(settings, hermes_module=kanban_db)
+
+    assert [handle.slug for handle in resolver.list_handles()] == ["board-a"]
+
+    calls: list[str] = []
+    original_create_board = kanban_db.create_board
+
+    def record_create_board(slug, **kwargs):
+        calls.append(str(slug))
+        return original_create_board(slug, **kwargs)
+
+    monkeypatch.setattr(kanban_db, "create_board", record_create_board)
+    with pytest.raises(ValueError, match="maximum|limit|capacity"):
+        resolver.board_admin_adapter().create_board("board-b")
+    assert calls == []
+
+
 def test_legacy_default_alias_is_not_exposed_as_a_named_board(tmp_path, monkeypatch):
     _write_board(tmp_path, "board-a", name="Board A")
     _write_board(tmp_path, "board-b", name="Board B")

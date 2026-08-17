@@ -19,7 +19,13 @@ from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Re
 
 from .adapter import HermesReadOnlyAdapter, TaskNotFoundError
 from .auth import BETA_AUTH_POLICY, STABLE_AUTH_POLICY, AuthService, BearerTokenVerifier, OAuthError
-from .boards import BoardHandle, BoardResolutionError, HermesBoardResolver, SingleBoardResolver
+from .boards import (
+    BoardHandle,
+    BoardResolutionError,
+    HermesBoardResolver,
+    SingleBoardResolver,
+    _canonical_board_slug,
+)
 from .command import HermesCreateAdapter
 from .config import Settings
 from .diagnostics import emit, fingerprint, redirect_identity, request_fingerprint, scope_summary
@@ -498,10 +504,14 @@ def create_app(
             require_scope(auth_service.board_create_scope)
             if not settings.board_create_enabled:
                 raise tool_error("BOARD_CREATE_DISABLED", "board creation is disabled")
-            with board_resolver.creation_lock(request.slug):
+            try:
+                canonical_slug = _canonical_board_slug(request.slug)
+            except ValueError as exc:
+                raise tool_error("CONFLICT", "invalid board slug") from exc
+            with board_resolver.creation_lock(canonical_slug):
                 return await run_beta_command(
                     board_resolver.board_admin_adapter().create_board,
-                    request.slug,
+                    canonical_slug,
                     name=request.name,
                     description=request.description,
                     icon=request.icon,

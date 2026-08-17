@@ -14,12 +14,13 @@ BEGIN = "# BEGIN hermes-chatgpt-mcp-beta managed include"
 END = "# END hermes-chatgpt-mcp-beta managed include"
 
 
-def _beta_edge(*, managed_block: str = "", prefix: str = "") -> str:
+def _beta_edge(*, managed_block: str = "", prefix: str = "", listen: str = "listen 443 ssl;\n") -> str:
     return (
         "events {}\n"
         "http {\n"
         f"{prefix}"
         "    server {\n"
+        f"        {listen}"
         f"        server_name {BETA_HOSTNAME};\n"
         f"{managed_block}"
         "    }\n"
@@ -63,6 +64,7 @@ def test_beta_unit_has_a_separate_listener_state_and_narrow_sandbox():
     assert "WorkingDirectory=/home/ubuntu/code/hermes-chatgpt-mcp/.worktrees/hermes-chatgpt-mcp-beta" in unit
     assert "ExecStart=/home/ubuntu/hermes-agent/venv/bin/python -m hermes_chatgpt_mcp.beta_server" in unit
     assert "Environment=MCP_SURFACE=beta" in unit
+    assert "Environment=MCP_ENV_FILE=/home/ubuntu/.hermes/hermes-chatgpt-mcp-beta.env" in unit
     assert "Environment=MCP_PORT=8791" in unit
     assert "Environment=MCP_BOARD_CREATE_ENABLED=1" in unit
     assert "Environment=MCP_OAUTH_STATE_FILE=/var/lib/hermes-chatgpt-mcp-beta/oauth-state.json" in unit
@@ -229,6 +231,37 @@ def test_beta_installer_revalidates_and_reloads_restored_edge_after_reload_failu
     assert installer.index('"$edge_helper" validate', restore_at) < rollback_reload_at
     assert installer.index("openresty -t", restore_at) < rollback_reload_at
     assert "hermes-chatgpt-mcp.service" not in installer
+
+
+def test_beta_installer_rollback_tracks_failures_and_revalidates_every_restored_boundary():
+    installer = Path("scripts/install_oci_beta.sh").read_text(encoding="utf-8")
+    rollback = installer[installer.index("rollback() {"): installer.index("trap rollback EXIT")]
+
+    assert "rollback_failed=0" in installer
+    assert "rollback_error()" in installer
+    assert "rollback_error \"service" in rollback
+    assert "rollback_error \"include" in rollback
+    assert "rollback_error \"edge" in rollback
+    assert "rollback_error \"environment" in rollback
+    assert "rollback_error \"state" in rollback
+    assert "cmp -s" in rollback
+    assert '"$edge_helper" validate' in rollback
+    assert "openresty -t" in rollback
+    assert "rollback reload" in rollback
+    assert 'if [[ "$rollback_failed" == 1 ]]; then' in rollback
+    assert 'exit_status=1' in rollback
+    assert "rollback incomplete" in rollback
+    assert "|| true" not in rollback
+
+
+@pytest.mark.parametrize("listen", ["listen 443;\n", "listen 80 ssl;\n", "listen 8443 ssl;\n"])
+def test_beta_edge_requires_a_direct_tls_listener_on_port_443(listen):
+    with pytest.raises(EdgeConfigError, match="TLS|443"):
+        render_edge_config(
+            _beta_edge(listen=listen),
+            include_path=BETA_INCLUDE,
+            hostname=BETA_HOSTNAME,
+        )
 
 
 def test_beta_installer_rejects_an_environment_file_override():

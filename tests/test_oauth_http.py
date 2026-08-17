@@ -50,6 +50,112 @@ def test_beta_oauth_state_survives_fresh_service_and_isolated_from_stable(tmp_pa
     asyncio.run(_test_beta_oauth_state_survives_fresh_service_and_isolated_from_stable(tmp_path, monkeypatch))
 
 
+def test_beta_oauth_http_board_create_scope_is_global_and_can_create_a_board(tmp_path, monkeypatch):
+    asyncio.run(_test_beta_oauth_http_board_create_scope_is_global_and_can_create_a_board(tmp_path, monkeypatch))
+
+
+async def _test_beta_oauth_http_board_create_scope_is_global_and_can_create_a_board(tmp_path, monkeypatch):
+    fixture = make_hermes_fixture(tmp_path)
+    monkeypatch.setenv("HERMES_KANBAN_HOME", str(fixture.root))
+    settings = replace(
+        _settings(),
+        hermes_kanban_home=fixture.root,
+        default_board=fixture.board,
+        kanban_read_boards=None,
+        kanban_create_boards=None,
+        oauth_state_file=tmp_path / "beta-board-create-state.json",
+        surface="beta",
+        board_create_enabled=True,
+    )
+    auth = AuthService(settings)
+    resolver = HermesBoardResolver(settings, hermes_module=kanban_db)
+    app = create_app(board_resolver=resolver, settings=settings, auth_service=auth, surface="beta")
+    verifier = "board-create-verifier-" + "e" * 25
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+    callback = "https://chatgpt.com/connector/oauth/callback"
+    scope = "hermes:read hermes:board:create"
+    transport = httpx.ASGITransport(app=app)
+
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=transport, base_url=settings.public_base_url, follow_redirects=False) as client:
+            registration = await client.post(
+                "/oauth/register",
+                json={
+                    "client_name": "Beta board administrator",
+                    "redirect_uris": [callback],
+                    "token_endpoint_auth_method": "none",
+                    "grant_types": ["authorization_code"],
+                    "response_types": ["code"],
+                    "scope": scope,
+                },
+            )
+            assert registration.status_code == 201, registration.text
+            client_data = registration.json()
+            params = {
+                "response_type": "code",
+                "client_id": client_data["client_id"],
+                "redirect_uri": callback,
+                "scope": scope,
+                "state": "board-create-state",
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
+                "resource": settings.public_base_url,
+            }
+            approved = await client.post(
+                "/oauth/authorize",
+                data={
+                    **params,
+                    "username": "chatgpt",
+                    "password": "correct horse battery staple",
+                    "access_mode": "read",
+                },
+            )
+            assert approved.status_code == 303, approved.text
+            code = parse_qs(urlsplit(approved.headers["location"]).query)["code"][0]
+            token = await client.post(
+                "/oauth/token",
+                data={
+                    "grant_type": "authorization_code",
+                    "client_id": client_data["client_id"],
+                    "code": code,
+                    "redirect_uri": callback,
+                    "code_verifier": verifier,
+                },
+            )
+            assert token.status_code == 200, token.text
+            token_data = token.json()
+            assert token_data["scope"] == scope
+            claims = auth.verified_claims(token_data["access_token"])
+            assert claims is not None
+            assert "board" not in claims
+            assert "board_access" not in claims
+
+            response = await client.post(
+                "/mcp",
+                headers={
+                    "Authorization": f"Bearer {token_data['access_token']}",
+                    "Accept": "application/json, text/event-stream",
+                    "Content-Type": "application/json",
+                    "MCP-Protocol-Version": "2025-06-18",
+                },
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "create_board",
+                        "arguments": {"request": {"slug": "oauth-created-board"}},
+                    },
+                },
+            )
+
+    assert response.status_code == 200, response.text
+    result = response.json()["result"]
+    assert result.get("isError") is not True, result
+    assert result["structuredContent"]["slug"] == "oauth-created-board"
+    assert (fixture.root / "kanban" / "boards" / "oauth-created-board" / "kanban.db").is_file()
+
+
 async def _test_oauth_http_dcr_default_then_create_authorization(tmp_path):
     fixture = make_hermes_fixture(tmp_path)
     settings = _settings()

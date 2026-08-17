@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import concurrent.futures
 import re
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -74,6 +77,79 @@ def test_board_admin_creates_canonical_directory_without_changing_current_board(
     assert (board_dir / "board.json").is_file()
     assert (board_dir / "kanban.db").is_file()
     assert fixture.db_path.is_file()
+
+
+def test_board_admin_rejects_reserved_legacy_default_before_canonical_mutation(tmp_path, monkeypatch):
+    from hermes_cli import kanban_db
+
+    fixture = make_hermes_fixture(tmp_path)
+    monkeypatch.setenv("HERMES_KANBAN_HOME", str(fixture.root))
+    adapter = HermesBoardAdminAdapter(kanban_db)
+    calls: list[str] = []
+    original_create_board = kanban_db.create_board
+
+    def record_create_board(slug, **kwargs):
+        calls.append(str(slug))
+        return original_create_board(slug, **kwargs)
+
+    monkeypatch.setattr(kanban_db, "create_board", record_create_board)
+
+    with pytest.raises(ValueError, match="default"):
+        adapter.create_board(" DEFAULT ")
+
+    assert calls == []
+    assert not (fixture.root / "kanban" / "boards" / "default").exists()
+
+
+def test_board_admin_rejects_archived_slug_before_canonical_mutation(tmp_path, monkeypatch):
+    from hermes_cli import kanban_db
+
+    fixture = make_hermes_fixture(tmp_path)
+    monkeypatch.setenv("HERMES_KANBAN_HOME", str(fixture.root))
+    kanban_db.create_board("archived-board", name="Archived Board")
+    archived = kanban_db.remove_board("archived-board", archive=True)
+    assert archived["action"] == "archived"
+
+    adapter = HermesBoardAdminAdapter(kanban_db)
+    calls: list[str] = []
+    original_create_board = kanban_db.create_board
+
+    def record_create_board(slug, **kwargs):
+        calls.append(str(slug))
+        return original_create_board(slug, **kwargs)
+
+    monkeypatch.setattr(kanban_db, "create_board", record_create_board)
+
+    with pytest.raises(ValueError, match="archived"):
+        adapter.create_board(" ARCHIVED-BOARD ")
+
+    assert calls == []
+    assert not (fixture.root / "kanban" / "boards" / "archived-board").exists()
+
+
+def test_board_admin_case_variant_creation_is_one_canonical_operation(tmp_path, monkeypatch):
+    from hermes_cli import kanban_db
+
+    fixture = make_hermes_fixture(tmp_path)
+    monkeypatch.setenv("HERMES_KANBAN_HOME", str(fixture.root))
+    adapters = [HermesBoardAdminAdapter(kanban_db), HermesBoardAdminAdapter(kanban_db)]
+    calls: list[str] = []
+    calls_lock = threading.Lock()
+    original_create_board = kanban_db.create_board
+
+    def record_create_board(slug, **kwargs):
+        with calls_lock:
+            calls.append(str(slug))
+        time.sleep(0.05)
+        return original_create_board(slug, **kwargs)
+
+    monkeypatch.setattr(kanban_db, "create_board", record_create_board)
+    requests = [(adapters[0], " Case-Variant-Board "), (adapters[1], "case-variant-board")]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(lambda item: item[0].create_board(item[1]), requests))
+
+    assert calls == ["case-variant-board"]
+    assert [result.slug for result in results] == ["case-variant-board", "case-variant-board"]
 
 
 def test_management_adapter_adds_provenance_comment_and_commented_event(tmp_path, monkeypatch):
