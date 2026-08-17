@@ -234,10 +234,42 @@ async def _test_stable_default_and_beta_tool_discovery_are_exact(tmp_path, monke
         "hermes:board:create",
         "offline_access",
     }
-    new_tools = {tool["name"]: tool for tool in tools if tool["name"] in {"create_board", "add_comment", "assign_task"}}
-    assert all(tool["annotations"]["readOnlyHint"] is False for tool in new_tools.values())
-    assert all(tool["annotations"]["destructiveHint"] is False for tool in new_tools.values())
-    assert "board" not in new_tools["create_board"]["inputSchema"]["$defs"]["CreateBoardInput"]["properties"]
+    mutation_tools = {
+        tool["name"]: tool
+        for tool in tools
+        if tool["name"] in {"create_task", "create_board", "add_comment", "assign_task"}
+    }
+    assert {name: tool["annotations"] for name, tool in mutation_tools.items()} == {
+        "create_task": {
+            "title": "Create Hermes task",
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        },
+        "create_board": {
+            "title": "Create Hermes board",
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        },
+        "add_comment": {
+            "title": "Manage Hermes card",
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": False,
+            "openWorldHint": False,
+        },
+        "assign_task": {
+            "title": "Manage Hermes card",
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": False,
+            "openWorldHint": False,
+        },
+    }
+    assert "board" not in mutation_tools["create_board"]["inputSchema"]["$defs"]["CreateBoardInput"]["properties"]
     assert all(tool["inputSchema"].get("additionalProperties", True) is False for tool in tools)
 
 
@@ -290,6 +322,7 @@ async def _test_scope_failures_happen_before_command_adapter_construction(tmp_pa
         raise AssertionError("command adapter must not be constructed")
 
     monkeypatch.setattr(resolver, "board_admin_adapter", forbidden_factory)
+    monkeypatch.setattr(resolver, "command_adapter", forbidden_factory)
     monkeypatch.setattr(resolver, "management_adapter", forbidden_factory)
     read = _token(auth, "reader", ["hermes:read"])
     creator = _token(auth, "creator", ["hermes:read", "hermes:create"], board=fixture.board)
@@ -331,6 +364,22 @@ async def _test_scope_failures_happen_before_command_adapter_construction(tmp_pa
                         "arguments": {"request": {"board": fixture.board, "task_id": "review-task", "assignee": "planner"}},
                     },
                     4,
+                ),
+                await _rpc(
+                    client,
+                    read,
+                    "tools/call",
+                    {
+                        "name": "create_task",
+                        "arguments": {
+                            "request": {
+                                "board": fixture.board,
+                                "title": "must not construct",
+                                "idempotency_key": "ordering-read-create-1",
+                            }
+                        },
+                    },
+                    5,
                 ),
             ]
 
@@ -503,6 +552,9 @@ async def _test_beta_scope_matrix_denies_only_the_unauthorized_mutations(tmp_pat
         (reader, "add_comment", {"request": {"board": fixture.board, "task_id": "review-task", "body": "denied"}}),
         (reader, "assign_task", {"request": {"board": fixture.board, "task_id": "review-task", "assignee": "planner"}}),
         (creator, "create_board", {"request": {"slug": "matrix-create-board"}}),
+        (creator, "add_comment", {"request": {"board": fixture.board, "task_id": "review-task", "body": "denied"}}),
+        (creator, "assign_task", {"request": {"board": fixture.board, "task_id": "review-task", "assignee": "planner"}}),
+        (manager, "create_board", {"request": {"slug": "matrix-manage-board"}}),
         (administrator, "create_task", {"request": {"board": fixture.board, "title": "denied", "idempotency_key": "matrix-admin-1"}}),
         (manager, "create_task", {"request": {"board": fixture.board, "title": "denied", "idempotency_key": "matrix-manage-1"}}),
     ]

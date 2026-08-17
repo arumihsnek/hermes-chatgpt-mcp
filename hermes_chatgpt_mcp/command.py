@@ -101,7 +101,15 @@ class HermesBoardAdminAdapter:
         icon: str | None = None,
         color: str | None = None,
     ) -> CreateBoardResult:
-        metadata = self.hermes.create_board(
+        existing = next(
+            (
+                entry
+                for entry in self.hermes.list_boards(include_archived=False)
+                if isinstance(entry, dict) and str(entry.get("slug")) == slug
+            ),
+            None,
+        )
+        metadata = existing or self.hermes.create_board(
             slug, name=name, description=description, icon=icon, color=color
         )
         return CreateBoardResult(

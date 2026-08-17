@@ -287,6 +287,42 @@ async def _test_beta_oauth_state_survives_fresh_service_and_isolated_from_stable
             rotated = rotated_response.json()
             assert rotated["refresh_token"] != original_refresh
             assert fresh_auth.verify_token(rotated["access_token"]) is not None
+            assert rotated["scope"] == scope
+            claims = fresh_auth.verified_claims(rotated["access_token"])
+            assert claims is not None
+            assert claims["scope"] == scope
+            assert claims["board"] == fixture.board
+            assert claims["board_access"] == "write"
+
+            authorized_management = await client.post(
+                "/mcp",
+                headers={
+                    "Authorization": f"Bearer {rotated['access_token']}",
+                    "Accept": "application/json, text/event-stream",
+                    "Content-Type": "application/json",
+                    "MCP-Protocol-Version": "2025-06-18",
+                },
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "add_comment",
+                        "arguments": {
+                            "request": {
+                                "board": fixture.board,
+                                "task_id": "review-task",
+                                "body": "refreshed grant management operation",
+                            }
+                        },
+                    },
+                },
+            )
+            assert authorized_management.status_code == 200
+            management_result = authorized_management.json()["result"]
+            assert management_result.get("isError") is not True
+            assert management_result["structuredContent"]["board"] == fixture.board
+            assert management_result["structuredContent"]["author"] == "chatgpt_mcp"
 
             reused_response = await client.post(
                 "/oauth/token",

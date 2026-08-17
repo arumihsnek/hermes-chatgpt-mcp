@@ -7,8 +7,10 @@ from pathlib import Path
 import httpx
 
 from hermes_chatgpt_mcp.auth import AuthService
+from hermes_chatgpt_mcp.adapter import HermesReadOnlyAdapter
 from hermes_chatgpt_mcp.boards import HermesBoardResolver
-from hermes_chatgpt_mcp.command import HermesBoardAdminAdapter
+from hermes_chatgpt_mcp.command import HermesBoardAdminAdapter, HermesCreateAdapter
+from hermes_chatgpt_mcp.hermes import ReadOnlyHermesStore
 from hermes_chatgpt_mcp.server import create_app
 
 from hermes_cli import kanban_db
@@ -80,6 +82,16 @@ def _token(auth: AuthService, client_id: str, scopes: list[str], *, board: str |
     )
 
 
+def _canonical_board_store(fixture, board: str) -> ReadOnlyHermesStore:
+    return ReadOnlyHermesStore(
+        db_path=ReadOnlyHermesStore.resolve_board_path(fixture.root, board),
+        board=board,
+        hermes_module=kanban_db,
+        hermes_agent_root=fixture.root,
+        log_root=fixture.root / "kanban" / "boards" / board / "logs",
+    )
+
+
 def _assert_error(result: dict, code: str) -> None:
     payload = result["result"]
     assert payload["isError"] is True
@@ -143,6 +155,8 @@ async def _test_beta_create_board_dogfood_is_canonical_and_idempotent(tmp_path, 
                                 "slug": "beta-dogfood-board",
                                 "name": "Beta Dogfood Board",
                                 "description": "Temporary beta fixture board",
+                                "icon": "beta",
+                                "color": "#336699",
                             }
                         },
                     },
@@ -159,8 +173,10 @@ async def _test_beta_create_board_dogfood_is_canonical_and_idempotent(tmp_path, 
                         "arguments": {
                             "request": {
                                 "slug": "beta-dogfood-board",
-                                "name": "Beta Dogfood Board",
-                                "description": "Temporary beta fixture board",
+                                "name": "Conflicting Metadata",
+                                "description": "Must not replace canonical metadata",
+                                "icon": "conflict",
+                                "color": "#ff0000",
                             }
                         },
                     },
@@ -176,8 +192,8 @@ async def _test_beta_create_board_dogfood_is_canonical_and_idempotent(tmp_path, 
         "slug": "beta-dogfood-board",
         "name": "Beta Dogfood Board",
         "description": "Temporary beta fixture board",
-        "icon": None,
-        "color": None,
+        "icon": "beta",
+        "color": "#336699",
         "created": True,
         "is_default": False,
     }
@@ -194,6 +210,21 @@ def test_beta_selected_board_management_and_canonical_activity(tmp_path, monkeyp
 
 async def _test_beta_selected_board_management_and_canonical_activity(tmp_path, monkeypatch):
     fixture, board_b, settings, auth, app = _beta_fixture(tmp_path, monkeypatch)
+    board_b_task = HermesCreateAdapter(_canonical_board_store(fixture, board_b.slug)).create_task(
+        title="Board B known task",
+        body="Canonical Board B seed for isolation coverage",
+        idempotency_key="board-b-known-task-1",
+    )
+    board_b_queries = HermesReadOnlyAdapter(_canonical_board_store(fixture, board_b.slug))
+    board_b_before_task = board_b_queries.get_task(board_b_task.task_id).model_dump()
+    board_b_before_activity = board_b_queries.get_activity(
+        board_b_task.task_id,
+        max_items=50,
+        log_bytes=0,
+    ).model_dump()
+    assert board_b_before_task["title"] == "Board B known task"
+    assert board_b_before_task["created_by"] == "chatgpt_mcp"
+    assert kanban_db.get_current_board() == fixture.board
     creator = _token(auth, "creator", ["hermes:read", "hermes:create"], board=fixture.board)
     manager = _token(auth, "manager", ["hermes:read", "hermes:manage"], board=fixture.board)
     transport = httpx.ASGITransport(app=app)
@@ -287,7 +318,7 @@ async def _test_beta_selected_board_management_and_canonical_activity(tmp_path, 
                 "tools/call",
                 {
                     "name": "add_comment",
-                    "arguments": {"request": {"board": board_b.slug, "task_id": "review-task", "body": "must not cross boards"}},
+                    "arguments": {"request": {"board": board_b.slug, "task_id": board_b_task.task_id, "body": "must not cross boards"}},
                 },
                 6,
             )
@@ -297,10 +328,16 @@ async def _test_beta_selected_board_management_and_canonical_activity(tmp_path, 
                 "tools/call",
                 {
                     "name": "assign_task",
-                    "arguments": {"request": {"board": board_b.slug, "task_id": "review-task", "assignee": "planner"}},
+                    "arguments": {"request": {"board": board_b.slug, "task_id": board_b_task.task_id, "assignee": "planner"}},
                 },
                 7,
             )
+            board_b_after_task = board_b_queries.get_task(board_b_task.task_id).model_dump()
+            board_b_after_activity = board_b_queries.get_activity(
+                board_b_task.task_id,
+                max_items=50,
+                log_bytes=0,
+            ).model_dump()
             after_denied_board = tree_fingerprint(fixture.root)
 
     assert created["board"] == fixture.board
@@ -310,6 +347,8 @@ async def _test_beta_selected_board_management_and_canonical_activity(tmp_path, 
     assert {"commented", "assigned"}.issubset({event["kind"] for event in review_activity["events"]})
     _assert_error(wrong_comment, "BOARD_SESSION_MISMATCH")
     _assert_error(wrong_assignment, "BOARD_SESSION_MISMATCH")
+    assert board_b_after_task == board_b_before_task
+    assert board_b_after_activity == board_b_before_activity
     assert after_denied_board == before_denied_board
 
 
