@@ -101,11 +101,13 @@ class HermesBoardAdminAdapter:
         icon: str | None = None,
         color: str | None = None,
     ) -> CreateBoardResult:
+        lookup_slug = str(slug).strip().lower()
         existing = next(
             (
                 entry
                 for entry in self.hermes.list_boards(include_archived=False)
-                if isinstance(entry, dict) and str(entry.get("slug")) == slug
+                if isinstance(entry, dict)
+                and str(entry.get("slug")).strip().lower() == lookup_slug
             ),
             None,
         )

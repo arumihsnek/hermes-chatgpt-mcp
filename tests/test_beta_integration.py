@@ -208,6 +208,75 @@ def test_beta_selected_board_management_and_canonical_activity(tmp_path, monkeyp
     asyncio.run(_test_beta_selected_board_management_and_canonical_activity(tmp_path, monkeypatch))
 
 
+def test_beta_create_board_case_variant_preserves_canonical_metadata(tmp_path, monkeypatch):
+    asyncio.run(_test_beta_create_board_case_variant_preserves_canonical_metadata(tmp_path, monkeypatch))
+
+
+async def _test_beta_create_board_case_variant_preserves_canonical_metadata(tmp_path, monkeypatch):
+    fixture, board_b, settings, auth, app = _beta_fixture(tmp_path, monkeypatch)
+    administrator = _token(auth, "case-variant-administrator", ["hermes:read", "hermes:board:create"])
+    current_before = kanban_db.get_current_board()
+    transport = httpx.ASGITransport(app=app)
+
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=transport, base_url=settings.public_base_url) as client:
+            first = _assert_success(
+                await _rpc(
+                    client,
+                    administrator,
+                    "tools/call",
+                    {
+                        "name": "create_board",
+                        "arguments": {
+                            "request": {
+                                "slug": "case-board",
+                                "name": "Case Canonical Board",
+                                "description": "Canonical case-insensitive board",
+                                "icon": "case",
+                                "color": "#123456",
+                            }
+                        },
+                    },
+                    1,
+                )
+            )
+            repeated = _assert_success(
+                await _rpc(
+                    client,
+                    administrator,
+                    "tools/call",
+                    {
+                        "name": "create_board",
+                        "arguments": {
+                            "request": {
+                                "slug": "CASE-BOARD",
+                                "name": "Conflicting Case Metadata",
+                                "description": "Must not replace the canonical case variant",
+                                "icon": "conflict",
+                                "color": "#abcdef",
+                            }
+                        },
+                    },
+                    2,
+                )
+            )
+            boards = _assert_success(
+                await _rpc(client, administrator, "tools/call", {"name": "list_boards", "arguments": {}}, 3)
+            )
+
+    assert first == repeated == {
+        "slug": "case-board",
+        "name": "Case Canonical Board",
+        "description": "Canonical case-insensitive board",
+        "icon": "case",
+        "color": "#123456",
+        "created": True,
+        "is_default": False,
+    }
+    assert [item["slug"] for item in boards["items"]].count("case-board") == 1
+    assert kanban_db.get_current_board() == current_before == fixture.board
+
+
 async def _test_beta_selected_board_management_and_canonical_activity(tmp_path, monkeypatch):
     fixture, board_b, settings, auth, app = _beta_fixture(tmp_path, monkeypatch)
     board_b_task = HermesCreateAdapter(_canonical_board_store(fixture, board_b.slug)).create_task(
