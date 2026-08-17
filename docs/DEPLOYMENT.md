@@ -5,6 +5,23 @@ OpenResty container. `hermes-chatgpt-mcp` remains an independent systemd
 service on `127.0.0.1:8789`; OpenResty forwards only the MCP/OAuth/health
 paths for `kanban.hermesinthenight.duckdns.org`.
 
+## Stable and beta deployment boundary
+
+The stable and beta deployments are intentionally parallel:
+
+| Surface | Public MCP origin | Loopback listener | Systemd unit | OAuth state |
+| --- | --- | --- | --- | --- |
+| Stable | `https://kanban.hermesinthenight.duckdns.org/mcp` | `127.0.0.1:8789` | `hermes-chatgpt-mcp.service` | `/var/lib/hermes-chatgpt-mcp/oauth-state.json` |
+| Beta | `https://kanban-beta.hermesinthenight.duckdns.org/mcp` | `127.0.0.1:8791` | `hermes-chatgpt-mcp-beta.service` | `/var/lib/hermes-chatgpt-mcp-beta/oauth-state.json` |
+
+Stable exposes eight tools (seven reads plus `create_task`) and its three
+scopes. Beta exposes eleven tools (the same seven reads plus `create_task`,
+`create_board`, `add_comment`, and `assign_task`) and its five scopes. The beta
+unit and OpenResty include own their service name, port, public hostname,
+environment file, state path, and OAuth signing key. Installing beta does not
+modify the stable unit or stable OAuth state. Beta DNS/TLS/OCI availability is
+not verified by this repository task and remains pending operator validation.
+
 ## Install or update
 
 Run from this repository as `ubuntu` with non-interactive sudo:
@@ -30,6 +47,38 @@ The systemd unit declares `StateDirectory=hermes-chatgpt-mcp`, which creates
 file is `/var/lib/hermes-chatgpt-mcp/oauth-state.json` with mode `0600`.
 `MCP_OAUTH_STATE_FILE` is also explicit in the unit, so an old env file cannot
 silently restore the v0.1 in-memory behavior.
+
+## Beta install or update
+
+Run this only as a separately authorized deployment action; it was not run for
+this documentation task:
+
+```bash
+./scripts/install_oci_beta.sh <exact-beta-commit>
+```
+
+The installer requires the candidate Git worktree to be clean and exactly at
+the requested commit. It validates the beta OpenResty include before copying
+artifacts, installs only `hermes-chatgpt-mcp-beta.service` and its beta include,
+creates `/var/lib/hermes-chatgpt-mcp-beta` with restrictive ownership, and
+creates or preserves the private environment file
+`/home/ubuntu/.hermes/hermes-chatgpt-mcp-beta.env` at mode `0600`. The private
+file contains the beta public origin, loopback port `8791`,
+`MCP_SURFACE=beta`, `MCP_BOARD_CREATE_ENABLED=1`, the beta OAuth state path,
+and a signing key separate from stable. Credential values are never printed or
+committed.
+
+The beta unit keeps `ProtectSystem=full`, `ProtectHome=read-only`,
+`NoNewPrivileges`, private devices/temp space, and write access only to
+canonical named-board storage plus the beta state directory. Its OpenResty
+include owns only `/mcp`, `/healthz`, OAuth discovery, and `/oauth/` for the
+beta hostname; it does not proxy a general Hermes UI route.
+
+After the beta artifacts are installed, the script reloads systemd, enables and
+restarts only the beta unit, checks the beta loopback health response
+`{"status":"ok"}` on `127.0.0.1:8791`, and reloads the existing OpenResty hook.
+The installer does not restart `hermes-chatgpt-mcp.service`. A successful local
+check is not a claim of public DNS, TLS, OCI, or ChatGPT validation.
 
 ## Sandbox boundary
 
@@ -104,6 +153,19 @@ HERMES_LIVE_TEST=1 HERMES_LIVE_WRITE_TEST=1 \
 The second command performs one idempotent create per controlled board and
 cleans both cards with Hermes-native administrative functions in `finally`.
 
+For the beta deployment, the corresponding local checks are:
+
+```bash
+sudo systemd-analyze verify /etc/systemd/system/hermes-chatgpt-mcp-beta.service
+sudo systemctl is-active hermes-chatgpt-mcp-beta.service
+curl --fail http://127.0.0.1:8791/healthz
+```
+
+An operator may separately check the configured beta HTTPS origin and OAuth
+metadata after DNS/TLS are available. That external check is pending here;
+the repository tests prove configuration shape and ASGI behavior, not live
+edge success.
+
 ## Restart persistence check
 
 Before a production restart, register a temporary public test client with a
@@ -129,6 +191,19 @@ survives. DCR scope metadata is a default, while `/oauth/authorize` validates
 against the server's advertised scopes and the resulting token scope is still
 limited to the explicitly requested and approved values.
 
+The beta service applies the same persistence rule to its own state file, but
+does not read the stable state file. Beta DCR registrations, refresh-grant
+records, revoked-grant IDs, and the beta signing key are separate from stable;
+authorization codes remain in memory. A stable ChatGPT connection therefore
+needs a separate beta connector authorization, and changing a beta write board
+needs a new authorization that selects exactly one board.
+
+`hermes:board:create` is a global beta scope. A board-creation grant has no
+board claim and `create_board` does not grant task-write access to the new
+board. `hermes:create` and `hermes:manage` are the one-board command scopes;
+`add_comment` and `assign_task` require `hermes:manage`, while `create_task`
+requires `hermes:create`.
+
 ## Rollback and removal
 
 The installer creates timestamped backups of the edited OpenResty host config.
@@ -141,6 +216,22 @@ To remove only this integration:
 Removal preserves the environment file, OAuth state, Hermes source, databases,
 logs, and the existing Kanban service. Do not delete the state directory if a
 future rollback must preserve ChatGPT registrations.
+
+## Beta rollback to the stable endpoint
+
+The beta installer is transactional. If validation, artifact installation,
+OpenResty syntax checking, beta restart, or the local health check fails after
+mutation starts, its exit trap restores the previous beta unit/include/edge
+configuration/environment and service state. If an edge reload was attempted,
+it validates and reloads the restored edge before returning the failure. This
+rollback is beta-only and does not restart or rewrite the stable unit.
+
+For a deliberate user-facing fallback after a beta installation, keep the
+stable unit and stable state intact and reconnect ChatGPT to
+`https://kanban.hermesinthenight.duckdns.org/mcp`. Stable OAuth authorization
+is independent of beta OAuth authorization. Disablement or removal of the beta
+unit/include is a separate change-controlled operator action; no live rollback
+was performed or verified for this task.
 
 ## OAuth handshake diagnostics
 

@@ -16,7 +16,7 @@ reconnaissance; its existing changes were preserved and no Hermes files were
 modified by this project. The relevant Kanban kernel file
 `hermes_cli/kanban_db.py` was inspected as the source of truth.
 
-`/home/ubuntu/code/HermesKanban` is a separate companion WebUI. It imports
+The Hermes companion WebUI is a separate service. It imports
 `hermes_cli.kanban_db`, which confirms the shared domain boundary, but its API
 also exposes task creation, updates, deletion, dispatch, board changes, and
 other mutations. It is therefore not a safe MCP adapter boundary.
@@ -125,6 +125,39 @@ grant and is preserved across refresh-token rotation until `/oauth/revoke`.
 This makes changing the write board an explicit reauthorization rather than a
 tool call that could self-grant permission.
 
+## Beta board-management boundary
+
+The beta entrypoint selects an explicit authorization policy and registers the
+stable seven reads plus `create_task`, `create_board`, `add_comment`, and
+`assign_task`—eleven tools total. The stable entrypoint remains eight tools and
+does not register the beta tools or advertise `hermes:manage` or
+`hermes:board:create`.
+
+The exact beta command mapping is:
+
+| MCP tool | OAuth requirement | Hermes canonical boundary | Resulting state |
+| --- | --- | --- | --- |
+| `create_board` | Global `hermes:board:create`; board creation flag enabled | `HermesBoardAdminAdapter.create_board` -> `hermes_cli.kanban_db.create_board` | Canonical board metadata; no board selection and no task-write grant |
+| `create_task` | `hermes:create` plus one-board `board_access=write` grant | Existing `HermesCreateAdapter` -> `hermes_cli.kanban_db.create_task` | Canonical task and `created` event |
+| `add_comment` | `hermes:manage` plus the exact selected board | `HermesCardManagementAdapter.add_comment` -> `connect_closing(..., board=...)`, `add_comment`, `list_comments` | Canonical comment and `commented` event; provenance `chatgpt_mcp` |
+| `assign_task` | `hermes:manage` plus the exact selected board | `HermesCardManagementAdapter.assign_task` -> `connect_closing(..., board=...)`, `assign_task`, `get_task` | Canonical assignee and `assigned` event |
+
+The beta board-creation grant is global and has no board claim. It cannot be
+combined with the board-bound command scopes. Consequently, **create_board
+alone does not grant task-write access** to the new board. A later OAuth
+authorization must select that board for `hermes:create` or `hermes:manage`.
+No tenant administration, board rename/archive/delete, task update, or
+lifecycle/controller/import/sync operation is public. A task `tenant` value
+remains canonical task metadata and is not authorization.
+
+Creating a named board does not call Hermes' current-board setter and does not
+change `default_board`. `list_boards` exposes the unchanged current default,
+the new board's `is_default` value, and the beta capabilities. If a command
+grant selected another board while Hermes' current default is
+`seq66_looper`, an explicit command request for `seq66_looper` correctly
+returns `BOARD_SESSION_MISMATCH`; an omitted command board routes to the
+signed grant board instead of falling back to the current default.
+
 ## Board, tenant, and session semantics
 
 These identifiers are deliberately not conflated:
@@ -146,13 +179,13 @@ existence is not sufficient reason to expose them. The decision matrix is:
 
 | Operation family | Canonical Hermes API | Invariants centralized | MCP v0.4 decision | Risk |
 | --- | --- | --- | --- | --- |
-| `create_task` | `kanban_db.create_task` | Yes: IDs, parents, status, events, notification inheritance, idempotency | Expose | Medium |
-| `add_comment` | `kanban_db.add_comment` | Yes: comment row/event semantics | Do not expose yet; candidate append-only v0.4 | Low/medium |
+| `create_task` | `kanban_db.create_task` | Yes: IDs, parents, status, events, notification inheritance, idempotency | Expose on stable and beta | Medium |
+| `add_comment` | `kanban_db.add_comment` | Yes: comment row/event semantics | Expose only on beta under `hermes:manage` and one-board binding | Low/medium |
 | attachments/evidence | `kanban_db.add_attachment` and attachment helpers | Yes, but includes local file/path handling | Do not expose | Medium |
 | title/body/priority/model/triage edits | canonical setters/specification functions | Yes | Do not expose | Medium/high |
-| assign/reassign/link/unlink/block/promote/archive/delete | canonical commands exist | Yes | Do not expose | High |
+| assign/reassign/link/unlink/block/promote/archive/delete | canonical commands exist | Yes | Expose only beta `assign_task`; keep all other operations private | High |
 | claim/complete/review/reopen/retry/dispatch | controller/worker protocol functions exist | Yes, with ownership and evidence side effects | Do not expose | Very high |
-| board create/rename/archive/delete | canonical board administration exists | Yes, but administrative | Do not expose; would need separate admin scope | Critical |
+| board create/rename/archive/delete | canonical board administration exists | Yes, but administrative | Expose only beta `create_board` with `hermes:board:create`; keep rename/archive/delete private | Critical |
 
 In particular, the MCP does not turn any of these functions into a generic
 `update_task` dictionary or emulate lifecycle transitions by changing columns.
@@ -284,6 +317,27 @@ and the service-owned OAuth state directory. The query adapter continues to
 use SQLite `mode=ro` and `PRAGMA query_only=ON`; enabling the separate command
 connection does not weaken that invariant.
 
+The beta extension preserves this Gate A boundary:
+
+```text
+ChatGPT
+  | hermes:read                         | beta command scope + one board
+  | all active boards                   | board=<one slug>, access=write
+  v                                     v
+MCP read tools                       beta command tools
+  |                                     |
+ReadOnlyHermesStore                  narrow canonical adapters
+  | mode=ro + query_only              | Hermes command connection
+  v                                     v
+Hermes pure queries                  canonical board/task state
+```
+
+`create_board` is the exception to the board-bound command grant: it requires
+global `hermes:board:create`, has no board input, and never changes Hermes'
+current/default board. The beta query path remains read-only and the command
+path remains the only writable path. Stable continues to expose only its
+original `create_task` command.
+
 ## Canonical scheduler/dispatch
 
 The dispatcher lives in `hermes_cli.kanban_db.dispatch_once()` and the CLI
@@ -363,6 +417,13 @@ ChatGPT MCP client. The integration owns the MCP authorization boundary:
 - `offline_access` is advertised only as the OAuth refresh-token protocol
   scope; it does not authorize any Hermes operation.
 
+On beta, `hermes:manage` authorizes only the append-only comment and assignment
+commands on the one selected board; it does not imply `hermes:create`.
+`hermes:board:create` is global and cannot carry a board claim. The beta DCR
+and refresh state is persisted under `/var/lib/hermes-chatgpt-mcp-beta/`,
+separate from stable; authorization codes remain ephemeral. A fresh ChatGPT
+connection or reauthorization is required to select a beta write board.
+
 DCR client registrations and refresh-token rotation state are persisted in a
 0600 service-owned state file under `/var/lib/hermes-chatgpt-mcp/`. Access
 tokens are signed and self-contained; authorization codes remain short-lived
@@ -405,6 +466,14 @@ OAuth state directory. Optional board caps can narrow this set, but the OCI
 default exposes all active named boards for read discovery. The command path
 does not expose the Hermes HTTP API or grant general filesystem/database
 access.
+
+The beta artifacts add `hermes-chatgpt-mcp-beta.service`, a separate
+`127.0.0.1:8791` listener, and an OpenResty include for
+`kanban-beta.hermesinthenight.duckdns.org`. The installer validates the
+candidate commit and edge syntax before mutation, checks beta `/healthz` after
+restart, and has a beta-only rollback path. Public DNS/TLS, OCI installation,
+and ChatGPT connection validation remain pending until an operator performs
+those checks.
 
 ## Chosen integration boundary
 

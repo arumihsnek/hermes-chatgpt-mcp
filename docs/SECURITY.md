@@ -2,10 +2,13 @@
 
 ## External surface
 
-The public surface is the exact `/mcp` endpoint plus the OAuth discovery,
-registration, authorization, token, and `/healthz` paths. OpenResty forwards
-only those paths to loopback port 8789. The existing HermesKanban `/` route,
-database files, and internal Hermes ports remain separate.
+The stable public surface is the exact `/mcp` endpoint plus the OAuth
+discovery, registration, authorization, token, and `/healthz` paths. Stable
+OpenResty forwards only those paths to loopback port 8789. The beta surface
+uses the separate `kanban-beta.hermesinthenight.duckdns.org` hostname and
+loopback port 8791 with its own include and service. The existing HermesKanban
+`/` route, database files, and internal Hermes ports remain separate. Beta
+DNS/TLS/OCI success is pending and is not asserted here.
 
 ## Authentication and scopes
 
@@ -31,6 +34,46 @@ remains unable to call `create_task`.
 The `create_task` handler performs an additional scope check. A valid
 read-only token therefore cannot reach the command adapter. Login comparisons
 are constant-time and failures are generic. No client secret is accepted.
+
+## Beta surface and board grants
+
+Beta is selected explicitly by `MCP_SURFACE=beta`; the stable default keeps
+exactly eight tools and its three supported scopes. Beta has exactly eleven
+tools and five supported scopes:
+
+| Tool class | Tools | Scope and board rule |
+| --- | --- | --- |
+| Read | `list_boards`, `get_board`, `list_tasks`, `get_task`, `get_task_graph`, `get_dispatch`, `get_activity` | `hermes:read`; global active-board reads; SQLite `mode=ro` and `PRAGMA query_only=ON` |
+| Task creation | `create_task` | `hermes:create` plus one selected board with `board_access=write` |
+| Board creation | `create_board` | `hermes:board:create` plus `MCP_BOARD_CREATE_ENABLED=1`; global grant with no selected-board claim |
+| Card management | `add_comment`, `assign_task` | `hermes:manage` plus one selected board with `board_access=write` |
+
+`offline_access` is only the OAuth refresh protocol scope. `hermes:manage`
+does not imply `hermes:create`, and a `hermes:board:create` grant cannot be
+combined with a board-bound command grant. **create_board alone does not grant
+task-write access** to the board it creates. A second authorization must select
+that board for `hermes:create` or `hermes:manage` before a card, comment, or
+assignment can be written.
+
+The command resolver replaces an omitted command board with the signed grant
+board and rejects an explicit different board as `BOARD_SESSION_MISMATCH`.
+Thus, if a grant selected another board while Hermes' current default is
+`seq66_looper`, explicitly requesting `seq66_looper` is an expected grant
+mismatch, not a fallback or a missing-board diagnosis. `create_board` does not
+change Hermes' current/default board; a subsequent `list_boards` call reports
+the unchanged default and the new named board separately.
+
+The beta command boundary is canonical and narrow: board creation calls
+Hermes `create_board`; comment creation calls `add_comment` and reloads the
+comment; assignment calls `assign_task` and reloads the task. Query and command
+connections are separate. The public beta surface has no tenant administration,
+delete/archive/rename/lifecycle/controller/import/sync operation, or arbitrary
+task update. A task `tenant` value is metadata, not an ACL.
+
+Beta DCR metadata, refresh-grant records, revoked-grant identifiers, and OAuth
+state live in `/var/lib/hermes-chatgpt-mcp-beta/oauth-state.json`; stable uses
+`/var/lib/hermes-chatgpt-mcp/oauth-state.json`. The signing keys and private
+environment files are also separate. Authorization codes remain ephemeral.
 
 ## Query/command defense in depth
 
@@ -109,10 +152,10 @@ configuration values.
 
 systemd runs as the unprivileged `ubuntu` user with `NoNewPrivileges`,
 `ProtectSystem=full`, `ProtectHome=read-only`, private devices/temp space,
-restricted address families, and write paths limited to canonical Hermes board
-storage (named-board storage plus the legacy default database/WAL sidecars)
-and the OAuth state directory. The query adapter still uses SQLite `mode=ro`
-and `PRAGMA query_only=ON`; the board-storage allowance is only for Hermes'
-canonical command connection. The service binds to loopback; TLS is
-terminated by the existing OpenResty edge. The deployment does not expose
-other Hermes services.
+restricted address families, and write paths limited to canonical Hermes
+named-board storage plus that service's own OAuth state directory. The legacy
+root database is outside the stable and beta MCP write boundary. The query
+adapter still uses SQLite `mode=ro` and `PRAGMA query_only=ON`; the
+board-storage allowance is only for Hermes' canonical command connection. The
+services bind to loopback; TLS is terminated by the corresponding OpenResty
+edge. The deployment does not expose other Hermes services.

@@ -22,6 +22,26 @@ sync-back capability. Hermes remains the semantic authority for boards, task
 status, links, scheduler state, outcomes, and audit activity. v0.4 is still
 a minimal management surface, not a full Kanban controller.
 
+## Stable and beta endpoints
+
+The stable and beta surfaces are separate MCP services and separate OAuth
+resource servers. The stable endpoint is the configured
+`https://kanban.hermesinthenight.duckdns.org/mcp` origin on loopback
+`127.0.0.1:8789`. The beta endpoint is the configured
+`https://kanban-beta.hermesinthenight.duckdns.org/mcp` origin on loopback
+`127.0.0.1:8791`. The beta hostname has its own OpenResty include and does not
+change the stable hostname's locations.
+
+| Surface | Exact public tool set | Supported scopes | Command grant |
+| --- | --- | --- | --- |
+| Stable | eight tools: the seven read tools above plus `create_task` | `hermes:read`, `hermes:create`, `offline_access` | `create_task` needs `hermes:create` and one selected board with `board_access=write` |
+| Beta | eleven tools: the same seven reads plus `create_task`, `create_board`, `add_comment`, and `assign_task` | `hermes:read`, `hermes:create`, `hermes:manage`, `hermes:board:create`, `offline_access` | `create_task` uses `hermes:create`; `add_comment` and `assign_task` use `hermes:manage`; each is bound to one selected board |
+
+The stable default remains unchanged: it registers no beta tools and does not
+advertise `hermes:manage` or `hermes:board:create`. Beta is selected explicitly
+by `MCP_SURFACE=beta` and the beta entrypoint. A beta installation therefore
+does not turn the stable endpoint into a beta endpoint.
+
 ## Architecture
 
 ```text
@@ -185,6 +205,47 @@ overrides, skills, retry policy, arbitrary initial statuses, or any operation
 name. Unknown fields, invalid IDs, excessive payloads, missing parents, and
 unsupported values are rejected before or during the canonical transaction.
 
+### Beta board-management tools
+
+The beta surface adds exactly three narrow mutations to the stable seven-read
+plus `create_task` surface:
+
+| Tool | Required scope | Board binding | Canonical operation |
+| --- | --- | --- | --- |
+| `create_board` | `hermes:board:create` and the deployment flag `MCP_BOARD_CREATE_ENABLED=1` | Global; the request has no board-selection field and the grant has no board claim | `HermesBoardAdminAdapter` calls Hermes `create_board` and returns safe metadata |
+| `add_comment` | `hermes:manage` | Exactly one selected board with `board_access=write` | `HermesCardManagementAdapter` calls Hermes `add_comment`, then reloads the comment |
+| `assign_task` | `hermes:manage` | Exactly one selected board with `board_access=write` | `HermesCardManagementAdapter` calls Hermes `assign_task`, then reloads the task |
+
+`create_task` remains available on beta with `hermes:create` and the same
+one-board grant rule as stable. `hermes:manage` does not imply `hermes:create`.
+`hermes:board:create` is a separate global administrative scope: a grant that
+uses it cannot also carry a board-bound command grant. **create_board alone
+does not grant task-write access** to the new board. After creating a board,
+authorize a command grant for that board before creating a card, comment, or
+assignment.
+
+Every beta write is checked against the signed OAuth board claim before an
+adapter is constructed. An omitted board on a command request uses the board
+in that grant. An explicit different board fails with
+`BOARD_SESSION_MISMATCH`; it does not fall back to Hermes' current default.
+For example, if a grant selected `other-board` while Hermes currently reports
+`seq66_looper`, a request explicitly naming `seq66_looper` is expected to fail
+with `BOARD_SESSION_MISMATCH`. That result means the selected OAuth board and
+the requested board differ; it is not evidence that `seq66_looper` is missing.
+
+`list_boards` is read-only and reports the current `default_board`, per-board
+`is_default`, and beta command capabilities. `create_board` creates through
+Hermes' canonical board API, does not select the board, and does not change
+Hermes' current/default board. The new named board therefore appears in a
+later `list_boards` response without becoming the default. Query adapters use
+SQLite URI `mode=ro` plus `PRAGMA query_only=ON`; command adapters use separate
+canonical Hermes connections. No SQL mutation is added here.
+
+The beta public surface contains no tenant administration and no public
+delete, archive, rename, lifecycle, controller, import, sync, or arbitrary
+task-update operation. A task's optional `tenant` is metadata passed to the
+canonical `create_task` operation, not an authorization boundary.
+
 ## Authentication and ChatGPT connection
 
 The remote service requires a bearer token for `/mcp`; anonymous requests
@@ -244,6 +305,51 @@ mode and MCP apps](https://help.openai.com/en/articles/12584461-developer-mode-a
 [Apps in ChatGPT](https://help.openai.com/en/articles/11487775-apps-in-chatgpt),
 and [MCP tool authorization fields](https://platform.openai.com/docs/api-reference/realtime-server-events/input_audio_buffer/committed?lang=node).
 
+### Beta OAuth reauthorization
+
+Add the beta URL as a separate ChatGPT connector, then complete a fresh
+dynamic-registration, PKCE, and authorization flow against the beta origin.
+Do not expect a stable connection to gain beta scopes: stable and beta have
+separate DCR records, OAuth state files, signing keys, and refresh-grant
+records. A restart preserves each service's own DCR and refresh state, while
+authorization codes remain ephemeral. If ChatGPT shows an older tool snapshot,
+reconnect or rescan the beta connector after the beta metadata is available.
+
+For board management, first use a global `hermes:board:create` authorization
+to create the named board. Verify it with `list_boards`; then reauthorize the
+beta connector and select that board for a one-board `hermes:create` or
+`hermes:manage` grant. Selecting a different write board always requires a
+new authorization; a tool call cannot self-grant or move the board binding.
+
+### Bounded beta dogfood prompt
+
+Use this prompt only against a disposable test board and stop when the prompt
+requires user authorization:
+
+```text
+Use the beta MCP connection for a bounded board-management dogfood.
+
+1. Call list_boards and record the current default_board and the visible
+   capability flags. Do not assume the current default is the board to test.
+2. Choose a uniquely named, valid test-board slug using the current UTC time.
+3. Call create_board once with that slug and a clearly test-only name.
+4. Call list_boards again and verify that exactly one item has the new slug and
+   that the current default_board has not changed.
+5. Stop and tell the user to authorize/reconnect the beta connector and select
+   the new board for a one-board command grant. Explain that create_board alone
+   does not grant task-write access. Do not continue until that authorization
+   is complete.
+6. After authorization, create exactly one test card on the selected board
+   with create_task and a unique idempotency key.
+7. Add exactly one test comment to that card with add_comment.
+8. assign it once with assign_task, then report the returned task and
+   activity identities without printing credentials or token values.
+```
+
+This is a procedure for future controlled validation, not a claim that live
+ChatGPT or beta DNS/TLS/OCI validation has completed; that validation is
+pending.
+
 ## OCI deployment
 
 The reproducible installer targets the existing machine boundary:
@@ -270,6 +376,41 @@ sudo journalctl -u hermes-chatgpt-mcp.service -f
 
 The installer preserves the runtime environment and timestamped edge backups
 during rollback. It never modifies Hermes source or Kanban rows itself.
+
+### Beta deployment and rollback target
+
+The beta deployment is prepared by running the candidate worktree's installer
+with an exact beta commit:
+
+```bash
+./scripts/install_oci_beta.sh <exact-beta-commit>
+```
+
+The installer fails closed unless the candidate is the expected Git worktree at
+that commit and clean. It installs only the beta unit and beta OpenResty
+include, creates the beta state directory, and writes/preserves the private
+beta environment file at `/home/ubuntu/.hermes/hermes-chatgpt-mcp-beta.env`
+with mode `0600`. It supplies beta-only settings for
+`MCP_SURFACE=beta`, `MCP_BOARD_CREATE_ENABLED=1`, loopback port `8791`, the
+beta public origin, and
+`/var/lib/hermes-chatgpt-mcp-beta/oauth-state.json`; credentials are never
+printed. The stable environment and OAuth state remain separate.
+
+Before mutation it validates the beta edge include. After installing the beta
+unit it runs an OpenResty syntax check, enables and restarts only
+`hermes-chatgpt-mcp-beta.service`, waits for `GET http://127.0.0.1:8791/healthz`
+to return `{"status":"ok"}`, and reloads the existing OpenResty hook. These
+are installer behaviors; this repository has not run the installer or claimed
+live OCI, DNS, TLS, or ChatGPT success.
+
+The installer has an automatic transactional rollback for a failed beta
+installation: it restores the prior beta unit, include, edge configuration,
+private environment, and service state, revalidates/restores the edge after a
+reload attempt, and never restarts the stable unit. For a user-facing fallback,
+keep the stable service as the rollback target and reconnect ChatGPT to the
+stable endpoint; stable OAuth authorization is separate from beta OAuth
+authorization. Treat deliberate beta disablement or removal as a separate,
+change-controlled operator action after stable health is confirmed.
 
 ## Limitations of v0.4
 
