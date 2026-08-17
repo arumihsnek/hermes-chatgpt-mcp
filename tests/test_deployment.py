@@ -9,7 +9,7 @@ from scripts.oci_beta_edge import EdgeConfigError, render_edge_config
 
 
 BETA_HOSTNAME = "kanban-beta.hermesinthenight.duckdns.org"
-BETA_INCLUDE = "/usr/local/openresty/nginx/conf/conf.d/hermes-chatgpt-mcp-beta.conf"
+BETA_INCLUDE = "/usr/local/openresty/nginx/conf/conf.d/hermes-chatgpt-mcp-beta.locations"
 BEGIN = "# BEGIN hermes-chatgpt-mcp-beta managed include"
 END = "# END hermes-chatgpt-mcp-beta managed include"
 
@@ -111,6 +111,21 @@ def test_beta_installer_keeps_credentials_private_and_never_restarts_stable():
     assert "openresty -t" in installer
     assert "systemctl restart \"$service_name\"" in installer
     assert "hermes-chatgpt-mcp.service" not in installer
+
+
+def test_beta_installer_targets_the_container_locations_filename():
+    installer = Path("scripts/install_oci_beta.sh").read_text(encoding="utf-8")
+
+    assert 'include_target="$include_dir/hermes-chatgpt-mcp-beta.locations"' in installer
+    assert (
+        'include_inside="/usr/local/openresty/nginx/conf/conf.d/'
+        'hermes-chatgpt-mcp-beta.locations"'
+    ) in installer
+    assert 'include_target="$include_dir/hermes-chatgpt-mcp-beta.conf"' not in installer
+    assert (
+        'include_inside="/usr/local/openresty/nginx/conf/conf.d/'
+        'hermes-chatgpt-mcp-beta.conf"'
+    ) not in installer
 
 
 @pytest.mark.parametrize(
