@@ -180,6 +180,24 @@ def test_beta_edge_rejects_a_beta_server_name_nested_inside_a_location():
         render_edge_config(edge, include_path=BETA_INCLUDE, hostname=BETA_HOSTNAME)
 
 
+def test_beta_edge_rejects_quoted_multiline_server_name_text_without_injection():
+    edge = (
+        "events {}\n"
+        "http {\n"
+        "    server {\n"
+        "        server_name stable.example.test;\n"
+        "        set $quoted \"line one\n"
+        f"server_name {BETA_HOSTNAME};\n"
+        "line three\";\n"
+        "    }\n"
+        "}\n"
+    )
+
+    with pytest.raises(EdgeConfigError):
+        render_edge_config(edge, include_path=BETA_INCLUDE, hostname=BETA_HOSTNAME)
+    assert BEGIN not in edge
+
+
 def test_beta_installer_validates_before_copying_and_rolls_back_all_new_artifacts():
     installer = Path("scripts/install_oci_beta.sh").read_text(encoding="utf-8")
 

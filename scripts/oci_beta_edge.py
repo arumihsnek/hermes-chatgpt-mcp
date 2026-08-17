@@ -14,6 +14,37 @@ class EdgeConfigError(ValueError):
     """The beta include is missing, ambiguous, or outside its beta vhost."""
 
 
+def _directive_view(text: str) -> str:
+    """Blank comments and quoted text while preserving directive positions."""
+    characters = list(text)
+    in_comment = False
+    quote: str | None = None
+    escaped = False
+    for index, character in enumerate(text):
+        if in_comment:
+            if character == "\n":
+                in_comment = False
+            else:
+                characters[index] = " "
+            continue
+        if quote is not None:
+            characters[index] = " "
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == quote:
+                quote = None
+            continue
+        if character == "#":
+            characters[index] = " "
+            in_comment = True
+        elif character in "\"'":
+            characters[index] = " "
+            quote = character
+    return "".join(characters)
+
+
 def _scope_depths(text: str) -> list[int]:
     depths = [0] * (len(text) + 1)
     depth = 0
@@ -49,9 +80,10 @@ def _scope_depths(text: str) -> list[int]:
 
 def _server_bounds(text: str, hostname: str) -> tuple[int, int, int, list[int]]:
     depths = _scope_depths(text)
-    names = list(re.finditer(r"(?m)^[ \t]*server_name[ \t]+([^;]+);", text))
+    directives = _directive_view(text)
+    names = list(re.finditer(r"(?m)^[ \t]*server_name[ \t]+([^;]+);", directives))
     blocks: list[tuple[int, int, int]] = []
-    for match in re.finditer(r"(?m)^[ \t]*server[ \t]*\{", text):
+    for match in re.finditer(r"(?m)^[ \t]*server[ \t]*\{", directives):
         opening_brace = match.end() - 1
         body_depth = depths[opening_brace] + 1
         closing_brace = next(
