@@ -90,6 +90,8 @@ service_was_present=0
 service_was_enabled=0
 service_was_active=0
 service_started_by_installer=0
+edge_reload_attempted=0
+edge_restored=0
 include_was_present=0
 edge_was_present=0
 env_was_present=0
@@ -124,9 +126,22 @@ rollback() {
             sudo -n rm -f "$include_target" || true
         fi
         if [[ "$edge_was_present" == 1 ]]; then
-            sudo -n install -o root -g root -m 0644 "$edge_backup" "$edge_config" || true
+            if sudo -n install -o root -g root -m 0644 "$edge_backup" "$edge_config"; then
+                edge_restored=1
+            fi
         else
-            sudo -n rm -f "$edge_config" || true
+            if sudo -n rm -f "$edge_config"; then
+                edge_restored=1
+            fi
+        fi
+        if [[ "$edge_reload_attempted" == 1 && "$edge_restored" == 1 ]]; then
+            rollback_exec_id="hermes-chatgpt-mcp-beta-rollback-syntax-$(date +%s)"
+            if sudo -n /usr/bin/python3 "$edge_helper" validate \
+                --edge "$edge_config" --include "$include_inside" --hostname "$beta_hostname" \
+                && sudo -n ctr -n moby tasks exec --exec-id "$rollback_exec_id" "$openresty_container" \
+                    /usr/local/openresty/bin/openresty -t -c /usr/local/openresty/nginx/conf/nginx.conf; then
+                sudo -n /usr/local/bin/reload-openresty-1panel.sh || true
+            fi
         fi
         if [[ "$env_was_present" == 1 ]]; then
             sudo -n install -o ubuntu -g ubuntu -m 0600 "$env_backup" "$env_file" || true
@@ -273,6 +288,7 @@ if [[ "$healthy" != 1 ]]; then
     exit 1
 fi
 
+edge_reload_attempted=1
 sudo -n /usr/local/bin/reload-openresty-1panel.sh
 
 install_complete=1

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -88,10 +89,15 @@ def test_beta_openresty_include_is_limited_to_the_beta_mcp_routes():
 
 def test_beta_installer_keeps_credentials_private_and_never_restarts_stable():
     installer = Path("scripts/install_oci_beta.sh").read_text(encoding="utf-8")
+    unit = Path("deploy/systemd/hermes-chatgpt-mcp-beta.service").read_text(encoding="utf-8")
+    unit_env_file = re.search(r"(?m)^EnvironmentFile=(\S+)$", unit)
+    default_env_file = re.search(r'(?m)^default_env_file="([^"]+)"$', installer)
 
     assert "hermes-chatgpt-mcp-beta.service" in installer
     assert "kanban-mcp-beta.conf" in installer
-    assert 'default_env_file="/home/ubuntu/.hermes/hermes-chatgpt-mcp-beta.env"' in installer
+    assert unit_env_file is not None
+    assert default_env_file is not None
+    assert default_env_file.group(1) == unit_env_file.group(1)
     assert '"MCP_SURFACE": "beta"' in installer
     assert '"MCP_PORT": "8791"' in installer
     assert '"MCP_BOARD_CREATE_ENABLED": "1"' in installer
@@ -130,6 +136,50 @@ def test_beta_edge_render_is_idempotent_and_inserts_only_inside_beta_vhost():
     assert render_edge_config(rendered, include_path=BETA_INCLUDE, hostname=BETA_HOSTNAME) == rendered
 
 
+def test_beta_edge_rejects_managed_markers_nested_inside_a_location():
+    edge = _beta_edge(
+        managed_block=(
+            "        location /mcp {\n"
+            f"{_managed_block()}"
+            "        }\n"
+        )
+    )
+
+    with pytest.raises(EdgeConfigError):
+        render_edge_config(edge, include_path=BETA_INCLUDE, hostname=BETA_HOSTNAME)
+
+
+def test_beta_edge_rejects_a_beta_server_name_after_a_closed_stable_vhost():
+    edge = (
+        "events {}\n"
+        "http {\n"
+        "    server {\n"
+        "        server_name stable.example.test;\n"
+        "    }\n"
+        f"    server_name {BETA_HOSTNAME};\n"
+        "}\n"
+    )
+
+    with pytest.raises(EdgeConfigError):
+        render_edge_config(edge, include_path=BETA_INCLUDE, hostname=BETA_HOSTNAME)
+
+
+def test_beta_edge_rejects_a_beta_server_name_nested_inside_a_location():
+    edge = (
+        "events {}\n"
+        "http {\n"
+        "    server {\n"
+        "        location /mcp {\n"
+        f"            server_name {BETA_HOSTNAME};\n"
+        "        }\n"
+        "    }\n"
+        "}\n"
+    )
+
+    with pytest.raises(EdgeConfigError):
+        render_edge_config(edge, include_path=BETA_INCLUDE, hostname=BETA_HOSTNAME)
+
+
 def test_beta_installer_validates_before_copying_and_rolls_back_all_new_artifacts():
     installer = Path("scripts/install_oci_beta.sh").read_text(encoding="utf-8")
 
@@ -146,6 +196,21 @@ def test_beta_installer_validates_before_copying_and_rolls_back_all_new_artifact
     assert 'sudo -n systemctl disable "$service_name"' in installer
     assert "openresty -t" in installer
     assert installer.index("openresty -t") < installer.index('systemctl restart "$service_name"')
+
+
+def test_beta_installer_revalidates_and_reloads_restored_edge_after_reload_failure():
+    installer = Path("scripts/install_oci_beta.sh").read_text(encoding="utf-8")
+    reload_command = 'sudo -n /usr/local/bin/reload-openresty-1panel.sh'
+
+    assert "edge_reload_attempted=0" in installer
+    assert "edge_reload_attempted=1" in installer
+    assert 'if [[ "$edge_reload_attempted" == 1 && "$edge_restored" == 1 ]]; then' in installer
+    assert installer.count(reload_command) >= 2
+    restore_at = installer.index('sudo -n install -o root -g root -m 0644 "$edge_backup" "$edge_config"')
+    rollback_reload_at = installer.index(reload_command, restore_at)
+    assert installer.index('"$edge_helper" validate', restore_at) < rollback_reload_at
+    assert installer.index("openresty -t", restore_at) < rollback_reload_at
+    assert "hermes-chatgpt-mcp.service" not in installer
 
 
 def test_beta_installer_rejects_an_environment_file_override():

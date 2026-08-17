@@ -14,27 +14,15 @@ class EdgeConfigError(ValueError):
     """The beta include is missing, ambiguous, or outside its beta vhost."""
 
 
-def _server_bounds(text: str, hostname: str) -> tuple[int, int]:
-    names = list(re.finditer(r"(?m)^\s*server_name\s+([^;]+);", text))
-    matching = [match for match in names if hostname in match.group(1).split()]
-    if len(matching) != 1:
-        raise EdgeConfigError(f"expected exactly one server_name for {hostname}")
-
-    name_position = matching[0].start()
-    starts = [match.start() for match in re.finditer(r"(?m)^\s*server\s*\{", text[:name_position])]
-    if not starts:
-        raise EdgeConfigError("beta server block start was not found")
-    start = starts[-1]
-    opening_brace = text.find("{", start, name_position + 1)
-    if opening_brace < 0:
-        raise EdgeConfigError("beta server block opening brace was not found")
-
+def _scope_depths(text: str) -> list[int]:
+    depths = [0] * (len(text) + 1)
     depth = 0
     in_comment = False
     quote: str | None = None
     escaped = False
-    for index in range(opening_brace, len(text)):
+    for index in range(len(text)):
         character = text[index]
+        depths[index] = depth
         if in_comment:
             if character == "\n":
                 in_comment = False
@@ -55,17 +43,51 @@ def _server_bounds(text: str, hostname: str) -> tuple[int, int]:
             depth += 1
         elif character == "}":
             depth -= 1
-            if depth == 0:
-                closing_line_start = text.rfind("\n", 0, index) + 1
-                return start, closing_line_start
+    depths[len(text)] = depth
+    return depths
 
-    raise EdgeConfigError("beta server block end was not found")
+
+def _server_bounds(text: str, hostname: str) -> tuple[int, int, int, list[int]]:
+    depths = _scope_depths(text)
+    names = list(re.finditer(r"(?m)^[ \t]*server_name[ \t]+([^;]+);", text))
+    blocks: list[tuple[int, int, int]] = []
+    for match in re.finditer(r"(?m)^[ \t]*server[ \t]*\{", text):
+        opening_brace = match.end() - 1
+        body_depth = depths[opening_brace] + 1
+        closing_brace = next(
+            (
+                index
+                for index in range(opening_brace + 1, len(text))
+                if text[index] == "}" and depths[index] == body_depth
+            ),
+            None,
+        )
+        if closing_brace is None:
+            raise EdgeConfigError("server block end was not found")
+        closing_line_start = text.rfind("\n", 0, closing_brace) + 1
+        blocks.append((match.start(), closing_line_start, body_depth))
+
+    selected = []
+    for start, end, body_depth in blocks:
+        direct_names = [
+            match
+            for match in names
+            if start < match.start() < end
+            and depths[match.start()] == body_depth
+            and hostname in match.group(1).split()
+        ]
+        if direct_names:
+            selected.append((start, end, body_depth))
+    if len(selected) != 1:
+        raise EdgeConfigError(f"expected exactly one direct server_name for {hostname}")
+    start, end, body_depth = selected[0]
+    return start, end, body_depth, depths
 
 
 def render_edge_config(text: str, *, include_path: str, hostname: str) -> str:
     """Validate the beta include and return an idempotent rendered config."""
 
-    server_start, server_end = _server_bounds(text, hostname)
+    server_start, server_end, server_depth, depths = _server_bounds(text, hostname)
     begin = f"# BEGIN hermes-chatgpt-mcp-beta managed include"
     end = f"# END hermes-chatgpt-mcp-beta managed include"
     begin_positions = [match.start() for match in re.finditer(re.escape(begin), text)]
@@ -81,6 +103,8 @@ def render_edge_config(text: str, *, include_path: str, hostname: str) -> str:
     end_position = end_positions[0]
     if not server_start < begin_position < end_position < server_end:
         raise EdgeConfigError("beta managed include is outside the beta server block")
+    if depths[begin_position] != server_depth or depths[end_position] != server_depth:
+        raise EdgeConfigError("beta managed include is nested below direct server scope")
     managed_lines = [line.strip() for line in text[begin_position + len(begin) : end_position].splitlines()]
     managed_lines = [line for line in managed_lines if line]
     if managed_lines != [f"include {include_path};"]:
