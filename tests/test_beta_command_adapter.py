@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import concurrent.futures
+import json
+import os
 import re
+import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -150,6 +154,122 @@ def test_board_admin_case_variant_creation_is_one_canonical_operation(tmp_path, 
 
     assert calls == ["case-variant-board"]
     assert [result.slug for result in results] == ["case-variant-board", "case-variant-board"]
+
+
+def _run_distinct_quota_subprocess(root: Path, gate: Path, slug: str) -> subprocess.CompletedProcess[str]:
+    worker = r'''
+from __future__ import annotations
+
+import contextlib
+import json
+import os
+import sys
+import time
+from pathlib import Path
+
+root = Path(sys.argv[1])
+gate = Path(sys.argv[2])
+slug = sys.argv[3]
+os.environ["HERMES_KANBAN_HOME"] = str(root)
+
+from hermes_cli import kanban_db
+
+from hermes_chatgpt_mcp.command import HermesBoardAdminAdapter
+
+
+def active_named_board_count() -> int:
+    entries = kanban_db.list_boards(include_archived=False)
+    count = sum(
+        1
+        for entry in entries
+        if isinstance(entry, dict)
+        and str(entry.get("slug") or "").strip().lower() != "default"
+    )
+    # Force both distinct-slug processes to observe the max-1 boundary before
+    # either process can enter Hermes' canonical create operation.
+    time.sleep(0.35)
+    return count
+
+
+adapter = HermesBoardAdminAdapter(
+    kanban_db,
+    max_board_count=2,
+    active_named_board_count=active_named_board_count,
+)
+original_lock = adapter._canonical_creation_lock
+
+
+@contextlib.contextmanager
+def gated_creation_lock(lock_slug: str):
+    (gate / f"{lock_slug}.ready").touch()
+    deadline = time.monotonic() + 15
+    while len(tuple(gate.glob("*.ready"))) < 2:
+        if time.monotonic() >= deadline:
+            raise RuntimeError("distinct-slug subprocess gate timed out")
+        time.sleep(0.01)
+    with original_lock(lock_slug):
+        yield
+
+
+adapter._canonical_creation_lock = gated_creation_lock
+
+try:
+    result = adapter.create_board(slug, name=slug)
+except ValueError as exc:
+    print(json.dumps({"status": "conflict", "message": str(exc)}), flush=True)
+else:
+    print(json.dumps({"status": "ok", "slug": result.slug}), flush=True)
+'''
+    repo_root = Path(__file__).resolve().parents[1]
+    python_path = os.pathsep.join(
+        path
+        for path in (str(repo_root), "/home/ubuntu/hermes-agent", os.environ.get("PYTHONPATH", ""))
+        if path
+    )
+    return subprocess.run(
+        [sys.executable, "-c", worker, str(root), str(gate), slug],
+        cwd=repo_root,
+        env={"PATH": os.environ.get("PATH", ""), "PYTHONPATH": python_path, "PYTHONUNBUFFERED": "1"},
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+
+
+def test_board_admin_serializes_distinct_slug_quota_boundary_across_processes(tmp_path, monkeypatch):
+    from hermes_cli import kanban_db
+
+    fixture = make_hermes_fixture(tmp_path)
+    monkeypatch.setenv("HERMES_KANBAN_HOME", str(fixture.root))
+    gate = tmp_path / "distinct-quota-gate"
+    gate.mkdir()
+    slugs = ("quota-alpha", "quota-beta")
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        processes = list(
+            executor.map(
+                lambda slug: _run_distinct_quota_subprocess(fixture.root, gate, slug),
+                slugs,
+            )
+        )
+
+    for process in processes:
+        assert process.returncode == 0, (
+            f"subprocess failed: stdout={process.stdout!r} stderr={process.stderr!r}"
+        )
+    payloads = [json.loads(process.stdout.strip()) for process in processes]
+    assert sorted(payload["status"] for payload in payloads) == ["conflict", "ok"]
+    created_slugs = {payload["slug"] for payload in payloads if payload["status"] == "ok"}
+    assert len(created_slugs) == 1
+
+    active_named = [
+        entry
+        for entry in kanban_db.list_boards(include_archived=False)
+        if str(entry.get("slug") or "").strip().lower() != "default"
+    ]
+    assert len(active_named) == 2
+    assert {entry["slug"] for entry in active_named} == {fixture.board} | created_slugs
 
 
 def test_management_adapter_adds_provenance_comment_and_commented_event(tmp_path, monkeypatch):

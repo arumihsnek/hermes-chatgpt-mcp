@@ -109,15 +109,15 @@ class HermesBoardAdminAdapter:
         self.active_named_board_count = active_named_board_count
 
     @contextlib.contextmanager
-    def _canonical_creation_lock(self, slug: str):
-        """Serialize this adapter's board identity boundary across processes."""
+    def _creation_lock(self, lock_name: str):
+        """Serialize a canonical board-creation boundary across processes."""
         boards_root_factory = getattr(self.hermes, "boards_root", None)
         if not callable(boards_root_factory):
             yield
             return
         lock_root = Path(boards_root_factory()).expanduser().resolve() / ".mcp-create-locks"
         lock_root.mkdir(parents=True, exist_ok=True)
-        lock_path = lock_root / f"{slug}.lock"
+        lock_path = lock_root / lock_name
         descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
         try:
             fcntl.flock(descriptor, fcntl.LOCK_EX)
@@ -127,6 +127,18 @@ class HermesBoardAdminAdapter:
                 fcntl.flock(descriptor, fcntl.LOCK_UN)
             finally:
                 os.close(descriptor)
+
+    @contextlib.contextmanager
+    def _canonical_creation_lock(self, slug: str):
+        """Serialize this adapter's board identity boundary across processes."""
+        with self._creation_lock(f"{slug}.lock"):
+            yield
+
+    @contextlib.contextmanager
+    def _quota_creation_lock(self):
+        """Serialize quota discovery and canonical creation across slugs."""
+        with self._creation_lock("quota.lock"):
+            yield
 
     def _archived_slug_exists(self, slug: str) -> bool:
         boards_root_factory = getattr(self.hermes, "boards_root", None)
@@ -212,16 +224,22 @@ class HermesBoardAdminAdapter:
         if lookup_slug == "default":
             raise ValueError("the legacy default board is reserved")
         with self._canonical_creation_lock(lookup_slug):
-            existing = self._existing_board(lookup_slug)
-            if existing is not None:
-                return self._result(existing, fallback_slug=lookup_slug)
-            if self.max_board_count is not None and self.active_named_board_count is not None:
-                if self.active_named_board_count() >= self.max_board_count:
-                    raise ValueError("maximum active named board count reached")
-            metadata = self.hermes.create_board(
-                lookup_slug, name=name, description=description, icon=icon, color=color
+            quota_lock = (
+                self._quota_creation_lock()
+                if self.max_board_count is not None and self.active_named_board_count is not None
+                else contextlib.nullcontext()
             )
-            return self._result(metadata, fallback_slug=lookup_slug)
+            with quota_lock:
+                existing = self._existing_board(lookup_slug)
+                if existing is not None:
+                    return self._result(existing, fallback_slug=lookup_slug)
+                if self.max_board_count is not None and self.active_named_board_count is not None:
+                    if self.active_named_board_count() >= self.max_board_count:
+                        raise ValueError("maximum active named board count reached")
+                metadata = self.hermes.create_board(
+                    lookup_slug, name=name, description=description, icon=icon, color=color
+                )
+                return self._result(metadata, fallback_slug=lookup_slug)
 
 
 class HermesCardManagementAdapter:
