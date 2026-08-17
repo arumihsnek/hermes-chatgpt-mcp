@@ -479,3 +479,68 @@ async def _test_management_commands_are_one_board_bound_and_return_safe_errors(t
         "assignee": "planner",
         "status": "review",
     }
+
+
+def test_beta_scope_matrix_denies_only_the_unauthorized_mutations(tmp_path, monkeypatch):
+    asyncio.run(_test_beta_scope_matrix_denies_only_the_unauthorized_mutations(tmp_path, monkeypatch))
+
+
+async def _test_beta_scope_matrix_denies_only_the_unauthorized_mutations(tmp_path, monkeypatch):
+    fixture, settings, auth, _, app = _beta_app(tmp_path, monkeypatch)
+    reader = _token(auth, "matrix-reader", ["hermes:read"])
+    creator = _token(auth, "matrix-creator", ["hermes:read", "hermes:create"], board=fixture.board)
+    manager = _token(auth, "matrix-manager", ["hermes:read", "hermes:manage"], board=fixture.board)
+    administrator = _token(auth, "matrix-administrator", ["hermes:read", "hermes:board:create"])
+    combined = _token(
+        auth,
+        "matrix-combined",
+        ["hermes:read", "hermes:create", "hermes:manage"],
+        board=fixture.board,
+    )
+    denied_calls = [
+        (reader, "create_task", {"request": {"board": fixture.board, "title": "denied", "idempotency_key": "matrix-read-1"}}),
+        (reader, "create_board", {"request": {"slug": "matrix-read-board"}}),
+        (reader, "add_comment", {"request": {"board": fixture.board, "task_id": "review-task", "body": "denied"}}),
+        (reader, "assign_task", {"request": {"board": fixture.board, "task_id": "review-task", "assignee": "planner"}}),
+        (creator, "create_board", {"request": {"slug": "matrix-create-board"}}),
+        (administrator, "create_task", {"request": {"board": fixture.board, "title": "denied", "idempotency_key": "matrix-admin-1"}}),
+        (manager, "create_task", {"request": {"board": fixture.board, "title": "denied", "idempotency_key": "matrix-manage-1"}}),
+    ]
+    transport = httpx.ASGITransport(app=app)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=transport, base_url=settings.public_base_url) as client:
+            await _rpc(client, reader, "tools/call", {"name": "list_boards", "arguments": {}}, 0)
+            before = tree_fingerprint(fixture.root)
+            results = [
+                await _rpc(
+                    client,
+                    token,
+                    "tools/call",
+                    {"name": name, "arguments": arguments},
+                    request_id,
+                )
+                for request_id, (token, name, arguments) in enumerate(denied_calls, start=1)
+            ]
+            after_denials = tree_fingerprint(fixture.root)
+            allowed = await _rpc(
+                client,
+                combined,
+                "tools/call",
+                {
+                    "name": "create_task",
+                    "arguments": {
+                        "request": {
+                            "board": fixture.board,
+                            "title": "manage plus create",
+                            "idempotency_key": "matrix-combined-1",
+                        }
+                    },
+                },
+                20,
+            )
+
+    for result in results:
+        _assert_tool_error(result, "SCOPE_REQUIRED", forbidden_path=fixture.root)
+    assert after_denials == before
+    assert allowed["result"].get("isError") is not True
+    assert allowed["result"]["structuredContent"]["board"] == fixture.board

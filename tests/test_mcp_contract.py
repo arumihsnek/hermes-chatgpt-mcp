@@ -105,9 +105,11 @@ async def _test_health_metadata_auth_and_exact_tool_contract(tmp_path):
     list_boards = next(tool for tool in tools if tool["name"] == "list_boards")
     assert all(tool["annotations"]["readOnlyHint"] is True for tool in readonly)
     assert all(tool["annotations"]["destructiveHint"] is False for tool in readonly)
+    assert all(tool["annotations"]["openWorldHint"] is False for tool in tools)
     assert create["annotations"]["readOnlyHint"] is False
     assert create["annotations"]["destructiveHint"] is False
     assert create["annotations"]["idempotentHint"] is True
+    assert {tool["name"] for tool in tools}.isdisjoint({"create_board", "add_comment", "assign_task"})
     create_request_schema = create["inputSchema"]["$defs"]["CreateTaskInput"]
     assert "idempotency_key" in create_request_schema["required"]
     assert list_boards["annotations"]["readOnlyHint"] is True
