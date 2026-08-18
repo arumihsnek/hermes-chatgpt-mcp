@@ -36,7 +36,7 @@ change the stable hostname's locations.
 | Surface | Exact public tool set | Supported scopes | Command grant |
 | --- | --- | --- | --- |
 | Stable | eight tools: the seven read tools above plus `create_task` | `hermes:read`, `hermes:create`, `offline_access` | `create_task` needs `hermes:create` and one selected board with `board_access=write` |
-| Beta | eleven tools: the same seven reads plus `create_task`, `create_board`, `add_comment`, and `assign_task` (with the Batch1 management tools) | `hermes:read`, `hermes:create`, `hermes:manage`, `hermes:board:create`, `hermes:admin`, `offline_access` | normal task mutations use `hermes:manage`; destructive archive purge (`rm`) requires explicitly consented `hermes:admin`; no elevated scope is requested by default |
+| Beta | 51 canonical leaves (the `boards` routing container and aliases are excluded) | `hermes:read`, `hermes:create`, `hermes:manage`, `hermes:board:create`, `hermes:admin`, `offline_access` | normal task mutations use `hermes:manage`; destructive, runtime, and filesystem-sensitive actions require explicitly consented `hermes:admin` |
 
 The stable default remains unchanged: it registers no beta tools and does not
 advertise `hermes:manage` or `hermes:board:create`. Beta is selected explicitly
@@ -208,8 +208,12 @@ unsupported values are rejected before or during the canonical transaction.
 
 ### Beta board-management tools
 
-The beta surface adds exactly three narrow mutations to the stable seven-read
-plus `create_task` surface:
+The beta surface exposes the complete 51-leaf canonical Kanban action surface
+(aliases and the `boards` routing container are not separate tools). The
+original 11 tools remain unchanged; typed additions cover lifecycle,
+dependency, attachment, dispatch, diagnostics, notification, worker-context,
+recovery, and board-administration actions. `hermes:admin` is an explicit
+elevated scope for runtime, destructive, and filesystem-sensitive leaves.
 
 | Tool | Required scope | Board binding | Canonical operation |
 | --- | --- | --- | --- |
@@ -244,10 +248,10 @@ later `list_boards` response without becoming the default. Query adapters use
 SQLite URI `mode=ro` plus `PRAGMA query_only=ON`; command adapters use separate
 canonical Hermes connections. No SQL mutation is added here.
 
-The beta public surface contains no tenant administration and no public
-delete, archive, rename, lifecycle, controller, import, sync, or arbitrary
-task-update operation. A task's optional `tenant` is metadata passed to the
-canonical `create_task` operation, not an authorization boundary.
+The beta public surface does not expose arbitrary shell, SQL, import, or sync
+operations. All task and board mutations use strict typed envelopes and fixed
+canonical Hermes entry points. A task's optional `tenant` remains metadata
+passed to canonical `create_task`, not an authorization boundary.
 
 ## Authentication and ChatGPT connection
 
