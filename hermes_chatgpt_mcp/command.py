@@ -11,7 +11,28 @@ from pathlib import Path
 
 from .boards import BoardHandle, _canonical_board_slug
 from .hermes import ReadOnlyHermesStore
-from .schemas import AddCommentResult, AssignTaskResult, CreateBoardResult, CreateTaskResult
+from .schemas import (
+    AddCommentResult,
+    AssignTaskResult,
+    CreateBoardResult,
+    CreateTaskResult,
+    DiagnosticsResult,
+    LinkTasksResult,
+    UnlinkTasksResult,
+    SetModelResult,
+    ReclaimResult,
+    ReassignResult,
+    CompleteResult,
+    EditTaskResult,
+    BlockResult,
+    ScheduleResult,
+    UnblockResult,
+    RequestReviewResult,
+    RequestChangesResult,
+    ReopenReviewResult,
+    PromoteResult,
+    ArchiveResult,
+)
 
 
 class HermesCreateAdapter:
@@ -291,3 +312,138 @@ class HermesCardManagementAdapter:
             assignee=task.assignee,
             status=str(task.status),
         )
+
+    def _with_conn(self, callback):
+        with self.hermes.connect_closing(db_path=self.handle.db_path, board=self.handle.slug) as conn:
+            return callback(conn)
+
+    def diagnostics(self, task_id: str | None = None) -> DiagnosticsResult:
+        from hermes_cli import kanban_diagnostics as kd
+        def op(conn):
+            tasks = [self.hermes.get_task(conn, task_id)] if task_id else self.hermes.list_tasks(conn, include_archived=False, limit=1000, order_by="created")
+            issues = []
+            for task in tasks:
+                if task is None: raise ValueError(f"unknown task {task_id}")
+                values = kd.compute_task_diagnostics(task, self.hermes.list_events(conn, task.id), self.hermes.list_runs(conn, task.id), graph=self.hermes.task_graph_context(conn, task.id))
+                issues.extend({"task_id": str(task.id), "severity": str(item.severity), "code": str(item.code), "message": str(item.message)} for item in values)
+            return DiagnosticsResult(board=self.handle.slug, issues=issues, healthy=not issues)
+        return self._with_conn(op)
+
+    def set_model(self, task_id: str, model: str | None, provider: str | None) -> SetModelResult:
+        def op(conn):
+            if not self.hermes.set_model_override(conn, task_id, model, provider):
+                raise ValueError(f"unknown task {task_id}")
+            return SetModelResult(task_id=task_id, board=self.handle.slug, model=model, provider=provider)
+        return self._with_conn(op)
+
+    def link(self, parent_id: str, child_id: str) -> LinkTasksResult:
+        def op(conn):
+            self.hermes.link_tasks(conn, parent_id, child_id)
+            return LinkTasksResult(parent_id=parent_id, child_id=child_id, board=self.handle.slug,
+                                   parent_ids=[str(x) for x in self.hermes.parent_ids(conn, child_id)],
+                                   child_ids=[str(x) for x in self.hermes.child_ids(conn, parent_id)])
+        return self._with_conn(op)
+
+    def unlink(self, parent_id: str, child_id: str) -> UnlinkTasksResult:
+        def op(conn):
+            self.hermes.unlink_tasks(conn, parent_id, child_id)
+            return UnlinkTasksResult(parent_id=parent_id, child_id=child_id, board=self.handle.slug,
+                                   parent_ids=[str(x) for x in self.hermes.parent_ids(conn, child_id)],
+                                   child_ids=[str(x) for x in self.hermes.child_ids(conn, parent_id)])
+        return self._with_conn(op)
+
+    def reclaim(self, task_id: str, reason: str | None = None) -> ReclaimResult:
+        def op(conn):
+            if not self.hermes.reclaim_task(conn, task_id, reason=reason):
+                raise ValueError(f"unknown or unreclaimable task {task_id}")
+            task = self.hermes.get_task(conn, task_id)
+            return ReclaimResult(task_id=task_id, board=self.handle.slug, status=str(task.status))
+        return self._with_conn(op)
+
+    def reassign(self, task_id: str, profile: str, *, reclaim: bool = False, reason: str | None = None) -> ReassignResult:
+        def op(conn):
+            count = 1 if self.hermes.reassign_task(conn, task_id, profile, reclaim_first=reclaim, reason=reason) else 0
+            return ReassignResult(board=self.handle.slug, count=count)
+        return self._with_conn(op)
+
+    def complete(self, task_ids: Iterable[str], result: str | None = None, summary: str | None = None, metadata: dict | None = None) -> CompleteResult:
+        def op(conn):
+            completed, skipped = [], []
+            for task_id in task_ids:
+                if self.hermes.complete_task(conn, task_id, result=result, summary=summary, metadata=metadata): completed.append(task_id)
+                else: skipped.append(task_id)
+            return CompleteResult(board=self.handle.slug, task_ids=list(task_ids), completed=completed, skipped=skipped)
+        return self._with_conn(op)
+
+    def edit(self, task_id: str, *, result: str, summary: str | None = None, metadata: dict | None = None) -> EditTaskResult:
+        def op(conn):
+            if not self.hermes.edit_completed_task_result(conn, task_id, result=result, summary=summary, metadata=metadata):
+                raise ValueError(f"unknown task {task_id} or task is not done")
+            updated = [name for name, value in (("result", result), ("summary", summary)) if value is not None]
+            return EditTaskResult(board=self.handle.slug, task_id=task_id, updated_fields=updated)
+        return self._with_conn(op)
+
+    def block(self, task_ids: Iterable[str], *, kind: str | None = None, reason: str | None = None) -> BlockResult:
+        def op(conn):
+            blocked, skipped = [], []
+            for task_id in task_ids:
+                if self.hermes.block_task(conn, task_id, kind=kind, reason=reason): blocked.append(task_id)
+                else: skipped.append(task_id)
+            return BlockResult(board=self.handle.slug, blocked=blocked, skipped=skipped)
+        return self._with_conn(op)
+
+    def schedule(self, task_ids: Iterable[str], reason: str | None = None) -> ScheduleResult:
+        def op(conn):
+            scheduled, skipped = [], []
+            for task_id in task_ids:
+                if self.hermes.schedule_task(conn, task_id, reason=reason): scheduled.append(task_id)
+                else: skipped.append(task_id)
+            return ScheduleResult(board=self.handle.slug, scheduled=scheduled, skipped=skipped)
+        return self._with_conn(op)
+
+    def unblock(self, task_ids: Iterable[str], reason: str | None = None) -> UnblockResult:
+        def op(conn):
+            unblocked, skipped = [], []
+            for task_id in task_ids:
+                if self.hermes.unblock_task(conn, task_id): unblocked.append(task_id)
+                else: skipped.append(task_id)
+            return UnblockResult(board=self.handle.slug, unblocked=unblocked, skipped=skipped)
+        return self._with_conn(op)
+
+    def request_review(self, task_id: str, summary: str | None = None, reviewer: str | None = None, metadata: dict | None = None, force: bool = False) -> RequestReviewResult:
+        def op(conn):
+            value = self.hermes.request_review(conn, task_id, summary=summary, reviewer=reviewer, metadata=metadata, force=force)
+            return RequestReviewResult(board=self.handle.slug, task_ids=[task_id], moved=[task_id] if value else [])
+        return self._with_conn(op)
+
+    def request_changes(self, task_id: str, reason: str) -> RequestChangesResult:
+        def op(conn):
+            self.hermes.request_changes(conn, task_id, reason=reason)
+            return RequestChangesResult(board=self.handle.slug, task_ids=[task_id])
+        return self._with_conn(op)
+
+    def reopen_review(self, task_ids: Iterable[str]) -> ReopenReviewResult:
+        def op(conn):
+            ids = list(task_ids)
+            for task_id in ids:
+                if not self.hermes.reopen_review_task(conn, task_id): raise ValueError(f"cannot reopen {task_id}")
+            return ReopenReviewResult(board=self.handle.slug, task_ids=ids)
+        return self._with_conn(op)
+
+    def promote(self, task_id: str, reason: str | None = None, ids: Iterable[str] = (), force: bool = False, dry_run: bool = False) -> PromoteResult:
+        def op(conn):
+            all_ids = [task_id, *list(ids)]
+            for current_id in all_ids:
+                ok, _ = self.hermes.promote_task(conn, current_id, actor=self.provenance, reason=reason, force=force, dry_run=dry_run)
+                if not ok: raise ValueError(f"cannot promote {task_id}")
+            return PromoteResult(board=self.handle.slug, task_ids=all_ids)
+        return self._with_conn(op)
+
+    def archive(self, task_ids: Iterable[str]) -> ArchiveResult:
+        def op(conn):
+            archived, skipped = [], []
+            for task_id in task_ids:
+                if self.hermes.archive_task(conn, task_id): archived.append(task_id)
+                else: skipped.append(task_id)
+            return ArchiveResult(board=self.handle.slug, archived=archived, skipped=skipped)
+        return self._with_conn(op)

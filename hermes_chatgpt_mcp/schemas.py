@@ -97,6 +97,7 @@ AssigneeName = Annotated[str, Field(min_length=1, max_length=128, pattern=r"^[A-
 TenantName = Annotated[str, Field(min_length=1, max_length=128)]
 SessionId = Annotated[str, Field(min_length=1, max_length=256)]
 IdempotencyKey = Annotated[str, Field(min_length=1, max_length=256, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$")]
+AttachmentId = Annotated[int, Field(ge=1)]
 
 
 class CreateBoardInput(StrictModel):
@@ -321,3 +322,377 @@ class CreateTaskResult(StrictModel):
     child_ids: list[str] = Field(default_factory=list)
     created_by: str | None = None
     created_at: int
+
+
+# --- Batch 1: Diagnostics, link, unlink, set_model, reclaim, reassign, complete, edit, block, schedule, unblock, request_review, request_changes, reopen_review, promote, archive ---
+
+class DiagnosticsInput(BoardQuery):
+    task_id: TaskId | None = None
+
+
+class DiagnosticsResult(StrictModel):
+    """Result of canonical board diagnostics."""
+    board: BoardSlug
+    issues: list[dict[str, Any]] = Field(default_factory=list)
+    healthy: bool
+
+
+class LinkTasksInput(BoardQuery):
+    parent_id: TaskId
+    child_id: TaskId
+
+
+class LinkTasksResult(StrictModel):
+    parent_id: TaskId
+    child_id: TaskId
+    board: BoardSlug
+    parent_ids: list[TaskId]
+    child_ids: list[TaskId]
+
+
+class UnlinkTasksInput(BoardQuery):
+    parent_id: TaskId
+    child_id: TaskId
+
+
+class UnlinkTasksResult(StrictModel):
+    parent_id: TaskId
+    child_id: TaskId
+    board: BoardSlug
+    parent_ids: list[TaskId]
+    child_ids: list[TaskId]
+
+
+class SetModelInput(BoardQuery):
+    task_id: TaskId
+    model: str | None = Field(default=None, max_length=512)
+    provider: str | None = Field(default=None, max_length=512)
+
+
+class SetModelResult(StrictModel):
+    task_id: TaskId
+    board: BoardSlug
+    model: str | None
+    provider: str | None
+
+
+class ReclaimInput(BoardQuery):
+    task_id: TaskId
+    reason: str | None = Field(default=None, max_length=1_000)
+
+
+class ReclaimResult(StrictModel):
+    task_id: TaskId
+    board: BoardSlug
+    status: str
+
+
+class ReassignInput(BoardQuery):
+    task_id: TaskId
+    profile: AssigneeName
+    reclaim: bool = False
+    reason: str | None = Field(default=None, max_length=1_000)
+
+
+class ReassignResult(StrictModel):
+    board: BoardSlug
+    count: int
+
+
+class CompleteInput(BoardQuery):
+    task_ids: list[TaskId] = Field(min_length=1, max_length=32)
+    result: str | None = Field(default=None, max_length=8_000)
+    summary: str | None = Field(default=None, max_length=8_000)
+    metadata: dict[str, Any] | None = None
+
+
+class CompleteResult(StrictModel):
+    board: BoardSlug
+    task_ids: list[TaskId]
+    completed: list[TaskId]
+    skipped: list[TaskId]
+
+
+class EditTaskInput(BoardQuery):
+    task_id: TaskId
+    result: str = Field(min_length=1, max_length=8_000)
+    summary: str | None = Field(default=None, max_length=8_000)
+    metadata: dict[str, Any] | None = None
+
+
+class EditTaskResult(StrictModel):
+    board: BoardSlug
+    task_id: TaskId
+    updated_fields: list[str]
+
+
+class BlockInput(BoardQuery):
+    task_ids: list[TaskId] = Field(min_length=1, max_length=32)
+    kind: str | None = Field(default=None, max_length=32)
+    reason: str | None = Field(default=None, max_length=1_000)
+
+
+class BlockResult(StrictModel):
+    board: BoardSlug
+    blocked: list[TaskId]
+    skipped: list[TaskId]
+
+
+class ScheduleInput(BoardQuery):
+    task_ids: list[TaskId] = Field(min_length=1, max_length=32)
+    reason: str | None = Field(default=None, max_length=1_000)
+
+
+class ScheduleResult(StrictModel):
+    board: BoardSlug
+    scheduled: list[TaskId]
+    skipped: list[TaskId]
+
+
+class UnblockInput(BoardQuery):
+    task_ids: list[TaskId] = Field(min_length=1, max_length=32)
+    reason: str | None = Field(default=None, max_length=1_000)
+
+
+class UnblockResult(StrictModel):
+    board: BoardSlug
+    unblocked: list[TaskId]
+    skipped: list[TaskId]
+
+
+class RequestReviewInput(BoardQuery):
+    task_id: TaskId
+    summary: str | None = Field(default=None, max_length=8_000)
+    reviewer: AssigneeName | None = None
+    metadata: dict[str, Any] | None = None
+    force: bool = False
+
+
+class RequestReviewResult(StrictModel):
+    board: BoardSlug
+    task_ids: list[TaskId]
+    moved: list[TaskId]
+
+
+class RequestChangesInput(BoardQuery):
+    task_id: TaskId
+    reason: str = Field(min_length=1, max_length=8_000)
+
+
+class RequestChangesResult(StrictModel):
+    board: BoardSlug
+    task_ids: list[TaskId]
+
+
+class ReopenReviewInput(BoardQuery):
+    task_ids: list[TaskId] = Field(min_length=1, max_length=32)
+    reason: str | None = Field(default=None, max_length=1_000)
+
+
+class ReopenReviewResult(StrictModel):
+    board: BoardSlug
+    task_ids: list[TaskId]
+
+
+class PromoteInput(BoardQuery):
+    task_id: TaskId
+    reason: str | None = Field(default=None, max_length=1_000)
+    ids: list[TaskId] = Field(default_factory=list, max_length=32)
+    force: bool = False
+    dry_run: bool = False
+
+
+class PromoteResult(StrictModel):
+    board: BoardSlug
+    task_ids: list[TaskId]
+
+
+class ArchiveInput(BoardQuery):
+    task_ids: list[TaskId] = Field(min_length=1, max_length=32)
+    rm: bool = False
+
+
+class ArchiveResult(StrictModel):
+    board: BoardSlug
+    archived: list[TaskId]
+    skipped: list[TaskId]
+
+
+# --- Attachment management ---
+
+class AttachmentsInput(BoardQuery):
+    limit: int = Field(default=100, ge=1, le=1_000)
+
+
+class AttachmentInfo(StrictModel):
+    id: int
+    filename: str
+    content_type: str | None = None
+    size: int
+    uploaded_by: str | None = None
+    created_at: int
+
+
+class AttachmentsResult(StrictModel):
+    task_id: TaskId
+    attachments: list[AttachmentInfo]
+
+
+# --- Board management additions ---
+
+class RemoveBoardInput(StrictModel):
+    slug: BoardSlug
+    confirm: bool = True
+
+
+class RemoveBoardResult(StrictModel):
+    slug: BoardSlug
+    removed: bool
+    archived: bool
+
+
+class SwitchBoardInput(StrictModel):
+    slug: BoardSlug
+
+
+class SwitchBoardResult(StrictModel):
+    slug: BoardSlug
+    name: str
+    description: str
+
+
+class RenameBoardInput(StrictModel):
+    slug: BoardSlug
+    name: str | None = Field(default=None, min_length=1, max_length=512)
+    description: str | None = Field(default=None, max_length=2_000)
+
+
+class RenameBoardResult(StrictModel):
+    slug: BoardSlug
+    name: str
+    description: str
+
+
+class SetDefaultWorkdirInput(StrictModel):
+    slug: BoardSlug
+    workdir: str
+
+
+class SetDefaultWorkdirResult(StrictModel):
+    slug: BoardSlug
+    workdir: str
+
+
+# --- Stats ---
+
+class StatsResult(StrictModel):
+    board: BoardSlug
+    task_counts: dict[str, int]
+    assignee_counts: dict[str, dict[str, int]] = Field(default_factory=dict)
+    oldest_ready_age_seconds: int | None = None
+
+
+# --- Notification subscriptions ---
+
+class NotifySubscribeInput(BoardQuery):
+    task_id: TaskId
+    channel: str | None = Field(default=None, max_length=256)
+    filter: str | None = Field(default=None, max_length=256)
+
+
+class NotifySubscribeResult(StrictModel):
+    task_id: TaskId
+    channel: str | None
+    subscribed: bool
+
+
+class NotifyListInput(BoardQuery):
+    limit: int = Field(default=100, ge=1, le=1_000)
+
+
+class NotifySubscriptionInfo(StrictModel):
+    task_id: TaskId
+    channel: str | None = None
+    filter: str | None = None
+
+
+class NotifyListResult(StrictModel):
+    subscriptions: list[NotifySubscriptionInfo]
+    count: int
+
+
+class NotifyUnsubscribeInput(BoardQuery):
+    task_id: TaskId
+    channel: str | None = Field(default=None, max_length=256)
+
+
+class NotifyUnsubscribeResult(StrictModel):
+    task_id: TaskId
+    unsubscribed: bool
+
+
+# --- Worker context ---
+
+class ContextInput(BoardQuery):
+    task_id: TaskId
+
+
+class ContextResult(StrictModel):
+    task_id: TaskId
+    title: str
+    status: str
+    assignee: str | None = None
+    priority: int
+    started_at: int | None = None
+    ended_at: int | None = None
+    block_kind: str | None = None
+    consecutive_failures: int = 0
+    result_excerpt: str | None = None
+    current_run_id: int | None = None
+    claimed: bool = False
+
+
+# --- Task specification ---
+
+class SpecifyInput(BoardQuery):
+    task_id: TaskId
+    body: str | None = Field(default=None, max_length=64_000)
+    properties: dict[str, Any] | None = Field(default=None)
+
+
+class SpecifyResult(StrictModel):
+    task_id: TaskId
+    board: BoardSlug
+    updated: bool
+
+
+# --- Task decomposition ---
+
+class DecomposeInput(BoardQuery):
+    task_id: TaskId
+    titles: list[str] = Field(min_length=1, max_length=32)
+    bodies: list[str] | None = Field(default=None, max_length=10)
+
+
+class DecomposeResult(StrictModel):
+    task_id: TaskId
+    board: BoardSlug
+    parent_id: TaskId
+    child_ids: list[TaskId]
+
+
+# --- Garbage collection ---
+
+class GcResult(StrictModel):
+    board: BoardSlug
+    cleaned_events: int
+    cleaned_logs: int
+    cleaned_temp: int
+
+
+# --- Repair ---
+
+class RepairResult(StrictModel):
+    board: BoardSlug
+    repaired: bool
+    issues_fixed: int
