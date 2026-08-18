@@ -597,24 +597,32 @@ class StatsResult(StrictModel):
 
 class NotifySubscribeInput(BoardQuery):
     task_id: TaskId
-    channel: str | None = Field(default=None, max_length=256)
-    filter: str | None = Field(default=None, max_length=256)
+    platform: str = Field(min_length=1, max_length=64)
+    chat_id: str = Field(min_length=1, max_length=256)
+    thread_id: str | None = Field(default=None, max_length=256)
+    delivery: str | None = Field(default=None, max_length=256)
 
 
 class NotifySubscribeResult(StrictModel):
     task_id: TaskId
-    channel: str | None
+    platform: str
+    chat_id: str
+    thread_id: str | None = None
+    delivery: str | None = None
     subscribed: bool
 
 
 class NotifyListInput(BoardQuery):
+    task_id: TaskId | None = None
     limit: int = Field(default=100, ge=1, le=1_000)
 
 
 class NotifySubscriptionInfo(StrictModel):
     task_id: TaskId
-    channel: str | None = None
-    filter: str | None = None
+    platform: str
+    chat_id: str
+    thread_id: str | None = None
+    delivery: str | None = None
 
 
 class NotifyListResult(StrictModel):
@@ -624,11 +632,16 @@ class NotifyListResult(StrictModel):
 
 class NotifyUnsubscribeInput(BoardQuery):
     task_id: TaskId
-    channel: str | None = Field(default=None, max_length=256)
+    platform: str = Field(min_length=1, max_length=64)
+    chat_id: str = Field(min_length=1, max_length=256)
+    thread_id: str | None = Field(default=None, max_length=256)
 
 
 class NotifyUnsubscribeResult(StrictModel):
     task_id: TaskId
+    platform: str
+    chat_id: str
+    thread_id: str | None = None
     unsubscribed: bool
 
 
@@ -691,12 +704,23 @@ class GcResult(StrictModel):
     cleaned_temp: int
 
 
+class GcInput(BoardQuery):
+    event_retention_days: int = Field(default=30, ge=1, le=3650)
+    log_retention_days: int = Field(default=30, ge=1, le=3650)
+    dry_run: bool = False
+
+
 # --- Repair ---
 
 class RepairResult(StrictModel):
     board: BoardSlug
     repaired: bool
     issues_fixed: int
+    status: str
+    messages: list[str] = Field(default_factory=list)
+    post_repair_messages: list[str] = Field(default_factory=list)
+    backup_path: str | None = None
+    reindexed: list[str] = Field(default_factory=list)
 
 
 class TaskLogInput(BoardQuery):
@@ -749,6 +773,7 @@ class TailInput(BoardQuery):
 
 
 class WatchInput(BoardQuery):
+    task_id: TaskId | None = None
     cursor: int | None = Field(default=None, ge=0)
     limit: int = Field(default=100, ge=1, le=200)
 
@@ -770,10 +795,47 @@ class InitInput(BoardQuery):
 class SwarmInput(BoardQuery):
     goal: str = Field(min_length=1, max_length=8_000)
     workers: list[str] = Field(min_length=1, max_length=32)
-    verifier: str | None = None
-    synthesizer: str | None = None
+    verifier: AssigneeName
+    synthesizer: AssigneeName
     tenant: TenantName | None = None
     idempotency_key: IdempotencyKey | None = None
+    priority: int = Field(default=0, ge=-1_000, le=1_000)
+    created_by: AssigneeName = "chatgpt_mcp"
+
+
+class InitResult(StrictModel):
+    board: BoardSlug
+    db_path: str
+    initialized: bool
+
+
+class SwarmResult(StrictModel):
+    board: BoardSlug
+    root_id: TaskId
+    worker_ids: list[TaskId]
+    verifier_id: TaskId
+    synthesizer_id: TaskId
+
+
+class DaemonResult(StrictModel):
+    board: BoardSlug
+    action: str
+    status: str
+    bounded: bool
+    running: bool
+    snapshot: dict[str, Any] = Field(default_factory=dict)
+
+
+class DaemonInput(BoardQuery):
+    action: str = Field(default="status", pattern=r"^(status|snapshot)$")
+
+
+class WatchResult(StrictModel):
+    board: BoardSlug
+    task_id: TaskId | None = None
+    cursor: int | None = None
+    events: list[TaskEventRecord] = Field(default_factory=list)
+    truncated: bool = False
 
 
 class ClaimInput(TaskInput):

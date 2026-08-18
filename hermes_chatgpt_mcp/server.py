@@ -104,6 +104,7 @@ from .schemas import (
     NotifySubscribeResult,
     NotifyListInput,
     NotifyListResult,
+    NotifySubscriptionInfo,
     NotifyUnsubscribeInput,
     NotifyUnsubscribeResult,
     ContextInput,
@@ -113,6 +114,7 @@ from .schemas import (
     DecomposeInput,
     DecomposeResult,
     GcResult,
+    GcInput,
     RepairResult,
     TaskLogInput,
     TaskLogResult,
@@ -133,6 +135,11 @@ from .schemas import (
     StreamInput,
     BoardAdminInput,
     AttachRemoveInput,
+    InitResult,
+    SwarmResult,
+    DaemonResult,
+    DaemonInput,
+    WatchResult,
 )
 
 
@@ -290,25 +297,22 @@ def create_app(
     ) -> BoardHandle:
         try:
             if operation in {"create", "manage"}:
-                if beta:
-                    # Beta surface: card writes are global across all boards;
-                    # the requested board (or the default) is used directly.
-                    return board_resolver.resolve(board, operation=operation)
-                required_scope = (
-                    auth_service.create_scope if operation == "create" else auth_service.manage_scope
-                )
-                granted_board = write_grant_board(required_scope)
-                if granted_board is None:
-                    raise tool_error(
-                        "BOARD_WRITE_SELECTION_REQUIRED",
-                        "write access requires one explicitly authorized board",
-                    )
-                if board is not None and board != granted_board:
-                    raise tool_error(
-                        "BOARD_SESSION_MISMATCH",
-                        "write access is authorized for one different board",
-                    )
-                board = granted_board
+                required_scope = auth_service.create_scope if operation == "create" else auth_service.manage_scope
+                if beta and not has_admin_scope():
+                    granted_board = write_grant_board(required_scope)
+                    if granted_board is None:
+                        raise tool_error("BOARD_WRITE_SELECTION_REQUIRED", "write access requires one explicitly authorized board")
+                    if board is not None and _canonical_board_slug(board) != granted_board:
+                        raise tool_error("BOARD_SESSION_MISMATCH", "write access is authorized for one different board")
+                    board = granted_board
+                elif not beta:
+                    granted_board = write_grant_board(required_scope)
+                    if granted_board is None:
+                        raise tool_error("BOARD_WRITE_SELECTION_REQUIRED", "write access requires one explicitly authorized board")
+                    if board is not None and _canonical_board_slug(board) != granted_board:
+                        raise tool_error("BOARD_SESSION_MISMATCH", "write access is authorized for one different board")
+                    board = granted_board
+                return board_resolver.resolve(board, operation=operation)
             return board_resolver.resolve(board, operation=operation)
         except ToolError:
             raise
@@ -372,9 +376,7 @@ def create_app(
         token = get_access_token()
         if token is None or scope not in token.scopes:
             return False
-        if board is None or beta or has_admin_scope():
-            # Betas allows card writes on ANY board (global); a stable token is
-            # confined to its single granted board.
+        if board is None or has_admin_scope():
             return True
         return write_grant_board(scope) == board
 
@@ -735,7 +737,7 @@ def create_app(
         # The remaining canonical leaves are registered with fixed action names.
         # Each handler below chooses its adapter method; no request can select an
         # arbitrary command or SQL operation.
-        def register_canonical(name, model, callback, *, scope=auth_service.manage_scope, admin=False):
+        def register_canonical(name, model, callback, *, scope=auth_service.manage_scope, admin=False, result_model=CanonicalActionResult):
             required = auth_service.admin_scope if admin else scope
             async def tool(request):
                 require_scope(required)
@@ -743,7 +745,7 @@ def create_app(
                 handle = resolve_board(board, operation="manage" if required != auth_service.read_scope else "read")
                 return await run_beta_command(lambda: callback(handle, request), task_command=required != auth_service.read_scope)
             tool.__name__ = name.replace("-", "_")
-            tool.__annotations__ = {"request": model, "return": CanonicalActionResult}
+            tool.__annotations__ = {"request": model, "return": result_model}
             mcp.tool(name=name, description=f"Canonical bounded Hermes action: {name}.", annotations=manage_annotations if not admin else board_admin_annotations, structured_output=True)(tool)
 
         def _call_management(handle, request):
@@ -763,25 +765,27 @@ def create_app(
         register_canonical("context", ContextInput, lambda h, r: CanonicalActionResult(board=h.slug, action="context", data=board_resolver.management_adapter(h).context(r.task_id)), scope=auth_service.read_scope)
         register_canonical("specify", SpecifyInput, lambda h, r: CanonicalActionResult(board=h.slug, action="specify", data=board_resolver.management_adapter(h).specify(r.task_id, body=r.body, properties=r.properties)), admin=True)
         register_canonical("tail", TailInput, lambda h, r: CanonicalActionResult(board=h.slug, action="tail", data=board_resolver.management_adapter(h).tail(r.task_id, cursor=r.cursor, limit=r.limit)), scope=auth_service.read_scope)
-        register_canonical("watch", WatchInput, lambda h, r: CanonicalActionResult(board=h.slug, action="watch", data=board_resolver.management_adapter(h).watch(task_id=r.task_id, cursor=r.cursor, limit=r.limit)), scope=auth_service.read_scope)
+        def _watch_result(handle, request):
+            data = board_resolver.management_adapter(handle).watch(task_id=request.task_id, cursor=request.cursor, limit=request.limit)
+            return WatchResult(board=handle.slug, **data)
+        register_canonical("watch", WatchInput, _watch_result, scope=auth_service.read_scope, result_model=WatchResult)
 
         # Global/system leaves are bounded snapshots or one-cycle calls. The
         # daemon leaf intentionally exposes a control snapshot, never a loop.
-        register_canonical("init", InitInput, lambda h, r: CanonicalActionResult(board=h.slug, action="init", data={"ready": h.db_path.is_file()}), admin=True)
-        register_canonical("swarm", SwarmInput, lambda h, r: CanonicalActionResult(board=h.slug, action="swarm", data={"goal": r.goal, "workers": r.workers}), admin=True)
+        register_canonical("init", InitInput, lambda h, r: InitResult(**board_resolver.management_adapter(h).init()), admin=True, result_model=InitResult)
+        register_canonical("swarm", SwarmInput, lambda h, r: SwarmResult(**board_resolver.management_adapter(h).swarm(goal=r.goal, workers=r.workers, verifier=r.verifier, synthesizer=r.synthesizer, tenant=r.tenant, idempotency_key=r.idempotency_key, priority=r.priority, created_by=r.created_by)), admin=True, result_model=SwarmResult)
         register_canonical("dispatch", DispatchInput, lambda h, r: CanonicalActionResult(board=h.slug, action="dispatch", data=board_resolver.management_adapter(h).dispatch(dry_run=r.dry_run, max_spawn=r.max_spawn)), admin=True)
-        register_canonical("daemon", DispatchInput, lambda h, r: CanonicalActionResult(board=h.slug, action="daemon", data={"bounded": True, "running": False}), admin=True)
+        register_canonical("daemon", DaemonInput, lambda h, r: DaemonResult(**board_resolver.management_adapter(h).daemon(action=r.action)), admin=True, result_model=DaemonResult)
         register_canonical("decompose", DecomposeInput, lambda h, r: CanonicalActionResult(board=h.slug, action="decompose", data=board_resolver.management_adapter(h).decompose(r.task_id, r.titles, r.bodies)), admin=True)
-        register_canonical("gc", DispatchInput, lambda h, r: CanonicalActionResult(board=h.slug, action="gc", data=board_resolver.management_adapter(h).gc(dry_run=r.dry_run)), admin=True)
-        register_canonical("repair", DispatchInput, lambda h, r: CanonicalActionResult(board=h.slug, action="repair", data=board_resolver.management_adapter(h).repair()), admin=True)
-        register_canonical("notify-subscribe", NotifySubscribeInput, lambda h, r: CanonicalActionResult(board=h.slug, action="notify-subscribe", data=board_resolver.management_adapter(h).notify_subscribe(r.task_id, r.channel or "", r.filter)), admin=False)
+        register_canonical("gc", GcInput, lambda h, r: GcResult(**board_resolver.management_adapter(h).gc(dry_run=r.dry_run, event_retention_days=r.event_retention_days, log_retention_days=r.log_retention_days)), admin=True, result_model=GcResult)
+        register_canonical("repair", InitInput, lambda h, r: RepairResult(**board_resolver.management_adapter(h).repair()), admin=True, result_model=RepairResult)
+        register_canonical("notify-subscribe", NotifySubscribeInput, lambda h, r: NotifySubscribeResult(task_id=r.task_id, platform=r.platform, chat_id=r.chat_id, thread_id=r.thread_id, delivery=r.delivery, subscribed=board_resolver.management_adapter(h).notify_subscribe(r.task_id, "", platform=r.platform, chat_id=r.chat_id, thread_id=r.thread_id, delivery=r.delivery)["subscribed"]), admin=False, result_model=NotifySubscribeResult)
         def _notify_list_result(handle, request):
-            entries = board_resolver.management_adapter(handle).notify_list(request.limit)
-            return CanonicalActionResult(board=handle.slug, action="notify-list",
-                                         data={"subscriptions": entries, "count": len(entries)})
+            entries = board_resolver.management_adapter(handle).notify_list(request.limit, request.task_id)
+            return NotifyListResult(subscriptions=[NotifySubscriptionInfo(**entry) for entry in entries], count=len(entries))
 
-        register_canonical("notify-list", NotifyListInput, lambda h, r: _notify_list_result(h, r), scope=auth_service.read_scope)
-        register_canonical("notify-unsubscribe", NotifyUnsubscribeInput, lambda h, r: CanonicalActionResult(board=h.slug, action="notify-unsubscribe", data=board_resolver.management_adapter(h).notify_unsubscribe(r.task_id, r.channel or "")), admin=False)
+        register_canonical("notify-list", NotifyListInput, lambda h, r: _notify_list_result(h, r), scope=auth_service.read_scope, result_model=NotifyListResult)
+        register_canonical("notify-unsubscribe", NotifyUnsubscribeInput, lambda h, r: NotifyUnsubscribeResult(task_id=r.task_id, platform=r.platform, chat_id=r.chat_id, thread_id=r.thread_id, unsubscribed=board_resolver.management_adapter(h).notify_unsubscribe(r.task_id, "", platform=r.platform, chat_id=r.chat_id, thread_id=r.thread_id)["unsubscribed"]), admin=False, result_model=NotifyUnsubscribeResult)
 
         # Board leaves are explicit and fail closed; the existing list_boards,
         # create_board, and get_board tools remain the mapped list/create/show.

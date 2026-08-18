@@ -496,14 +496,21 @@ class HermesCardManagementAdapter:
 
     def attach(self, task_id: str, local_path: str, *, filename: str | None = None, content_type: str | None = None) -> dict[str, Any]:
         source = Path(local_path).expanduser().resolve()
-        safe_root = self.handle.db_path.parent.resolve()
+        configured_root = os.environ.get("MCP_ATTACHMENT_STAGING_ROOT")
+        safe_root = Path(configured_root).expanduser().resolve() if configured_root else (self.handle.db_path.parent / "attachments-staging").resolve()
         try:
             source.relative_to(safe_root)
         except ValueError as exc:
             raise ValueError("attachment path is outside the configured board staging root") from exc
         if not source.is_file():
             raise FileNotFoundError("attachment source is unavailable")
-        data = source.read_bytes()
+        max_bytes = int(os.environ.get("MCP_MAX_ATTACHMENT_BYTES", str(10 * 1024 * 1024)))
+        if source.stat().st_size > max_bytes:
+            raise ValueError("attachment exceeds the configured size limit")
+        with source.open("rb") as stream:
+            data = stream.read(max_bytes + 1)
+        if len(data) > max_bytes:
+            raise ValueError("attachment exceeds the configured size limit")
         import mimetypes
         stored_name = filename or source.name
         detected = content_type or mimetypes.guess_type(stored_name)[0]
@@ -597,21 +604,28 @@ class HermesCardManagementAdapter:
             raise ValueError("notification channel must be platform:chat_id[:thread_id]")
         return parts[0], parts[1], parts[2] or None
 
-    def notify_subscribe(self, task_id: str, channel: str, filter: str | None = None) -> dict[str, Any]:
-        platform, chat_id, thread_id = self._channel_parts(channel)
+    def notify_subscribe(self, task_id: str, channel: str, filter: str | None = None, *, platform: str | None = None, chat_id: str | None = None, thread_id: str | None = None, delivery: str | None = None) -> dict[str, Any]:
+        if platform is None or chat_id is None:
+            platform, chat_id, thread_id = self._channel_parts(channel)
+        channel = f"{platform}:{chat_id}" + (f":{thread_id}" if thread_id else "")
         def op(conn):
             if self.hermes.get_task(conn, task_id) is None:
                 raise ValueError(f"unknown task {task_id}")
             self.hermes.add_notify_sub(conn, task_id=task_id, platform=platform, chat_id=chat_id,
-                                       thread_id=thread_id, delivery_mode=filter)
+                                       thread_id=thread_id, delivery_mode=delivery if delivery is not None else filter)
             return {"task_id": task_id, "channel": channel, "subscribed": True}
         return self._with_conn(op)
 
-    def notify_list(self, limit: int = 100) -> list[dict[str, Any]]:
-        return list(self._with_conn(lambda conn: self.hermes.list_notify_subs(conn)))[:limit]
+    def notify_list(self, limit: int = 100, task_id: str | None = None) -> list[dict[str, Any]]:
+        entries = list(self._with_conn(lambda conn: self.hermes.list_notify_subs(conn)))
+        if task_id is not None:
+            entries = [item for item in entries if str(item.get("task_id")) == task_id]
+        return [{"task_id": str(item["task_id"]), "platform": str(item["platform"]), "chat_id": str(item["chat_id"]), "thread_id": item.get("thread_id") or None, "delivery": item.get("delivery") if "delivery" in item else item.get("delivery_mode")} for item in entries[:limit]]
 
-    def notify_unsubscribe(self, task_id: str, channel: str) -> dict[str, Any]:
-        platform, chat_id, thread_id = self._channel_parts(channel)
+    def notify_unsubscribe(self, task_id: str, channel: str, *, platform: str | None = None, chat_id: str | None = None, thread_id: str | None = None) -> dict[str, Any]:
+        if platform is None or chat_id is None:
+            platform, chat_id, thread_id = self._channel_parts(channel)
+        channel = f"{platform}:{chat_id}" + (f":{thread_id}" if thread_id else "")
         removed = self._with_conn(lambda conn: self.hermes.remove_notify_sub(
             conn, task_id=task_id, platform=platform, chat_id=chat_id, thread_id=thread_id))
         return {"task_id": task_id, "channel": channel, "unsubscribed": bool(removed)}
@@ -631,16 +645,47 @@ class HermesCardManagementAdapter:
             raise ValueError(f"cannot decompose task {task_id}")
         return {"task_id": task_id, "parent_id": task_id, "child_ids": [str(value) for value in child_ids]}
 
-    def gc(self, *, dry_run: bool = False) -> dict[str, Any]:
+    def init(self) -> dict[str, Any]:
+        path = self.hermes.init_db(self.handle.db_path, board=self.handle.slug)
+        return {"board": self.handle.slug, "db_path": str(path), "initialized": True}
+
+    def swarm(self, *, goal: str, workers: list[str], verifier: str, synthesizer: str, tenant: str | None = None, idempotency_key: str | None = None, priority: int = 0, created_by: str = "chatgpt_mcp") -> dict[str, Any]:
+        from hermes_cli import kanban_swarm
+        specs = [kanban_swarm.SwarmWorkerSpec(profile=worker, title=f"{worker}: {goal[:120]}", body=goal, priority=priority) for worker in workers]
+        with self.hermes.connect_closing(db_path=self.handle.db_path, board=self.handle.slug) as conn:
+            result = kanban_swarm.create_swarm(conn, goal=goal, workers=specs, verifier_assignee=verifier, synthesizer_assignee=synthesizer, tenant=tenant, created_by=created_by, priority=priority, idempotency_key=idempotency_key)
+        return {"board": self.handle.slug, **result.as_dict()}
+
+    def daemon(self, *, action: str = "status") -> dict[str, Any]:
+        if action not in {"status", "snapshot"}:
+            raise ValueError("daemon control is limited to bounded status or snapshot")
+        snapshot = self.stats()
+        return {"board": self.handle.slug, "action": action, "status": "available", "bounded": True, "running": False, "snapshot": snapshot}
+
+    def gc(self, *, dry_run: bool = False, event_retention_days: int = 30, log_retention_days: int = 30) -> dict[str, Any]:
         if dry_run:
-            return {"cleaned_events": 0, "cleaned_logs": 0, "cleaned_temp": 0, "dry_run": True}
+            return {"board": self.handle.slug, "cleaned_events": 0, "cleaned_logs": 0, "cleaned_temp": 0}
         def op(conn):
-            return {"cleaned_events": int(self.hermes.gc_events(conn)),
-                    "cleaned_logs": int(self.hermes.gc_worker_logs(board=self.handle.slug)),
-                    "cleaned_temp": 0, "dry_run": False}
+            import shutil
+            root = Path(self.hermes.workspaces_root(board=self.handle.slug)).resolve()
+            cleaned_temp = 0
+            tasks = self.hermes.list_tasks(conn, include_archived=True, limit=10_000, order_by="created")
+            for task in tasks:
+                if str(getattr(task, "status", "")) != "archived" or getattr(task, "workspace_kind", None) != "scratch":
+                    continue
+                path = Path(getattr(task, "workspace_path", None) or (root / str(task.id))).resolve()
+                try:
+                    path.relative_to(root)
+                except ValueError:
+                    continue
+                if path.is_dir():
+                    shutil.rmtree(path, ignore_errors=True)
+                    if not path.exists(): cleaned_temp += 1
+            return {"board": self.handle.slug, "cleaned_events": int(self.hermes.gc_events(conn, older_than_seconds=event_retention_days * 86400)), "cleaned_logs": int(self.hermes.gc_worker_logs(board=self.handle.slug, older_than_seconds=log_retention_days * 86400)), "cleaned_temp": cleaned_temp}
         return self._with_conn(op)
 
     def repair(self) -> dict[str, Any]:
         result = self.hermes.repair_db(self.handle.db_path, board=self.handle.slug)
-        return {"repaired": result.status == "ok", "issues_fixed": len(result.messages),
-                "status": result.status}
+        return {"board": self.handle.slug, "repaired": result.status == "repaired", "issues_fixed": len(result.reindexed),
+                "status": result.status, "messages": list(result.messages), "post_repair_messages": list(result.post_repair_messages),
+                "backup_path": str(result.backup_path) if result.backup_path else None, "reindexed": list(result.reindexed)}
