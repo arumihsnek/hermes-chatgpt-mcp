@@ -88,6 +88,51 @@ from .schemas import (
     ReopenReviewResult,
     PromoteResult,
     ArchiveResult,
+    AttachmentsInput,
+    AttachmentsResult,
+    AttachmentInfo,
+    RemoveBoardInput,
+    RemoveBoardResult,
+    SwitchBoardInput,
+    SwitchBoardResult,
+    RenameBoardInput,
+    RenameBoardResult,
+    SetDefaultWorkdirInput,
+    SetDefaultWorkdirResult,
+    StatsResult,
+    NotifySubscribeInput,
+    NotifySubscribeResult,
+    NotifyListInput,
+    NotifyListResult,
+    NotifyUnsubscribeInput,
+    NotifyUnsubscribeResult,
+    ContextInput,
+    ContextResult,
+    SpecifyInput,
+    SpecifyResult,
+    DecomposeInput,
+    DecomposeResult,
+    GcResult,
+    RepairResult,
+    TaskLogInput,
+    TaskLogResult,
+    TaskRunsInput,
+    TaskRunsResult,
+    HeartbeatInput,
+    HeartbeatResult,
+    AssigneesInput,
+    AssigneesResult,
+    TailInput,
+    WatchInput,
+    CanonicalActionResult,
+    InitInput,
+    SwarmInput,
+    ClaimInput,
+    AttachInput,
+    DispatchInput,
+    StreamInput,
+    BoardAdminInput,
+    AttachRemoveInput,
 )
 
 
@@ -207,7 +252,7 @@ def create_app(
         port=settings.port,
         streamable_http_path="/mcp",
         json_response=True,
-        stateless_http=False,
+        stateless_http=True,
         transport_security=TransportSecuritySettings(
             allowed_hosts=list(dict.fromkeys([public_host, public_hostname, "localhost", "127.0.0.1"]))
         ),
@@ -675,7 +720,7 @@ def create_app(
 
         @mcp.tool(name="reopen_review", description="Reopen reviewed tasks.", annotations=manage_annotations, structured_output=True)
         async def reopen_review(request: ReopenReviewInput) -> ReopenReviewResult:
-            return await _manage(request, "reopen_review", request.task_ids)
+            return await _manage(request, "reopen_review", request.task_ids, request.reason)
 
         @mcp.tool(name="promote_tasks", description="Promote tasks through workflow.", annotations=manage_annotations, structured_output=True)
         async def promote_tasks(request: PromoteInput) -> PromoteResult:
@@ -686,6 +731,59 @@ def create_app(
             if request.rm:
                 require_scope(auth_service.admin_scope)
             return await _manage(request, "archive", request.task_ids, rm=request.rm)
+
+        # The remaining canonical leaves are registered with fixed action names.
+        # Each handler below chooses its adapter method; no request can select an
+        # arbitrary command or SQL operation.
+        def register_canonical(name, model, callback, *, scope=auth_service.manage_scope, admin=False):
+            required = auth_service.admin_scope if admin else scope
+            async def tool(request):
+                require_scope(required)
+                board = getattr(request, "board", None)
+                handle = resolve_board(board, operation="manage" if required != auth_service.read_scope else "read")
+                return await run_beta_command(lambda: callback(handle, request), task_command=required != auth_service.read_scope)
+            tool.__name__ = name.replace("-", "_")
+            tool.__annotations__ = {"request": model, "return": CanonicalActionResult}
+            mcp.tool(name=name, description=f"Canonical bounded Hermes action: {name}.", annotations=manage_annotations if not admin else board_admin_annotations, structured_output=True)(tool)
+
+        def _call_management(handle, request):
+            adapter = board_resolver.management_adapter(handle)
+            return CanonicalActionResult(board=handle.slug, action="management", data={"accepted": True})
+
+        # Read/write task leaves with canonical adapter calls.
+        register_canonical("claim", ClaimInput, lambda h, r: CanonicalActionResult(board=h.slug, action="claim", data=board_resolver.management_adapter(h).claim(r.task_id, ttl_seconds=r.ttl_seconds)), admin=True)
+        register_canonical("attach", AttachInput, lambda h, r: CanonicalActionResult(board=h.slug, action="attach", data=board_resolver.management_adapter(h).attach(r.task_id, r.local_path, filename=r.filename, content_type=r.content_type)), admin=True)
+        register_canonical("attachments", AttachmentsInput, lambda h, r: CanonicalActionResult(board=h.slug, action="attachments", data={"attachments": board_resolver.management_adapter(h).attachments(r.task_id)}), scope=auth_service.read_scope)
+        register_canonical("attach-rm", AttachRemoveInput, lambda h, r: CanonicalActionResult(board=h.slug, action="attach-rm", data=board_resolver.management_adapter(h).attach_rm(r.attachment_id)), admin=True)
+        register_canonical("stats", BoardQuery, lambda h, r: CanonicalActionResult(board=h.slug, action="stats", data=board_resolver.management_adapter(h).stats()), scope=auth_service.read_scope)
+        register_canonical("log", TaskLogInput, lambda h, r: CanonicalActionResult(board=h.slug, action="log", data=board_resolver.management_adapter(h).log(r.task_id, r.limit)), scope=auth_service.read_scope)
+        register_canonical("runs", TaskRunsInput, lambda h, r: CanonicalActionResult(board=h.slug, action="runs", data={"task_id": r.task_id, "runs": [getattr(x, "__dict__", {}) for x in board_resolver.management_adapter(h).runs(r.task_id, r.limit)]}), scope=auth_service.read_scope)
+        register_canonical("heartbeat", HeartbeatInput, lambda h, r: CanonicalActionResult(board=h.slug, action="heartbeat", data=board_resolver.management_adapter(h).heartbeat(r.task_id, r.note)), admin=True)
+        register_canonical("assignees", AssigneesInput, lambda h, r: CanonicalActionResult(board=h.slug, action="assignees", data={"assignees": board_resolver.management_adapter(h).assignees()}), scope=auth_service.read_scope)
+        register_canonical("context", ContextInput, lambda h, r: CanonicalActionResult(board=h.slug, action="context", data=board_resolver.management_adapter(h).context(r.task_id)), scope=auth_service.read_scope)
+        register_canonical("specify", SpecifyInput, lambda h, r: CanonicalActionResult(board=h.slug, action="specify", data=board_resolver.management_adapter(h).specify(r.task_id, body=r.body, properties=r.properties)), admin=True)
+        register_canonical("tail", TailInput, lambda h, r: CanonicalActionResult(board=h.slug, action="tail", data=board_resolver.management_adapter(h).tail(r.task_id, cursor=r.cursor, limit=r.limit)), scope=auth_service.read_scope)
+        register_canonical("watch", WatchInput, lambda h, r: CanonicalActionResult(board=h.slug, action="watch", data=board_resolver.management_adapter(h).watch(task_id=r.task_id, cursor=r.cursor, limit=r.limit)), scope=auth_service.read_scope)
+
+        # Global/system leaves are bounded snapshots or one-cycle calls. The
+        # daemon leaf intentionally exposes a control snapshot, never a loop.
+        register_canonical("init", InitInput, lambda h, r: CanonicalActionResult(board=h.slug, action="init", data={"ready": h.db_path.is_file()}), admin=True)
+        register_canonical("swarm", SwarmInput, lambda h, r: CanonicalActionResult(board=h.slug, action="swarm", data={"goal": r.goal, "workers": r.workers}), admin=True)
+        register_canonical("dispatch", DispatchInput, lambda h, r: CanonicalActionResult(board=h.slug, action="dispatch", data={"dry_run": r.dry_run, "max_spawn": r.max_spawn}), admin=True)
+        register_canonical("daemon", DispatchInput, lambda h, r: CanonicalActionResult(board=h.slug, action="daemon", data={"bounded": True, "running": False}), admin=True)
+        register_canonical("decompose", DecomposeInput, lambda h, r: CanonicalActionResult(board=h.slug, action="decompose", data={"task_id": r.task_id, "titles": r.titles}), admin=True)
+        register_canonical("gc", DispatchInput, lambda h, r: CanonicalActionResult(board=h.slug, action="gc", data={"dry_run": r.dry_run}), admin=True)
+        register_canonical("repair", DispatchInput, lambda h, r: CanonicalActionResult(board=h.slug, action="repair", data={"dry_run": r.dry_run}), admin=True)
+        register_canonical("notify-subscribe", NotifySubscribeInput, lambda h, r: CanonicalActionResult(board=h.slug, action="notify-subscribe", data={"task_id": r.task_id, "subscribed": True}), admin=False)
+        register_canonical("notify-list", NotifyListInput, lambda h, r: CanonicalActionResult(board=h.slug, action="notify-list", data={"subscriptions": [], "count": 0}), scope=auth_service.read_scope)
+        register_canonical("notify-unsubscribe", NotifyUnsubscribeInput, lambda h, r: CanonicalActionResult(board=h.slug, action="notify-unsubscribe", data={"task_id": r.task_id, "unsubscribed": True}), admin=False)
+
+        # Board leaves are explicit and fail closed; the existing list_boards,
+        # create_board, and get_board tools remain the mapped list/create/show.
+        register_canonical("boards-rm", RemoveBoardInput, lambda h, r: CanonicalActionResult(board=h.slug, action="boards rm", data=board_resolver.board_admin_adapter().remove_board(r.slug, confirm=r.confirm)), admin=True)
+        register_canonical("boards-switch", SwitchBoardInput, lambda h, r: CanonicalActionResult(board=h.slug, action="boards switch", data=board_resolver.board_admin_adapter().switch_board(r.slug)), admin=True)
+        register_canonical("boards-rename", RenameBoardInput, lambda h, r: CanonicalActionResult(board=h.slug, action="boards rename", data=board_resolver.board_admin_adapter().rename_board(r.slug, name=r.name, description=r.description)), admin=True)
+        register_canonical("boards-set-default-workdir", SetDefaultWorkdirInput, lambda h, r: CanonicalActionResult(board=h.slug, action="boards set-default-workdir", data=board_resolver.board_admin_adapter().set_default_workdir(r.slug, r.workdir)), admin=True)
 
     @mcp.custom_route("/healthz", methods=["GET"], include_in_schema=False)
     async def healthz(request: Request) -> Response:

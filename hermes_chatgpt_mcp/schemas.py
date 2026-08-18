@@ -521,6 +521,7 @@ class ArchiveResult(StrictModel):
 # --- Attachment management ---
 
 class AttachmentsInput(BoardQuery):
+    task_id: TaskId
     limit: int = Field(default=100, ge=1, le=1_000)
 
 
@@ -696,3 +697,110 @@ class RepairResult(StrictModel):
     board: BoardSlug
     repaired: bool
     issues_fixed: int
+
+
+class TaskLogInput(BoardQuery):
+    task_id: TaskId
+    limit: int = Field(default=16_000, ge=0, le=32_000)
+    cursor: int | None = Field(default=None, ge=0)
+
+
+class TaskLogResult(StrictModel):
+    task_id: TaskId
+    content: str
+    next_cursor: int | None = None
+    truncated: bool = False
+
+
+class TaskRunsInput(BoardQuery):
+    task_id: TaskId
+    limit: int = Field(default=100, ge=1, le=200)
+
+
+class TaskRunsResult(StrictModel):
+    task_id: TaskId
+    runs: list[TaskRunRecord]
+    truncated: bool = False
+
+
+class HeartbeatInput(BoardQuery):
+    task_id: TaskId
+    note: str | None = Field(default=None, max_length=2_000)
+
+
+class HeartbeatResult(StrictModel):
+    task_id: TaskId
+    recorded: bool
+
+
+class AssigneesInput(BoardQuery):
+    pass
+
+
+class AssigneesResult(StrictModel):
+    board: BoardSlug
+    assignees: list[dict[str, Any]]
+
+
+class TailInput(BoardQuery):
+    task_id: TaskId
+    cursor: int | None = Field(default=None, ge=0)
+    limit: int = Field(default=100, ge=1, le=200)
+
+
+class WatchInput(BoardQuery):
+    cursor: int | None = Field(default=None, ge=0)
+    limit: int = Field(default=100, ge=1, le=200)
+
+
+class CanonicalActionResult(StrictModel):
+    board: BoardSlug | None = None
+    action: str
+    data: dict[str, Any] = Field(default_factory=dict)
+
+
+class AttachRemoveInput(BoardQuery):
+    attachment_id: AttachmentId
+
+
+class InitInput(BoardQuery):
+    pass
+
+
+class SwarmInput(BoardQuery):
+    goal: str = Field(min_length=1, max_length=8_000)
+    workers: list[str] = Field(min_length=1, max_length=32)
+    verifier: str | None = None
+    synthesizer: str | None = None
+    tenant: TenantName | None = None
+    idempotency_key: IdempotencyKey | None = None
+
+
+class ClaimInput(TaskInput):
+    ttl_seconds: int = Field(default=900, ge=1, le=86_400)
+
+
+class AttachInput(BoardQuery):
+    task_id: TaskId
+    local_path: str = Field(min_length=1, max_length=2_000)
+    filename: str | None = Field(default=None, min_length=1, max_length=512)
+    content_type: str | None = Field(default=None, max_length=128)
+
+
+class DispatchInput(BoardQuery):
+    dry_run: bool = False
+    max_spawn: int | None = Field(default=None, ge=1, le=100)
+
+
+class StreamInput(BoardQuery):
+    task_id: TaskId | None = None
+    cursor: int | None = Field(default=None, ge=0)
+    limit: int = Field(default=100, ge=1, le=200)
+
+
+class BoardAdminInput(StrictModel):
+    slug: BoardSlug
+    confirm: bool = False
+    name: str | None = Field(default=None, min_length=1, max_length=512)
+    description: str | None = Field(default=None, max_length=2_000)
+    workdir: str | None = Field(default=None, max_length=2_000)

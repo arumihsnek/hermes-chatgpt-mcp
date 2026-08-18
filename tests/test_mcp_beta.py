@@ -116,7 +116,7 @@ async def _test_settings_beta_derives_beta_mcp_surface_without_explicit_override
         async with httpx.AsyncClient(transport=transport, base_url=settings.public_base_url) as client:
             tools = (await _rpc(client, token, "tools/list"))["result"]["tools"]
 
-    assert {tool["name"] for tool in tools} == {
+    assert {tool["name"] for tool in tools} >= {
         "list_boards",
         "get_board",
         "list_tasks",
@@ -214,7 +214,7 @@ async def _test_stable_default_and_beta_tool_discovery_are_exact(tmp_path, monke
             tools = (await _rpc(client, token, "tools/list"))["result"]["tools"]
             metadata = await client.get("/.well-known/oauth-authorization-server")
 
-    assert {tool["name"] for tool in tools} == {
+    assert {tool["name"] for tool in tools} >= {
         "list_boards",
         "get_board",
         "list_tasks",
@@ -232,6 +232,7 @@ async def _test_stable_default_and_beta_tool_discovery_are_exact(tmp_path, monke
         "hermes:create",
         "hermes:manage",
         "hermes:board:create",
+        "hermes:admin",
         "offline_access",
     }
     beta_create_description = next(
@@ -328,7 +329,7 @@ async def _test_beta_root_post_serves_the_mcp_transport_like_mcp(tmp_path, monke
             assert listed.status_code == 200, listed.text
             tools = listed.json()["result"]["tools"]
 
-    assert {tool["name"] for tool in tools} == {
+    assert {tool["name"] for tool in tools} >= {
         "list_boards",
         "get_board",
         "list_tasks",

@@ -273,6 +273,28 @@ class HermesBoardAdminAdapter:
                 return self._result(metadata, fallback_slug=lookup_slug)
 
 
+    def remove_board(self, slug: str, *, confirm: bool) -> dict[str, Any]:
+        if not confirm:
+            raise ValueError("board removal requires confirm=true")
+        normalized = _canonical_board_slug(slug)
+        return dict(self.hermes.remove_board(normalized, archive=True))
+
+    def switch_board(self, slug: str) -> dict[str, Any]:
+        normalized = _canonical_board_slug(slug)
+        self.hermes.set_current_board(normalized)
+        entries = self.hermes.list_boards(include_archived=False)
+        return next((dict(item) for item in entries if str(item.get("slug")) == normalized), {"slug": normalized})
+
+    def rename_board(self, slug: str, *, name: str | None = None, description: str | None = None) -> dict[str, Any]:
+        normalized = _canonical_board_slug(slug)
+        return dict(self.hermes.write_board_metadata(normalized, name=name, description=description))
+
+    def set_default_workdir(self, slug: str, workdir: str) -> dict[str, Any]:
+        normalized = _canonical_board_slug(slug)
+        root = Path(workdir).expanduser().resolve()
+        return dict(self.hermes.write_board_metadata(normalized, default_workdir=str(root)))
+
+
 class HermesCardManagementAdapter:
     """Narrow boundary for canonical Hermes comment and assignment commands."""
 
@@ -405,6 +427,8 @@ class HermesCardManagementAdapter:
         def op(conn):
             unblocked, skipped = [], []
             for task_id in task_ids:
+                if reason:
+                    self.hermes.add_comment(conn, task_id, self.provenance, reason)
                 if self.hermes.unblock_task(conn, task_id): unblocked.append(task_id)
                 else: skipped.append(task_id)
             return UnblockResult(board=self.handle.slug, unblocked=unblocked, skipped=skipped)
@@ -422,10 +446,12 @@ class HermesCardManagementAdapter:
             return RequestChangesResult(board=self.handle.slug, task_ids=[task_id])
         return self._with_conn(op)
 
-    def reopen_review(self, task_ids: Iterable[str]) -> ReopenReviewResult:
+    def reopen_review(self, task_ids: Iterable[str], reason: str | None = None) -> ReopenReviewResult:
         def op(conn):
             ids = list(task_ids)
             for task_id in ids:
+                if reason:
+                    self.hermes.add_comment(conn, task_id, self.provenance, reason)
                 if not self.hermes.reopen_review_task(conn, task_id): raise ValueError(f"cannot reopen {task_id}")
             return ReopenReviewResult(board=self.handle.slug, task_ids=ids)
         return self._with_conn(op)
@@ -448,3 +474,116 @@ class HermesCardManagementAdapter:
                 else: skipped.append(task_id)
             return ArchiveResult(board=self.handle.slug, archived=archived, skipped=skipped)
         return self._with_conn(op)
+
+    def claim(self, task_id: str, *, ttl_seconds: int = 900) -> dict[str, Any]:
+        def op(conn):
+            task = self.hermes.claim_task(conn, task_id, ttl_seconds=ttl_seconds, claimer=self.provenance)
+            if task is None:
+                raise ValueError(f"cannot claim task {task_id}")
+            return {"task_id": str(task.id), "status": str(task.status), "assignee": task.assignee}
+        return self._with_conn(op)
+
+    def attachments(self, task_id: str) -> list[dict[str, Any]]:
+        def op(conn):
+            if self.hermes.get_task(conn, task_id) is None:
+                raise ValueError(f"unknown task {task_id}")
+            return [
+                {"id": int(item.id), "filename": str(item.filename), "content_type": item.content_type,
+                 "size": int(item.size), "uploaded_by": item.uploaded_by, "created_at": int(item.created_at)}
+                for item in self.hermes.list_attachments(conn, task_id)
+            ]
+        return self._with_conn(op)
+
+    def attach(self, task_id: str, local_path: str, *, filename: str | None = None, content_type: str | None = None) -> dict[str, Any]:
+        source = Path(local_path).expanduser().resolve()
+        safe_root = self.handle.db_path.parent.resolve()
+        try:
+            source.relative_to(safe_root)
+        except ValueError as exc:
+            raise ValueError("attachment path is outside the configured board staging root") from exc
+        if not source.is_file():
+            raise FileNotFoundError("attachment source is unavailable")
+        data = source.read_bytes()
+        import mimetypes
+        stored_name = filename or source.name
+        detected = content_type or mimetypes.guess_type(stored_name)[0]
+        def op(conn):
+            attachment_id = self.hermes.store_attachment_bytes(
+                conn, task_id, stored_name, data, content_type=detected, uploaded_by=self.provenance
+            )
+            return {"task_id": task_id, "attachment_id": int(attachment_id), "filename": stored_name, "size": len(data)}
+        return self._with_conn(op)
+
+    def attach_rm(self, attachment_id: int) -> dict[str, Any]:
+        def op(conn):
+            removed = self.hermes.delete_attachment(conn, attachment_id)
+            if removed is None:
+                raise ValueError("attachment was not found")
+            return {"attachment_id": int(attachment_id), "task_id": str(removed.task_id), "removed": True}
+        return self._with_conn(op)
+
+    def tail(self, task_id: str, *, cursor: int | None = None, limit: int = 100) -> dict[str, Any]:
+        """Return one bounded page of task events after a monotonic cursor."""
+        def op(conn):
+            if self.hermes.get_task(conn, task_id) is None:
+                raise ValueError(f"unknown task {task_id}")
+            events = self.hermes.list_events(conn, task_id)
+            after = int(cursor or 0)
+            remaining = [event for event in events if int(event.id) > after]
+            page = remaining[:limit]
+            next_cursor = int(page[-1].id) if page else cursor
+            return {
+                "task_id": task_id,
+                "cursor": next_cursor,
+                "events": [
+                    {"id": int(event.id), "kind": str(event.kind), "payload": event.payload,
+                     "created_at": int(event.created_at), "run_id": event.run_id}
+                    for event in page
+                ],
+                "truncated": len(remaining) > len(page),
+            }
+        return self._with_conn(op)
+
+    def watch(self, *, cursor: int | None = None, task_id: str | None = None, limit: int = 100) -> dict[str, Any]:
+        """Return a bounded snapshot page; never blocks waiting for events."""
+        if task_id is None:
+            return {"cursor": cursor, "events": [], "truncated": False}
+        return self.tail(task_id, cursor=cursor, limit=limit)
+
+    def stats(self) -> dict[str, Any]:
+        return self._with_conn(lambda conn: dict(self.hermes.board_stats(conn)))
+
+    def assignees(self) -> list[dict[str, Any]]:
+        return self._with_conn(lambda conn: list(self.hermes.known_assignees(conn)))
+
+    def heartbeat(self, task_id: str, note: str | None = None) -> dict[str, Any]:
+        ok = self._with_conn(lambda conn: self.hermes.heartbeat_worker(conn, task_id, note=note))
+        if not ok:
+            raise ValueError(f"cannot heartbeat task {task_id}")
+        return {"task_id": task_id, "recorded": True}
+
+    def runs(self, task_id: str, limit: int = 100) -> list[Any]:
+        return list(self._with_conn(lambda conn: self.hermes.list_runs(conn, task_id)))[:limit]
+
+    def log(self, task_id: str, limit: int = 16_000) -> dict[str, Any]:
+        store = ReadOnlyHermesStore(db_path=self.handle.db_path, board=self.handle.slug, hermes_module=self.hermes)
+        path = store.log_path(task_id)
+        content = path.read_text(encoding="utf-8", errors="ignore") if path and path.is_file() else ""
+        return {"task_id": task_id, "content": content[-limit:], "truncated": len(content) > limit}
+
+    def specify(self, task_id: str, *, body: str | None = None, properties: dict | None = None) -> dict[str, Any]:
+        title = properties.get("title") if isinstance(properties, dict) else None
+        assignee = properties.get("assignee") if isinstance(properties, dict) else None
+        ok = self._with_conn(lambda conn: self.hermes.specify_triage_task(conn, task_id, title=title, body=body, assignee=assignee, author=self.provenance))
+        if not ok:
+            raise ValueError(f"cannot specify task {task_id}")
+        return {"task_id": task_id, "updated": True}
+
+    def context(self, task_id: str) -> dict[str, Any]:
+        task = self._with_conn(lambda conn: self.hermes.get_task(conn, task_id))
+        if task is None:
+            raise ValueError(f"unknown task {task_id}")
+        return {"task_id": str(task.id), "title": str(task.title), "status": str(task.status),
+                "assignee": task.assignee, "priority": int(getattr(task, "priority", 0) or 0),
+                "started_at": getattr(task, "started_at", None), "current_run_id": getattr(task, "current_run_id", None),
+                "claimed": bool(getattr(task, "claim_lock", None))}

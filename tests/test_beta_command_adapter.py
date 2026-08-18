@@ -347,10 +347,31 @@ def test_management_adapter_rejects_invalid_assignment_without_unrelated_writes(
 
 
 def test_command_boundary_contains_no_sql_writes_and_only_expected_canonical_mutators():
+    import ast
+
     source = Path("hermes_chatgpt_mcp/command.py").read_text(encoding="utf-8")
     resolvers = Path("hermes_chatgpt_mcp/boards.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
 
-    assert re.search(r"\b(INSERT|UPDATE|DELETE|REPLACE)\b", source, re.IGNORECASE) is None
+    # Method names such as delete_archived_task are canonical Hermes APIs and
+    # must not be mistaken for embedded SQL. Inspect only SQL-bearing string
+    # literals and direct conn.execute calls.
+    sql_literals = [
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and re.search(r"\b(INSERT|UPDATE|DELETE|REPLACE)\b", node.value, re.IGNORECASE)
+    ]
+    assert sql_literals == []
+    execute_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "execute"
+    ]
+    assert len(execute_calls) == 1
     for name in ("create_board", "add_comment", "assign_task"):
         assert f"self.hermes.{name}" in source
     for factory in ("board_admin_adapter", "management_adapter"):
