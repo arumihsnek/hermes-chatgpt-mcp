@@ -83,6 +83,36 @@ def test_board_admin_creates_canonical_directory_without_changing_current_board(
     assert fixture.db_path.is_file()
 
 
+def test_archive_rm_deletes_only_already_archived_tasks(tmp_path, monkeypatch):
+    fixture = make_hermes_fixture(tmp_path)
+    adapter = _management_adapter(fixture, monkeypatch)
+
+    result = adapter.archive(["archived-task"], rm=True)
+
+    assert result.archived == ["archived-task"]
+    assert result.skipped == []
+    with adapter.hermes.connect_closing(db_path=fixture.db_path, board=fixture.board) as conn:
+        assert adapter.hermes.get_task(conn, "archived-task") is None
+
+
+def test_archive_rm_does_not_downgrade_non_archived_tasks(tmp_path, monkeypatch):
+    fixture = make_hermes_fixture(tmp_path)
+    adapter = _management_adapter(fixture, monkeypatch)
+
+    result = adapter.archive(["child-ready"], rm=True)
+
+    assert result.archived == []
+    assert result.skipped == ["child-ready"]
+
+
+def test_batch_one_implementation_contains_no_new_raw_sql_connections():
+    source = Path(__file__).parents[1].joinpath("hermes_chatgpt_mcp", "command.py").read_text()
+    # One pre-existing idempotency lookup predates Batch1 and is explicitly
+    # retained for replay compatibility; new management methods use canonical
+    # Hermes APIs only.
+    assert source.count("conn.execute") == 1
+
+
 def test_board_admin_rejects_reserved_legacy_default_before_canonical_mutation(tmp_path, monkeypatch):
     from hermes_cli import kanban_db
 

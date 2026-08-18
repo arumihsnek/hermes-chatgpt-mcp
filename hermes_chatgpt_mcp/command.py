@@ -439,11 +439,12 @@ class HermesCardManagementAdapter:
             return PromoteResult(board=self.handle.slug, task_ids=all_ids)
         return self._with_conn(op)
 
-    def archive(self, task_ids: Iterable[str]) -> ArchiveResult:
+    def archive(self, task_ids: Iterable[str], *, rm: bool = False) -> ArchiveResult:
         def op(conn):
             archived, skipped = [], []
             for task_id in task_ids:
-                if self.hermes.archive_task(conn, task_id): archived.append(task_id)
+                operation = self.hermes.delete_archived_task if rm else self.hermes.archive_task
+                if operation(conn, task_id): archived.append(task_id)
                 else: skipped.append(task_id)
             return ArchiveResult(board=self.handle.slug, archived=archived, skipped=skipped)
         return self._with_conn(op)

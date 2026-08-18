@@ -36,7 +36,7 @@ change the stable hostname's locations.
 | Surface | Exact public tool set | Supported scopes | Command grant |
 | --- | --- | --- | --- |
 | Stable | eight tools: the seven read tools above plus `create_task` | `hermes:read`, `hermes:create`, `offline_access` | `create_task` needs `hermes:create` and one selected board with `board_access=write` |
-| Beta | eleven tools: the same seven reads plus `create_task`, `create_board`, `add_comment`, and `assign_task` | `hermes:read`, `hermes:create`, `hermes:manage`, `hermes:board:create`, `offline_access` | `create_task` uses `hermes:create`; `add_comment` and `assign_task` use `hermes:manage`; each is bound to one selected board |
+| Beta | eleven tools: the same seven reads plus `create_task`, `create_board`, `add_comment`, and `assign_task` (with the Batch1 management tools) | `hermes:read`, `hermes:create`, `hermes:manage`, `hermes:board:create`, `hermes:admin`, `offline_access` | normal task mutations use `hermes:manage`; destructive archive purge (`rm`) requires explicitly consented `hermes:admin`; no elevated scope is requested by default |
 
 The stable default remains unchanged: it registers no beta tools and does not
 advertise `hermes:manage` or `hermes:board:create`. Beta is selected explicitly

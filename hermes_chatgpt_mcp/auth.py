@@ -69,6 +69,7 @@ class AuthPolicy:
     create_scope: str
     manage_scope: str
     board_create_scope: str
+    admin_scope: str
     offline_scope: str
     supported_scopes: tuple[str, ...]
     registration_defaults: tuple[str, ...]
@@ -79,6 +80,7 @@ STABLE_AUTH_POLICY = AuthPolicy(
     create_scope="hermes:create",
     manage_scope="hermes:manage",
     board_create_scope="hermes:board:create",
+    admin_scope="hermes:admin",
     offline_scope="offline_access",
     supported_scopes=("hermes:read", "hermes:create", "offline_access"),
     registration_defaults=("hermes:read", "hermes:create"),
@@ -89,8 +91,9 @@ BETA_AUTH_POLICY = AuthPolicy(
     create_scope="hermes:create",
     manage_scope="hermes:manage",
     board_create_scope="hermes:board:create",
+    admin_scope="hermes:admin",
     offline_scope="offline_access",
-    supported_scopes=("hermes:read", "hermes:create", "hermes:manage", "hermes:board:create", "offline_access"),
+    supported_scopes=("hermes:read", "hermes:create", "hermes:manage", "hermes:board:create", "hermes:admin", "offline_access"),
     registration_defaults=("hermes:read", "hermes:create"),
 )
 
@@ -132,6 +135,7 @@ class AuthService:
         self.create_scope = policy.create_scope
         self.manage_scope = policy.manage_scope
         self.board_create_scope = policy.board_create_scope
+        self.admin_scope = policy.admin_scope
         self.offline_scope = policy.offline_scope
         self.supported_scopes = policy.supported_scopes
         self._clients: dict[str, _Client] = {}

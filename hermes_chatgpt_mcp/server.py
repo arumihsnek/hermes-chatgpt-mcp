@@ -73,6 +73,21 @@ from .schemas import (
     ReopenReviewInput,
     PromoteInput,
     ArchiveInput,
+    LinkTasksResult,
+    UnlinkTasksResult,
+    SetModelResult,
+    ReclaimResult,
+    ReassignResult,
+    CompleteResult,
+    EditTaskResult,
+    BlockResult,
+    ScheduleResult,
+    UnblockResult,
+    RequestReviewResult,
+    RequestChangesResult,
+    ReopenReviewResult,
+    PromoteResult,
+    ArchiveResult,
 )
 
 
@@ -611,64 +626,66 @@ def create_app(
             return await run_beta_command(getattr(board_resolver.management_adapter(handle), method_name), *args, task_command=True, **kwargs)
 
         @mcp.tool(name="link_tasks", description="Add parent dependencies.", annotations=manage_annotations, structured_output=True)
-        async def link_tasks(request: LinkTasksInput):
+        async def link_tasks(request: LinkTasksInput) -> LinkTasksResult:
             return await _manage(request, "link", request.parent_id, request.child_id)
 
         @mcp.tool(name="unlink_tasks", description="Remove parent dependencies.", annotations=manage_annotations, structured_output=True)
-        async def unlink_tasks(request: UnlinkTasksInput):
+        async def unlink_tasks(request: UnlinkTasksInput) -> UnlinkTasksResult:
             return await _manage(request, "unlink", request.parent_id, request.child_id)
 
         @mcp.tool(name="set_model", description="Set a task model/provider override.", annotations=manage_annotations, structured_output=True)
-        async def set_model(request: SetModelInput):
+        async def set_model(request: SetModelInput) -> SetModelResult:
             return await _manage(request, "set_model", request.task_id, request.model, request.provider)
 
         @mcp.tool(name="reclaim_task", description="Reclaim a running task.", annotations=manage_annotations, structured_output=True)
-        async def reclaim_task(request: ReclaimInput):
+        async def reclaim_task(request: ReclaimInput) -> ReclaimResult:
             return await _manage(request, "reclaim", request.task_id, request.reason)
 
         @mcp.tool(name="reassign_tasks", description="Bulk reassign tasks matching filters.", annotations=manage_annotations, structured_output=True)
-        async def reassign_tasks(request: ReassignInput):
+        async def reassign_tasks(request: ReassignInput) -> ReassignResult:
             return await _manage(request, "reassign", request.task_id, request.profile, reclaim=request.reclaim, reason=request.reason)
 
         @mcp.tool(name="complete_tasks", description="Mark tasks complete.", annotations=manage_annotations, structured_output=True)
-        async def complete_tasks(request: CompleteInput):
+        async def complete_tasks(request: CompleteInput) -> CompleteResult:
             return await _manage(request, "complete", request.task_ids, request.result, request.summary, request.metadata)
 
         @mcp.tool(name="edit_task", description="Edit a completed task result.", annotations=manage_annotations, structured_output=True)
-        async def edit_task(request: EditTaskInput):
+        async def edit_task(request: EditTaskInput) -> EditTaskResult:
             return await _manage(request, "edit", request.task_id, result=request.result, summary=request.summary, metadata=request.metadata)
 
         @mcp.tool(name="block_tasks", description="Block tasks with a typed reason.", annotations=manage_annotations, structured_output=True)
-        async def block_tasks(request: BlockInput):
+        async def block_tasks(request: BlockInput) -> BlockResult:
             return await _manage(request, "block", request.task_ids, kind=request.kind, reason=request.reason)
 
         @mcp.tool(name="schedule_tasks", description="Park tasks in scheduled state.", annotations=manage_annotations, structured_output=True)
-        async def schedule_tasks(request: ScheduleInput):
+        async def schedule_tasks(request: ScheduleInput) -> ScheduleResult:
             return await _manage(request, "schedule", request.task_ids, request.reason)
 
         @mcp.tool(name="unblock_tasks", description="Unblock tasks.", annotations=manage_annotations, structured_output=True)
-        async def unblock_tasks(request: UnblockInput):
+        async def unblock_tasks(request: UnblockInput) -> UnblockResult:
             return await _manage(request, "unblock", request.task_ids, request.reason)
 
         @mcp.tool(name="request_review", description="Move tasks to review.", annotations=manage_annotations, structured_output=True)
-        async def request_review(request: RequestReviewInput):
+        async def request_review(request: RequestReviewInput) -> RequestReviewResult:
             return await _manage(request, "request_review", request.task_id, request.summary, request.reviewer, request.metadata, request.force)
 
         @mcp.tool(name="request_changes", description="Request changes on reviewed tasks.", annotations=manage_annotations, structured_output=True)
-        async def request_changes(request: RequestChangesInput):
+        async def request_changes(request: RequestChangesInput) -> RequestChangesResult:
             return await _manage(request, "request_changes", request.task_id, request.reason)
 
         @mcp.tool(name="reopen_review", description="Reopen reviewed tasks.", annotations=manage_annotations, structured_output=True)
-        async def reopen_review(request: ReopenReviewInput):
+        async def reopen_review(request: ReopenReviewInput) -> ReopenReviewResult:
             return await _manage(request, "reopen_review", request.task_ids)
 
         @mcp.tool(name="promote_tasks", description="Promote tasks through workflow.", annotations=manage_annotations, structured_output=True)
-        async def promote_tasks(request: PromoteInput):
+        async def promote_tasks(request: PromoteInput) -> PromoteResult:
             return await _manage(request, "promote", request.task_id, request.reason, request.ids, request.force, request.dry_run)
 
         @mcp.tool(name="archive_tasks", description="Archive tasks.", annotations=manage_annotations, structured_output=True)
-        async def archive_tasks(request: ArchiveInput):
-            return await _manage(request, "archive", request.task_ids)
+        async def archive_tasks(request: ArchiveInput) -> ArchiveResult:
+            if request.rm:
+                require_scope(auth_service.admin_scope)
+            return await _manage(request, "archive", request.task_ids, rm=request.rm)
 
     @mcp.custom_route("/healthz", methods=["GET"], include_in_schema=False)
     async def healthz(request: Request) -> Response:
