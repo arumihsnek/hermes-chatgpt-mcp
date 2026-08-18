@@ -90,8 +90,12 @@ def test_beta_openresty_include_is_limited_to_the_beta_mcp_routes():
     # Root POSTs must reach the MCP transport (ChatGPT connectors use the
     # declared server URL / OAuth issuer as the session endpoint) while
     # GET/HEAD keep serving the landing page, plus discovery fallback for
-    # connectors configured with a /mcp-suffixed URL.
-    assert "location = / {\n    limit_except GET HEAD {" in include
+    # connectors configured with a /mcp-suffixed URL. The named-location
+    # rewrite is required because a literal URI in proxy_pass is invalid
+    # inside named locations, and rewrite/set are invalid inside limit_except.
+    assert "location = / {\n    error_page 405 = @beta_mcp_root;" in include
+    assert "location @beta_mcp_root {" in include
+    assert "rewrite ^ /mcp break;" in include
     assert "location ^~ /mcp/.well-known/ {" in include
     assert 'proxy_pass http://127.0.0.1:8791/.well-known/;' in include
 
