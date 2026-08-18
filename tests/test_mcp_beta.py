@@ -281,6 +281,68 @@ async def _test_stable_default_and_beta_tool_discovery_are_exact(tmp_path, monke
     assert all(tool["inputSchema"].get("additionalProperties", True) is False for tool in tools)
 
 
+def test_beta_root_post_serves_the_mcp_transport_like_mcp(tmp_path, monkeypatch):
+    asyncio.run(_test_beta_root_post_serves_the_mcp_transport_like_mcp(tmp_path, monkeypatch))
+
+
+async def _test_beta_root_post_serves_the_mcp_transport_like_mcp(tmp_path, monkeypatch):
+    _, settings, auth, _, app = _beta_app(tmp_path, monkeypatch)
+    token = _token(auth, "manager", ["hermes:read", "hermes:manage"], board="fixture-board")
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json, text/event-stream",
+        "Content-Type": "application/json",
+        "MCP-Protocol-Version": "2025-06-18",
+    }
+    transport = httpx.ASGITransport(app=app)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=transport, base_url=settings.public_base_url) as client:
+            denied = await client.post(
+                "/",
+                headers={"Accept": "application/json, text/event-stream", "Content-Type": "application/json"},
+                json={"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
+            )
+            assert denied.status_code == 401, denied.text
+
+            init = await client.post(
+                "/",
+                headers=headers,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {},
+                        "clientInfo": {"name": "root-alias-test", "version": "0.0.1"},
+                    },
+                },
+            )
+            assert init.status_code == 200, init.text
+
+            listed = await client.post(
+                "/",
+                headers=headers,
+                json={"jsonrpc": "2.0", "id": 3, "method": "tools/list", "params": {}},
+            )
+            assert listed.status_code == 200, listed.text
+            tools = listed.json()["result"]["tools"]
+
+    assert {tool["name"] for tool in tools} == {
+        "list_boards",
+        "get_board",
+        "list_tasks",
+        "get_task",
+        "get_task_graph",
+        "get_dispatch",
+        "get_activity",
+        "create_task",
+        "create_board",
+        "add_comment",
+        "assign_task",
+    }
+
+
 def test_beta_capability_projection_is_scope_and_board_bound(tmp_path, monkeypatch):
     asyncio.run(_test_beta_capability_projection_is_scope_and_board_bound(tmp_path, monkeypatch))
 
