@@ -630,7 +630,7 @@ async def _test_beta_oauth_consent_can_escalate_manage_and_board_create(tmp_path
             body_b = token_b.json()
             scope_b = body_b["scope"].split()
             assert "hermes:board:create" in scope_b
-            assert "hermes:create" in scope_b  # retained as a GLOBAL card-write scope
+            assert "hermes:create" not in scope_b  # board creation does not grant task writes
             claims_b = auth.verified_claims(body_b["access_token"])
             assert claims_b is not None
             assert "board" not in claims_b

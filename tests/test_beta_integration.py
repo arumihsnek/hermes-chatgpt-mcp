@@ -489,17 +489,23 @@ def test_beta_admin_token_can_create_board_and_work_in_it(tmp_path, monkeypatch)
 
 async def _test_beta_admin_token_can_create_board_and_work_in_it(tmp_path, monkeypatch):
     fixture, _, settings, auth, app = _beta_fixture(tmp_path, monkeypatch)
-    admin = _token(
+    board_creator = _token(
         auth,
         "admin-global",
-        ["hermes:read", "hermes:create", "hermes:manage", "hermes:board:create"],
+        ["hermes:read", "hermes:board:create"],
+    )
+    admin = _token(
+        auth,
+        "admin-selected",
+        ["hermes:read", "hermes:create", "hermes:manage", "hermes:board:create", "hermes:admin"],
+        board="admin-probe",
     )
     transport = httpx.ASGITransport(app=app)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(transport=transport, base_url=settings.public_base_url) as client:
             created = _assert_success(
                 await _rpc(
-                    client, admin, "tools/call",
+                    client, board_creator, "tools/call",
                     {"name": "create_board", "arguments": {"request": {
                         "slug": "admin-probe", "name": "Admin Probe",
                         "icon": "🧪", "color": "blue",

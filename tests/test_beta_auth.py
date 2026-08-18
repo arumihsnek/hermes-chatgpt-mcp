@@ -9,7 +9,7 @@ from tests.test_auth import _settings
 
 
 def _service() -> AuthService:
-    return AuthService(_settings(), policy=BETA_AUTH_POLICY)
+    return AuthService(replace(_settings(), surface="beta"), policy=BETA_AUTH_POLICY)
 
 
 def test_beta_settings_select_beta_policy_without_explicit_injection():
@@ -85,7 +85,7 @@ def test_beta_board_administration_scope_never_carries_a_board_claim():
     )
     assert "board" not in service.verified_claims(token)  # type: ignore[operator]
 
-    with pytest.raises(OAuthError, match="board administration"):
+    with pytest.raises(OAuthError, match="board grant"):
         service.issue_access_token(
             client_id="administrator",
             subject="user",
@@ -95,27 +95,67 @@ def test_beta_board_administration_scope_never_carries_a_board_claim():
         )
 
 
-def test_admin_scope_combines_with_global_command_scopes_without_board_claim():
+def test_admin_scope_combines_with_command_scopes_on_selected_board():
     service = _service()
     admin = service.issue_access_token(
         client_id="admin-global",
         subject="user",
-        scopes=["hermes:read", "hermes:create", "hermes:manage", "hermes:board:create"],
+        scopes=["hermes:read", "hermes:create", "hermes:manage", "hermes:board:create", "hermes:admin"],
+        board="board-a",
+        board_access="write",
     )
     claims = service.verified_claims(admin)
     assert claims is not None
-    assert "board" not in claims
+    assert claims["board"] == "board-a"
     verified = service.verify_token(admin)
     assert verified is not None
     assert verified.scopes == [
-        "hermes:read", "hermes:create", "hermes:manage", "hermes:board:create",
+        "hermes:read", "hermes:create", "hermes:manage", "hermes:board:create", "hermes:admin",
     ]
-    # The admin scope still rejects a single-board claim.
-    with pytest.raises(OAuthError, match="cannot carry a board claim"):
+    # Admin-only grants remain global; command scopes require a selected board.
+    with pytest.raises(OAuthError, match="selected board"):
         service.issue_access_token(
             client_id="admin-bad",
             subject="user",
-            scopes=["hermes:read", "hermes:create", "hermes:board:create"],
-            board="board-a",
-            board_access="write",
+            scopes=["hermes:read", "hermes:create", "hermes:board:create", "hermes:admin"],
         )
+
+
+def test_beta_authorization_form_describes_separate_capabilities_without_legacy_labels():
+    service = _service()
+    html = service.authorization_form(
+        query={"scope": "hermes:read hermes:create"},
+        board_options=[{"slug": "board-a", "name": "Board A"}],
+    )
+
+    assert "Global read access" in html
+    assert "task/card writes on the selected board" in html
+    assert "Create boards globally" in html
+    assert "Elevated administration, runtime, filesystem, and destructive actions" in html
+    assert "offline_access" in html
+    assert "scope_extra_board_create" in html
+    assert "scope_extra_admin" in html
+    assert "scope_extra_admin' value='hermes:board:create'" not in html
+    assert "legacy" not in html.lower()
+
+
+def test_stable_authorization_form_keeps_legacy_scope_controls_unchanged():
+    service = AuthService(_settings())
+    html = service.authorization_form(query={"scope": "hermes:read hermes:create"})
+
+    assert "read-only access to all boards." in html
+    assert "scope_extra_manage" not in html
+    assert "scope_extra_admin" not in html
+
+
+def test_beta_board_create_does_not_grant_admin_scope():
+    service = _service()
+    token = service.issue_access_token(
+        client_id="board-creator",
+        subject="user",
+        scopes=["hermes:read", "hermes:board:create"],
+    )
+
+    verified = service.verify_token(token)
+    assert verified is not None
+    assert service.admin_scope not in verified.scopes

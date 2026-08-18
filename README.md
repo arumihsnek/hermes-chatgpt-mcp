@@ -223,11 +223,14 @@ elevated scope for runtime, destructive, and filesystem-sensitive leaves.
 
 `create_task` remains available on beta with `hermes:create` and the same
 one-board grant rule as stable. `hermes:manage` does not imply `hermes:create`.
-`hermes:board:create` is a separate global administrative scope: a grant that
-uses it cannot also carry a board-bound command grant. **create_board alone
-does not grant task-write access** to the new board. After creating a board,
-authorize a command grant for that board before creating a card, comment, or
-assignment.
+`hermes:board:create` is a separate global board-creation scope. It never
+implies `hermes:admin` or task/card writes. A grant that includes command scopes
+(`hermes:create` / `hermes:manage`) must also carry the explicitly selected
+board claim; `hermes:admin` may be consented separately for elevated
+administration/runtime/filesystem/destructive leaves, while command writes
+remain board-bound. **create_board alone does not grant task-write access** to
+the new board. After creating a board, authorize a command grant for that board
+before creating a card, comment, or assignment.
 
 Every beta board-bound command is checked against the signed OAuth one-board
 claim before an adapter is constructed. The global `create_board` command is

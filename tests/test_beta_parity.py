@@ -37,7 +37,7 @@ def test_canonical_action_parity_manifest_has_one_tool_mapping():
 def test_beta_tools_expose_all_canonical_leaf_mappings(tmp_path: Path, monkeypatch):
     async def run():
         fixture, settings, auth, _, app = _beta_app(tmp_path, monkeypatch)
-        token = _token(auth, "parity", ["hermes:read", "hermes:manage", "hermes:admin"], board=fixture.board)
+        token = _token(auth, "parity", ["hermes:read", "hermes:manage"], board=fixture.board)
         async with app.router.lifespan_context(app):
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=settings.public_base_url) as client:
                 result = await _rpc(client, token, "tools/list")

@@ -193,10 +193,16 @@ class AuthService:
         if board_access not in {None, "write"}:
             raise OAuthError("invalid board access", code="invalid_request")
         if self.settings.surface == "beta":
-            # Beta surface: card writes are GLOBAL across all boards. A board
-            # claim is optional and only informational (kept for compatibility
-            # with previously minted tokens); it never narrows the grant.
-            if board is not None and board_access != "write":
+            if self.admin_scope in scopes:
+                if has_command_scope:
+                    if board is None or board_access != "write":
+                        raise OAuthError("command scope requires a selected board", code="invalid_scope")
+                elif board is not None or board_access is not None:
+                    raise OAuthError("admin cannot carry a board claim", code="invalid_scope")
+                return
+            if has_command_scope and (board is None or board_access != "write"):
+                raise OAuthError("command scope requires a selected board", code="invalid_scope")
+            if board is not None and not has_command_scope:
                 raise OAuthError("board grant must be write access", code="invalid_request")
             return
         if has_board_administration_scope:
@@ -832,45 +838,60 @@ class AuthService:
         # The resource owner may widen a narrow client grant (e.g. ChatGPT
         # registers with read+create) at consent time without a client-side
         # re-registration. Each optional scope gets its own checkbox field.
-        scope_extras: list[tuple[str, str]] = []
+        scope_extras: list[tuple[str, str, str]] = []
         if self.manage_scope in self.supported_scopes and self.manage_scope not in requested_scopes:
-            scope_extras.append(("scope_extra_manage", self.manage_scope))
+            scope_extras.append(("scope_extra_manage", self.manage_scope, "Task/card management on the selected board"))
         if self.board_create_scope in self.supported_scopes and self.board_create_scope not in requested_scopes:
-            scope_extras.append(("scope_extra_admin", self.board_create_scope))
-        potential_scopes = set(requested_scopes) | {scope for _, scope in scope_extras}
+            scope_extras.append(("scope_extra_board_create", self.board_create_scope, "Create boards globally"))
+        if self.admin_scope in self.supported_scopes and self.admin_scope not in requested_scopes:
+            scope_extras.append(("scope_extra_admin", self.admin_scope, "Elevated administration, runtime, filesystem, and destructive actions"))
+        potential_scopes = set(requested_scopes) | {scope for _, scope, _ in scope_extras}
         write_available = bool(potential_scopes & board_command_scopes)
-        access_controls = (
-            "<fieldset><legend>Access</legend>"
-            "<label><input type='radio' name='access_mode' value='read' checked> Read all boards</label>"
-            "<label><input type='radio' name='access_mode' value='write'> Read all boards and write one selected board</label>"
-            f"<label>Write board <select name='board'>{board_select}</select></label></fieldset>"
-            if write_available and options
-            else "<p>read-only access to all boards.</p>"
-        )
+        if self.settings.surface == "beta":
+            access_controls = (
+                "<fieldset><legend>Capabilities</legend>"
+                "<label><input type='radio' name='access_mode' value='read' checked> Global read access</label>"
+                "<label><input type='radio' name='access_mode' value='write'> Read all boards and task/card writes on the selected board</label>"
+                f"<label>Selected board <select name='board'>{board_select}</select></label></fieldset>"
+                if write_available and options
+                else "<p>Global read access to all boards.</p>"
+            )
+        else:
+            access_controls = (
+                "<fieldset><legend>Access</legend>"
+                "<label><input type='radio' name='access_mode' value='read' checked> Read all boards</label>"
+                "<label><input type='radio' name='access_mode' value='write'> Read all boards and write one selected board</label>"
+                f"<label>Write board <select name='board'>{board_select}</select></label></fieldset>"
+                if write_available and options
+                else "<p>read-only access to all boards.</p>"
+            )
         scope_controls = ""
         if scope_extras:
             parts = [
                 (
                     f"<label><input type='checkbox' name='{name}' value='{html.escape(scope)}'> "
-                    f"Permitir tambien el scope {html.escape(scope)}</label>"
+                    f"{html.escape(label)} (explicitly consented: {html.escape(scope)})</label>"
                 )
-                for name, scope in scope_extras
+                for name, scope, label in scope_extras
             ]
             scope_controls = (
-                "<fieldset><legend>Scopes adicionales (opcional)</legend>"
+                "<fieldset><legend>Optional capabilities</legend>"
                 + "".join(parts)
-                + "<p>Nota: hermes:board:create es global y no interioriza un board de"
-                " escritura; si lo incluyes, los scopes command (hermes:create/hermes:manage)"
-                " pasan a permitir escribir cards en CUALQUIER board con este mismo token.</p></fieldset>"
+                + "<p>offline_access is an OAuth protocol scope only. Board creation does not grant"
+                " task/card writes, and hermes:admin is separate from hermes:board:create.</p></fieldset>"
             )
         return (
             "<!doctype html><meta charset='utf-8'><title>Hermes MCP authorization</title>"
             "<h1>Authorize Hermes MCP access</h1>"
-            "<p>read-only access covers all active Hermes boards. Write access is limited to one board selected below.</p>"
-            '<form method="post" action="/oauth/authorize">'
-            f"{hidden}{access_controls}{scope_controls}<label>Username <input name='username' autocomplete='username'></label>"
-            "<label>Password <input type='password' name='password' autocomplete='current-password'></label>"
-            "<button type='submit'>Authorize</button></form>"
+            + (
+                "<p>Global read access covers all active Hermes boards. Write access is limited to one selected board.</p>"
+                if self.settings.surface == "beta"
+                else "<p>read-only access covers all active Hermes boards. Write access is limited to one board selected below.</p>"
+            )
+            + '<form method="post" action="/oauth/authorize">'
+            + f"{hidden}{access_controls}{scope_controls}<label>Username <input name='username' autocomplete='username'></label>"
+            + "<label>Password <input type='password' name='password' autocomplete='current-password'></label>"
+            + "<button type='submit'>Authorize</button></form>"
         )
 
 

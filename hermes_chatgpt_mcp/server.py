@@ -368,15 +368,15 @@ def create_app(
             raise tool_error("SCOPE_REQUIRED", f"scope required: {scope}")
 
     def has_admin_scope() -> bool:
-        """True when the token carries the global hermes:board:create scope."""
+        """True when the token carries the separately consented admin scope."""
         token = get_access_token()
-        return token is not None and auth_service.board_create_scope in token.scopes
+        return token is not None and auth_service.admin_scope in token.scopes
 
     def has_command_scope(scope: str, board: str | None = None) -> bool:
         token = get_access_token()
         if token is None or scope not in token.scopes:
             return False
-        if board is None or has_admin_scope():
+        if board is None:
             return True
         return write_grant_board(scope) == board
 
@@ -932,7 +932,7 @@ def create_app(
             )
             requested_scope = form.get("scope") or client.scope
             extra_scope_values: list[str] = []
-            for name in ("scope_extra_manage", "scope_extra_admin"):
+            for name in ("scope_extra_manage", "scope_extra_board_create", "scope_extra_admin"):
                 value = form.get(name)
                 if value:
                     extra_scope_values.append(value)
@@ -952,13 +952,12 @@ def create_app(
                 auth_service.create_scope,
                 *({auth_service.manage_scope} if beta else set()),
             }
-            admin_scope = auth_service.board_create_scope
+            admin_scope = auth_service.admin_scope
             wants_admin = admin_scope in requested_set
             if wants_admin:
-                # One admin consent can carry read + hermes:board:create plus any
-                # requested command scopes (hermes:create / hermes:manage). Card
-                # writes become global (no single-board claim), so a single admin
-                # token can create a board and immediately work on it.
+                # Admin is separately consented and never inferred from board
+                # creation. Any command scopes remain bound to their selected
+                # board claim; admin-only grants are global.
                 requested_scope = " ".join(
                     scope for scope in auth_service.supported_scopes if scope in requested_set
                 )
