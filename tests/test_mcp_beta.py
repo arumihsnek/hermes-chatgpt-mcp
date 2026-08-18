@@ -373,7 +373,7 @@ async def _test_beta_capability_projection_is_scope_and_board_bound(tmp_path, mo
     assert managed_boards["other-board"]["capabilities"] == {
         "read": True,
         "create": False,
-        "manage": False,
+        "manage": True,  # beta surface: hermes:manage applies to every board
     }
     assert managed_payload["global_capabilities"] == {"create_board": False}
     administrative_payload = administrative["result"]["structuredContent"]
@@ -581,34 +581,40 @@ async def _test_public_board_creation_returns_safe_conflicts_for_reserved_and_ar
     assert not (fixture.root / "kanban" / "boards" / "archived-public-board").exists()
 
 
-def test_management_commands_are_one_board_bound_and_return_safe_errors(tmp_path, monkeypatch):
-    asyncio.run(_test_management_commands_are_one_board_bound_and_return_safe_errors(tmp_path, monkeypatch))
+def test_management_commands_are_global_on_beta_and_return_safe_errors(tmp_path, monkeypatch):
+    asyncio.run(_test_management_commands_are_global_on_beta_and_return_safe_errors(tmp_path, monkeypatch))
 
 
-async def _test_management_commands_are_one_board_bound_and_return_safe_errors(tmp_path, monkeypatch):
+async def _test_management_commands_are_global_on_beta_and_return_safe_errors(tmp_path, monkeypatch):
     fixture, settings, auth, _, app = _beta_app(tmp_path, monkeypatch)
     with kanban_db.connect_closing(db_path=fixture.db_path, board=fixture.board) as conn:
         conn.execute(
             "INSERT INTO tasks (id, title, status, claim_lock, created_at) VALUES (?, ?, ?, ?, ?)",
             ("running-task", "Running", "running", "claimed", 1_700_000_099),
         )
+    other_db = fixture.root / "kanban" / "boards" / "other-board" / "kanban.db"
+    with kanban_db.connect_closing(db_path=other_db, board="other-board") as conn:
+        conn.execute(
+            "INSERT INTO tasks (id, title, status, claim_lock, created_at) VALUES (?, ?, ?, ?, ?)",
+            ("other-review", "Other Review", "review", None, 1_700_000_111),
+        )
     manager = _token(auth, "manager", ["hermes:read", "hermes:manage"], board=fixture.board)
     transport = httpx.ASGITransport(app=app)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(transport=transport, base_url=settings.public_base_url) as client:
             await _rpc(client, manager, "tools/call", {"name": "list_boards", "arguments": {}}, 0)
-            before_mismatch = tree_fingerprint(fixture.root)
-            mismatch = await _rpc(
+            before_cross = tree_fingerprint(fixture.root)
+            cross_board = await _rpc(
                 client,
                 manager,
                 "tools/call",
                 {
                     "name": "add_comment",
-                    "arguments": {"request": {"board": "other-board", "task_id": "review-task", "body": "wrong board"}},
+                    "arguments": {"request": {"board": "other-board", "task_id": "other-review", "body": "crossed board"}},
                 },
                 1,
             )
-            assert tree_fingerprint(fixture.root) == before_mismatch
+            after_cross = tree_fingerprint(fixture.root)
             missing = await _rpc(
                 client,
                 manager,
@@ -650,9 +656,13 @@ async def _test_management_commands_are_one_board_bound_and_return_safe_errors(t
                 4,
             )
 
-    _assert_tool_error(mismatch, "BOARD_SESSION_MISMATCH", forbidden_path=fixture.root)
     _assert_tool_error(missing, "TASK_NOT_FOUND", forbidden_path=fixture.root)
     _assert_tool_error(conflict, "CONFLICT", forbidden_path=fixture.root)
+    # Beta surface: card writes are GLOBAL across boards.
+    assert cross_board["result"].get("isError") is not True, cross_board
+    assert cross_board["result"]["structuredContent"]["board"] == "other-board"
+    assert cross_board["result"]["structuredContent"]["author"] == "chatgpt_mcp"
+    assert after_cross != before_cross
     assert commented["result"]["structuredContent"]["author"] == "chatgpt_mcp"
     assert commented["result"]["structuredContent"]["board"] == fixture.board
     assert assigned["result"]["structuredContent"] == {

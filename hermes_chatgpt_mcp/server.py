@@ -212,6 +212,10 @@ def create_app(
     ) -> BoardHandle:
         try:
             if operation in {"create", "manage"}:
+                if beta:
+                    # Beta surface: card writes are global across all boards;
+                    # the requested board (or the default) is used directly.
+                    return board_resolver.resolve(board, operation=operation)
                 required_scope = (
                     auth_service.create_scope if operation == "create" else auth_service.manage_scope
                 )
@@ -281,11 +285,20 @@ def create_app(
         if token is None or scope not in token.scopes:
             raise tool_error("SCOPE_REQUIRED", f"scope required: {scope}")
 
+    def has_admin_scope() -> bool:
+        """True when the token carries the global hermes:board:create scope."""
+        token = get_access_token()
+        return token is not None and auth_service.board_create_scope in token.scopes
+
     def has_command_scope(scope: str, board: str | None = None) -> bool:
         token = get_access_token()
         if token is None or scope not in token.scopes:
             return False
-        return board is None or write_grant_board(scope) == board
+        if board is None or beta or has_admin_scope():
+            # Betas allows card writes on ANY board (global); a stable token is
+            # confined to its single granted board.
+            return True
+        return write_grant_board(scope) == board
 
     def write_grant_board(required_scope: str | None = None) -> str | None:
         token = get_access_token()
@@ -725,17 +738,12 @@ def create_app(
             admin_scope = auth_service.board_create_scope
             wants_admin = admin_scope in requested_set
             if wants_admin:
-                if form.get("scope_extra_manage"):
-                    raise OAuthError(
-                        "board administration cannot be combined with a board write grant in one consent; authorize twice",
-                        code="invalid_scope",
-                    )
-                # Admin consent wins over the client's default board-command
-                # scopes: emit read + hermes:board:create (+ offline), with no
-                # board claim and no board command scopes.
+                # One admin consent can carry read + hermes:board:create plus any
+                # requested command scopes (hermes:create / hermes:manage). Card
+                # writes become global (no single-board claim), so a single admin
+                # token can create a board and immediately work on it.
                 requested_scope = " ".join(
-                    scope for scope in auth_service.supported_scopes
-                    if scope in requested_set and scope not in command_scopes
+                    scope for scope in auth_service.supported_scopes if scope in requested_set
                 )
             elif access_mode == "write":
                 if not command_scopes.intersection(requested_scope.split()):

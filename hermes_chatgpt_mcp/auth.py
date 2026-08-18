@@ -188,9 +188,24 @@ class AuthService:
         has_board_administration_scope = self.board_create_scope in scopes
         if board_access not in {None, "write"}:
             raise OAuthError("invalid board access", code="invalid_request")
+        if self.settings.surface == "beta":
+            # Beta surface: card writes are GLOBAL across all boards. A board
+            # claim is optional and only informational (kept for compatibility
+            # with previously minted tokens); it never narrows the grant.
+            if board is not None and board_access != "write":
+                raise OAuthError("board grant must be write access", code="invalid_request")
+            return
         if has_board_administration_scope:
-            if has_command_scope or board is not None or board_access is not None:
-                raise OAuthError("board administration cannot carry a board claim", code="invalid_scope")
+            # The admin scope is intentionally global and can never carry a
+            # single-board claim on the stable surface. It MAY be paired with
+            # hermes:create / hermes:manage so one consent can create boards
+            # and write cards anywhere.
+            if board is not None or board_access is not None:
+                raise OAuthError(
+                    "board administration cannot carry a board claim; "
+                    "card writes are global when command scopes are combined",
+                    code="invalid_scope",
+                )
             return
         if has_command_scope:
             if board is None or board_access != "write":
@@ -840,8 +855,9 @@ class AuthService:
             scope_controls = (
                 "<fieldset><legend>Scopes adicionales (opcional)</legend>"
                 + "".join(parts)
-                + "<p>Nota: hermes:board:create no puede combinarse con un board de escritura;"
-                " si lo marcas, esta autorizacion sera solo lectura + administracion de boards.</p></fieldset>"
+                + "<p>Nota: hermes:board:create es global y no interioriza un board de"
+                " escritura; si lo incluyes, los scopes command (hermes:create/hermes:manage)"
+                " pasan a permitir escribir cards en CUALQUIER board con este mismo token.</p></fieldset>"
             )
         return (
             "<!doctype html><meta charset='utf-8'><title>Hermes MCP authorization</title>"

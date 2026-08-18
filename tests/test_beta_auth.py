@@ -79,3 +79,29 @@ def test_beta_board_administration_scope_never_carries_a_board_claim():
             board="board-a",
             board_access="write",
         )
+
+
+def test_admin_scope_combines_with_global_command_scopes_without_board_claim():
+    service = _service()
+    admin = service.issue_access_token(
+        client_id="admin-global",
+        subject="user",
+        scopes=["hermes:read", "hermes:create", "hermes:manage", "hermes:board:create"],
+    )
+    claims = service.verified_claims(admin)
+    assert claims is not None
+    assert "board" not in claims
+    verified = service.verify_token(admin)
+    assert verified is not None
+    assert verified.scopes == [
+        "hermes:read", "hermes:create", "hermes:manage", "hermes:board:create",
+    ]
+    # The admin scope still rejects a single-board claim.
+    with pytest.raises(OAuthError, match="cannot carry a board claim"):
+        service.issue_access_token(
+            client_id="admin-bad",
+            subject="user",
+            scopes=["hermes:read", "hermes:create", "hermes:board:create"],
+            board="board-a",
+            board_access="write",
+        )

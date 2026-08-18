@@ -414,11 +414,15 @@ async def _test_beta_selected_board_management_and_canonical_activity(tmp_path, 
     assert assigned == {"board": fixture.board, "task_id": "review-task", "assignee": "planner", "status": "review"}
     assert "created" in {event["kind"] for event in created_activity["events"]}
     assert {"commented", "assigned"}.issubset({event["kind"] for event in review_activity["events"]})
-    _assert_error(wrong_comment, "BOARD_SESSION_MISMATCH")
-    _assert_error(wrong_assignment, "BOARD_SESSION_MISMATCH")
-    assert board_b_after_task == board_b_before_task
-    assert board_b_after_activity == board_b_before_activity
-    assert after_denied_board == before_denied_board
+    # Beta surface (2026-08-18): card writes are GLOBAL across boards, so a
+    # board-scoped token may also manage the second canonical board.
+    assert wrong_comment["result"].get("isError") is not True, wrong_comment
+    assert wrong_comment["result"]["structuredContent"]["board"] == board_b.slug
+    assert wrong_comment["result"]["structuredContent"]["author"] == "chatgpt_mcp"
+    assert wrong_assignment["result"].get("isError") is not True, wrong_assignment
+    assert board_b_after_task["assignee"] == "planner"
+    assert {"commented", "assigned"}.issubset({event["kind"] for event in board_b_after_activity["events"]})
+    assert after_denied_board != before_denied_board
 
 
 def test_beta_read_tools_and_scope_denials_preserve_fixture_fingerprint(tmp_path, monkeypatch):
@@ -481,3 +485,70 @@ async def _test_beta_read_tools_and_scope_denials_preserve_fixture_fingerprint(t
     for result in denied_results:
         _assert_error(result, "SCOPE_REQUIRED")
     assert allowed_with_both["board"] == fixture.board
+
+
+def test_beta_admin_token_can_create_board_and_work_in_it(tmp_path, monkeypatch):
+    asyncio.run(_test_beta_admin_token_can_create_board_and_work_in_it(tmp_path, monkeypatch))
+
+
+async def _test_beta_admin_token_can_create_board_and_work_in_it(tmp_path, monkeypatch):
+    fixture, _, settings, auth, app = _beta_fixture(tmp_path, monkeypatch)
+    admin = _token(
+        auth,
+        "admin-global",
+        ["hermes:read", "hermes:create", "hermes:manage", "hermes:board:create"],
+    )
+    transport = httpx.ASGITransport(app=app)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=transport, base_url=settings.public_base_url) as client:
+            created = _assert_success(
+                await _rpc(
+                    client, admin, "tools/call",
+                    {"name": "create_board", "arguments": {"request": {
+                        "slug": "admin-probe", "name": "Admin Probe",
+                        "icon": "🧪", "color": "blue",
+                    }}},
+                    1,
+                )
+            )
+            assert created["slug"] == "admin-probe"
+
+            task = _assert_success(
+                await _rpc(
+                    client, admin, "tools/call",
+                    {"name": "create_task", "arguments": {"request": {
+                        "board": "admin-probe", "title": "first card",
+                        "body": "created by the same admin token that made the board",
+                        "idempotency_key": "admin-probe-1",
+                    }}},
+                    2,
+                )
+            )
+            assert task["board"] == "admin-probe"
+            task_id = task["task_id"]
+
+            comment = await _rpc(
+                client, admin, "tools/call",
+                {"name": "add_comment", "arguments": {"request": {
+                    "board": "admin-probe", "task_id": task_id, "body": "global admin comment",
+                }}},
+                3,
+            )
+            assert comment["result"].get("isError") is not True, comment
+
+            assigned = await _rpc(
+                client, admin, "tools/call",
+                {"name": "assign_task", "arguments": {"request": {
+                    "board": "admin-probe", "task_id": task_id, "assignee": "planner",
+                }}},
+                4,
+            )
+            assert assigned["result"].get("isError") is not True, assigned
+
+            view = await _rpc(
+                client, admin, "tools/call",
+                {"name": "get_board", "arguments": {"request": {"board": "admin-probe"}}},
+                5,
+            )
+            caps = view["result"]["structuredContent"]["capabilities"]
+            assert caps["read"] is True and caps["create"] is True and caps["manage"] is True
