@@ -954,34 +954,55 @@ def create_app(
             }
             admin_scope = auth_service.admin_scope
             wants_admin = admin_scope in requested_set
-            if wants_admin:
-                # Admin is separately consented and never inferred from board
-                # creation. Any command scopes remain bound to their selected
-                # board claim; admin-only grants are global.
-                requested_scope = " ".join(
-                    scope for scope in auth_service.supported_scopes if scope in requested_set
-                )
-            elif access_mode == "write":
-                if not command_scopes.intersection(requested_scope.split()):
-                    raise OAuthError(
-                        (
-                            "client did not request a board command scope; re-register the MCP client"
-                            if beta
-                            else "client did not request hermes:create; re-register the MCP client"
-                        ),
-                        code="invalid_scope",
-                    )
-                selected_board = form.get("board") or None
-                try:
-                    board_resolver.resolve(selected_board, operation="read")
-                except BoardResolutionError as exc:
-                    raise OAuthError("invalid board selection", code="invalid_request") from exc
-                write_grant = True
-            elif access_mode == "read":
+            # Honor access_mode before grant validation. Read mode (including
+            # the omitted/default case) strips command scopes even when the
+            # resource owner separately consented to hermes:admin: an admin
+            # grant is global and never carries a board claim. Write mode
+            # requires a selected board bound to at least one command scope;
+            # admin is retained as an independent elevated scope alongside it.
+            if access_mode == "read":
                 requested_scope = " ".join(
                     scope for scope in auth_service.supported_scopes
-                    if scope in requested_scope.split() and scope not in command_scopes
+                    if scope in requested_set and scope not in command_scopes
                 )
+            elif access_mode == "write":
+                if wants_admin:
+                    # Admin is separately consented and never inferred from
+                    # board creation. Strip the global admin scope from the
+                    # command-scoped grant; it is re-added independently below
+                    # and remains a global, board-claim-free scope.
+                    command_set = requested_set - {admin_scope}
+                    if not command_scopes.intersection(command_set):
+                        raise OAuthError(
+                            ("client did not request a board command scope; re-register the MCP client"
+                             if beta
+                             else "client did not request hermes:create; re-register the MCP client"),
+                            code="invalid_scope",
+                        )
+                    selected_board = form.get("board") or None
+                    try:
+                        board_resolver.resolve(selected_board, operation="read")
+                    except BoardResolutionError as exc:
+                        raise OAuthError("invalid board selection", code="invalid_request") from exc
+                    write_grant = True
+                    requested_scope = " ".join(
+                        scope for scope in auth_service.supported_scopes
+                        if scope in requested_set
+                    )
+                else:
+                    if not command_scopes.intersection(requested_scope.split()):
+                        raise OAuthError(
+                            ("client did not request a board command scope; re-register the MCP client"
+                             if beta
+                             else "client did not request hermes:create; re-register the MCP client"),
+                            code="invalid_scope",
+                        )
+                    selected_board = form.get("board") or None
+                    try:
+                        board_resolver.resolve(selected_board, operation="read")
+                    except BoardResolutionError as exc:
+                        raise OAuthError("invalid board selection", code="invalid_request") from exc
+                    write_grant = True
             else:
                 raise OAuthError("invalid access mode", code="invalid_request")
             code = auth_service.create_authorization_code(
