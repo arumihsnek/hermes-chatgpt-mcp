@@ -85,17 +85,19 @@ def test_beta_openresty_include_is_limited_to_the_beta_mcp_routes():
     assert "location = /.well-known/oauth-protected-resource" in include
     assert "location = /.well-known/oauth-authorization-server" in include
     assert "location ^~ /oauth/" in include
-    assert include.count("proxy_pass http://127.0.0.1:8791;") == 6
+    assert include.count("proxy_pass http://127.0.0.1:8791;") == 5
     assert "kanban.hermesinthenight.duckdns.org" not in include
     # Root POSTs must reach the MCP transport (ChatGPT connectors use the
     # declared server URL / OAuth issuer as the session endpoint) while
     # GET/HEAD keep serving the landing page, plus discovery fallback for
-    # connectors configured with a /mcp-suffixed URL. The named-location
-    # rewrite is required because a literal URI in proxy_pass is invalid
-    # inside named locations, and rewrite/set are invalid inside limit_except.
-    assert "location = / {\n    error_page 405 = @beta_mcp_root;" in include
-    assert "location @beta_mcp_root {" in include
-    assert "rewrite ^ /mcp break;" in include
+    # connectors configured with a /mcp-suffixed URL. A lone error_page 405
+    # does NOT fire for method-only locations, rewrite/set/proxy_* are invalid
+    # inside limit_except, and a literal URI in proxy_pass is invalid inside
+    # named locations. The only valid form is an if-guard on POST that rewrites
+    # to /mcp with `last`, which re-selects the /mcp location (already carrying
+    # all proxy directives) — so nothing is duplicated in the root location.
+    assert "if ($request_method = POST) {" in include
+    assert "rewrite ^ /mcp last;" in include
     assert "location ^~ /mcp/.well-known/ {" in include
     assert 'proxy_pass http://127.0.0.1:8791/.well-known/;' in include
 
