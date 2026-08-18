@@ -769,14 +769,19 @@ def create_app(
         # daemon leaf intentionally exposes a control snapshot, never a loop.
         register_canonical("init", InitInput, lambda h, r: CanonicalActionResult(board=h.slug, action="init", data={"ready": h.db_path.is_file()}), admin=True)
         register_canonical("swarm", SwarmInput, lambda h, r: CanonicalActionResult(board=h.slug, action="swarm", data={"goal": r.goal, "workers": r.workers}), admin=True)
-        register_canonical("dispatch", DispatchInput, lambda h, r: CanonicalActionResult(board=h.slug, action="dispatch", data={"dry_run": r.dry_run, "max_spawn": r.max_spawn}), admin=True)
+        register_canonical("dispatch", DispatchInput, lambda h, r: CanonicalActionResult(board=h.slug, action="dispatch", data=board_resolver.management_adapter(h).dispatch(dry_run=r.dry_run, max_spawn=r.max_spawn)), admin=True)
         register_canonical("daemon", DispatchInput, lambda h, r: CanonicalActionResult(board=h.slug, action="daemon", data={"bounded": True, "running": False}), admin=True)
-        register_canonical("decompose", DecomposeInput, lambda h, r: CanonicalActionResult(board=h.slug, action="decompose", data={"task_id": r.task_id, "titles": r.titles}), admin=True)
-        register_canonical("gc", DispatchInput, lambda h, r: CanonicalActionResult(board=h.slug, action="gc", data={"dry_run": r.dry_run}), admin=True)
-        register_canonical("repair", DispatchInput, lambda h, r: CanonicalActionResult(board=h.slug, action="repair", data={"dry_run": r.dry_run}), admin=True)
-        register_canonical("notify-subscribe", NotifySubscribeInput, lambda h, r: CanonicalActionResult(board=h.slug, action="notify-subscribe", data={"task_id": r.task_id, "subscribed": True}), admin=False)
-        register_canonical("notify-list", NotifyListInput, lambda h, r: CanonicalActionResult(board=h.slug, action="notify-list", data={"subscriptions": [], "count": 0}), scope=auth_service.read_scope)
-        register_canonical("notify-unsubscribe", NotifyUnsubscribeInput, lambda h, r: CanonicalActionResult(board=h.slug, action="notify-unsubscribe", data={"task_id": r.task_id, "unsubscribed": True}), admin=False)
+        register_canonical("decompose", DecomposeInput, lambda h, r: CanonicalActionResult(board=h.slug, action="decompose", data=board_resolver.management_adapter(h).decompose(r.task_id, r.titles, r.bodies)), admin=True)
+        register_canonical("gc", DispatchInput, lambda h, r: CanonicalActionResult(board=h.slug, action="gc", data=board_resolver.management_adapter(h).gc(dry_run=r.dry_run)), admin=True)
+        register_canonical("repair", DispatchInput, lambda h, r: CanonicalActionResult(board=h.slug, action="repair", data=board_resolver.management_adapter(h).repair()), admin=True)
+        register_canonical("notify-subscribe", NotifySubscribeInput, lambda h, r: CanonicalActionResult(board=h.slug, action="notify-subscribe", data=board_resolver.management_adapter(h).notify_subscribe(r.task_id, r.channel or "", r.filter)), admin=False)
+        def _notify_list_result(handle, request):
+            entries = board_resolver.management_adapter(handle).notify_list(request.limit)
+            return CanonicalActionResult(board=handle.slug, action="notify-list",
+                                         data={"subscriptions": entries, "count": len(entries)})
+
+        register_canonical("notify-list", NotifyListInput, lambda h, r: _notify_list_result(h, r), scope=auth_service.read_scope)
+        register_canonical("notify-unsubscribe", NotifyUnsubscribeInput, lambda h, r: CanonicalActionResult(board=h.slug, action="notify-unsubscribe", data=board_resolver.management_adapter(h).notify_unsubscribe(r.task_id, r.channel or "")), admin=False)
 
         # Board leaves are explicit and fail closed; the existing list_boards,
         # create_board, and get_board tools remain the mapped list/create/show.

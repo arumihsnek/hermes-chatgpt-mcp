@@ -587,3 +587,60 @@ class HermesCardManagementAdapter:
                 "assignee": task.assignee, "priority": int(getattr(task, "priority", 0) or 0),
                 "started_at": getattr(task, "started_at", None), "current_run_id": getattr(task, "current_run_id", None),
                 "claimed": bool(getattr(task, "claim_lock", None))}
+
+    @staticmethod
+    def _channel_parts(channel: str | None) -> tuple[str, str, str | None]:
+        if not channel:
+            raise ValueError("notification channel is required")
+        parts = channel.split(":", 2)
+        if len(parts) not in (2, 3) or not all(parts[:2]):
+            raise ValueError("notification channel must be platform:chat_id[:thread_id]")
+        return parts[0], parts[1], parts[2] or None
+
+    def notify_subscribe(self, task_id: str, channel: str, filter: str | None = None) -> dict[str, Any]:
+        platform, chat_id, thread_id = self._channel_parts(channel)
+        def op(conn):
+            if self.hermes.get_task(conn, task_id) is None:
+                raise ValueError(f"unknown task {task_id}")
+            self.hermes.add_notify_sub(conn, task_id=task_id, platform=platform, chat_id=chat_id,
+                                       thread_id=thread_id, delivery_mode=filter)
+            return {"task_id": task_id, "channel": channel, "subscribed": True}
+        return self._with_conn(op)
+
+    def notify_list(self, limit: int = 100) -> list[dict[str, Any]]:
+        return list(self._with_conn(lambda conn: self.hermes.list_notify_subs(conn)))[:limit]
+
+    def notify_unsubscribe(self, task_id: str, channel: str) -> dict[str, Any]:
+        platform, chat_id, thread_id = self._channel_parts(channel)
+        removed = self._with_conn(lambda conn: self.hermes.remove_notify_sub(
+            conn, task_id=task_id, platform=platform, chat_id=chat_id, thread_id=thread_id))
+        return {"task_id": task_id, "channel": channel, "unsubscribed": bool(removed)}
+
+    def dispatch(self, *, dry_run: bool = False, max_spawn: int | None = None) -> dict[str, Any]:
+        result = self._with_conn(lambda conn: self.hermes.dispatch_once(
+            conn, dry_run=dry_run, max_spawn=max_spawn, board=self.handle.slug))
+        return {"reclaimed": int(result.reclaimed), "promoted": int(result.promoted),
+                "spawned": [list(item) for item in result.spawned], "dry_run": dry_run}
+
+    def decompose(self, task_id: str, titles: list[str], bodies: list[str] | None = None) -> dict[str, Any]:
+        children = [{"title": title, "body": (bodies[index] if bodies and index < len(bodies) else None)}
+                    for index, title in enumerate(titles)]
+        child_ids = self._with_conn(lambda conn: self.hermes.decompose_triage_task(
+            conn, task_id, root_assignee=self.provenance, children=children, author=self.provenance))
+        if child_ids is None:
+            raise ValueError(f"cannot decompose task {task_id}")
+        return {"task_id": task_id, "parent_id": task_id, "child_ids": [str(value) for value in child_ids]}
+
+    def gc(self, *, dry_run: bool = False) -> dict[str, Any]:
+        if dry_run:
+            return {"cleaned_events": 0, "cleaned_logs": 0, "cleaned_temp": 0, "dry_run": True}
+        def op(conn):
+            return {"cleaned_events": int(self.hermes.gc_events(conn)),
+                    "cleaned_logs": int(self.hermes.gc_worker_logs(board=self.handle.slug)),
+                    "cleaned_temp": 0, "dry_run": False}
+        return self._with_conn(op)
+
+    def repair(self) -> dict[str, Any]:
+        result = self.hermes.repair_db(self.handle.db_path, board=self.handle.slug)
+        return {"repaired": result.status == "ok", "issues_fixed": len(result.messages),
+                "status": result.status}

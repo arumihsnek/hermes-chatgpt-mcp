@@ -376,3 +376,33 @@ def test_command_boundary_contains_no_sql_writes_and_only_expected_canonical_mut
         assert f"self.hermes.{name}" in source
     for factory in ("board_admin_adapter", "management_adapter"):
         assert f"def {factory}" in resolvers
+
+
+def test_notification_adapter_round_trip_uses_canonical_notify_api(tmp_path, monkeypatch):
+    fixture = make_hermes_fixture(tmp_path)
+    adapter = _management_adapter(fixture, monkeypatch)
+
+    subscribed = adapter.notify_subscribe("review-task", "telegram:chat-123:thread-9", "events")
+    assert subscribed == {
+        "task_id": "review-task",
+        "channel": "telegram:chat-123:thread-9",
+        "subscribed": True,
+    }
+    entries = adapter.notify_list()
+    assert any(item.get("task_id") == "review-task" for item in entries)
+    removed = adapter.notify_unsubscribe("review-task", "telegram:chat-123:thread-9")
+    assert removed["unsubscribed"] is True
+
+
+def test_notification_adapter_rejects_ambiguous_channel(tmp_path, monkeypatch):
+    fixture = make_hermes_fixture(tmp_path)
+    adapter = _management_adapter(fixture, monkeypatch)
+    with pytest.raises(ValueError, match="platform:chat_id"):
+        adapter.notify_subscribe("review-task", "telegram-only")
+
+
+def test_dispatch_adapter_is_one_bounded_canonical_cycle(tmp_path, monkeypatch):
+    fixture = make_hermes_fixture(tmp_path)
+    result = _management_adapter(fixture, monkeypatch).dispatch(dry_run=True, max_spawn=1)
+    assert result["dry_run"] is True
+    assert set(result) >= {"reclaimed", "promoted", "spawned", "dry_run"}
