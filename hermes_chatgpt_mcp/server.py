@@ -14,7 +14,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
 from starlette.requests import Request
 from starlette.middleware.cors import CORSMiddleware
-from starlette.routing import request_response
+from starlette.routing import Route, request_response
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from .adapter import HermesReadOnlyAdapter, TaskNotFoundError
@@ -391,7 +391,21 @@ def create_app(
     )
     async def get_board(request: BoardQuery) -> BoardView:
         handle = resolve_board(request.board, operation="read")
-        return await run_query(board_resolver.query_adapter(handle).get_board)
+        view = await run_query(board_resolver.query_adapter(handle).get_board)
+        can_create = (
+            has_command_scope(auth_service.create_scope, handle.slug)
+            and board_resolver.create_allowed(handle.slug)
+        )
+        view.capabilities = BetaBoardCapabilities(
+            read=True,
+            create=can_create,
+            manage=(
+                has_command_scope(auth_service.manage_scope, handle.slug)
+                if beta
+                else False
+            ),
+        )
+        return view
 
     @mcp.tool(
         name="list_tasks",
@@ -687,6 +701,20 @@ def create_app(
                 code_challenge_method=form.get("code_challenge_method", ""),
             )
             requested_scope = form.get("scope") or client.scope
+            extra_scope_values: list[str] = []
+            for name in ("scope_extra_manage", "scope_extra_admin"):
+                value = form.get(name)
+                if value:
+                    extra_scope_values.append(value)
+            if extra_scope_values:
+                # Widen the grant with scopes the resource owner explicitly
+                # ticked at consent time (narrow clients like ChatGPT only
+                # register with read+create; the human may grant more).
+                requested_scope = auth_service._scope_string(
+                    " ".join([requested_scope, *extra_scope_values]),
+                    allowed=set(auth_service.supported_scopes),
+                )
+            requested_set = set(requested_scope.split())
             access_mode = form.get("access_mode", "read")
             selected_board: str | None = None
             write_grant = False
@@ -694,7 +722,22 @@ def create_app(
                 auth_service.create_scope,
                 *({auth_service.manage_scope} if beta else set()),
             }
-            if access_mode == "write":
+            admin_scope = auth_service.board_create_scope
+            wants_admin = admin_scope in requested_set
+            if wants_admin:
+                if form.get("scope_extra_manage"):
+                    raise OAuthError(
+                        "board administration cannot be combined with a board write grant in one consent; authorize twice",
+                        code="invalid_scope",
+                    )
+                # Admin consent wins over the client's default board-command
+                # scopes: emit read + hermes:board:create (+ offline), with no
+                # board claim and no board command scopes.
+                requested_scope = " ".join(
+                    scope for scope in auth_service.supported_scopes
+                    if scope in requested_set and scope not in command_scopes
+                )
+            elif access_mode == "write":
                 if not command_scopes.intersection(requested_scope.split()):
                     raise OAuthError(
                         (
@@ -843,6 +886,18 @@ def create_app(
                 allow_headers=["MCP-Protocol-Version"],
             )
             break
+
+    # ChatGPT connectors use the declared server URL (the root, which is also
+    # the OAuth issuer/resource) as the streamable HTTP session endpoint after
+    # OAuth. Alias the root so the same transport serves POST / and POST /mcp;
+    # GET / keeps its non-MCP purpose. /mcp remains the canonical path.
+    mcp_route = next(
+        (route for route in app.routes if getattr(route, "path", None) == "/mcp"),
+        None,
+    )
+    if mcp_route is not None:
+        app.routes.append(Route("/", endpoint=mcp_route.endpoint, methods=["POST"]))
+
     app.state.hermes_mcp_auth = auth_service
     app.state.hermes_mcp = mcp
     app.state.hermes_mcp_settings = settings

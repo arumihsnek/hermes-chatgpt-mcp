@@ -75,6 +75,15 @@ async def _test_every_mcp_tool_preserves_fixture_state(tmp_path):
                 assert result["result"].get("isError") is not True, (name, result)
                 assert after == before, name
 
+            board_view = await _rpc(
+                client, token, "tools/call",
+                {"name": "get_board", "arguments": {"request": {}}}, 99,
+            )
+            caps = board_view["result"]["structuredContent"]["capabilities"]
+            assert caps["read"] is True
+            assert caps["create"] is False  # read-only token
+            assert "manage" in caps
+
 
 def test_unknown_task_and_unknown_tool_are_sanitized(tmp_path):
     asyncio.run(_test_unknown_task_and_unknown_tool_are_sanitized(tmp_path))

@@ -53,6 +53,15 @@ class HermesCreateAdapter:
             db_path=self.store.db_path,
             board=self.store.board,
         ) as conn:
+            replay = False
+            if idempotency_key:
+                # Detect an idempotent replay before Hermes' canonical create
+                # so the result can distinguish "new row" from "reused row".
+                existing = conn.execute(
+                    "SELECT id FROM tasks WHERE idempotency_key = ? AND status != 'archived' ORDER BY created_at ASC LIMIT 1",
+                    (idempotency_key,),
+                ).fetchone()
+                replay = existing is not None
             task_id = self.hermes.create_task(
                 conn,
                 title=title,
@@ -76,9 +85,10 @@ class HermesCreateAdapter:
 
         return CreateTaskResult(
             # Hermes' idempotency contract may return an existing non-archived
-            # task. In both cases the requested resource is now available and
-            # the operation completed successfully; the task ID is authoritative.
-            created=True,
+            # task. The task ID is authoritative; ``created`` distinguishes a
+            # fresh row from an idempotent replay.
+            created=not replay,
+            idempotent_replay=replay,
             task_id=str(task.id),
             board=self.store.board,
             title=str(task.title),

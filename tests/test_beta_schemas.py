@@ -16,6 +16,7 @@ from hermes_chatgpt_mcp.schemas import (
     CreateBoardInput,
     CreateBoardResult,
     GlobalCapabilities,
+    TaskOrder,
 )
 
 
@@ -38,6 +39,21 @@ def test_beta_capabilities_and_list_are_separate_from_stable_wire_shape():
     assert set(BetaBoardCapabilities.model_fields) == {"read", "create", "manage"}
     assert set(BoardCapabilities.model_fields) == {"read", "create"}
     assert set(BetaBoardSummary.model_fields) >= {"capabilities"}
+
+
+def test_task_order_exposes_canonical_created_keys():
+    assert TaskOrder.CREATED.value == "created"
+    assert TaskOrder.CREATED_DESC.value == "created-desc"
+    assert TaskOrder.CREATED_AT.value == "created_at"
+
+
+def test_board_icon_accepts_emoji_and_rejects_control_or_slash():
+    ok = CreateBoardInput(slug="probe-x", name="Probe", icon="🧪", color="blue")
+    assert ok.icon == "🧪"
+    with pytest.raises(ValidationError):
+        CreateBoardInput(slug="probe-x", icon="a/b")
+    with pytest.raises(ValidationError):
+        CreateBoardInput(slug="probe-x", icon="a\nb")
 
 
 def test_create_board_input_accepts_bounded_safe_metadata():

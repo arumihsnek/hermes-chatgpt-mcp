@@ -148,6 +148,9 @@ class HermesReadOnlyAdapter:
                    order_by: str = "priority") -> TaskListView:
         if limit < 1 or limit > 100:
             raise ValueError("limit must be between 1 and 100")
+        if order_by == "created_at":
+            # Convenience alias for the canonical order key.
+            order_by = "created"
         with self.store.connect() as conn:
             tasks = self.hermes.list_tasks(
                 conn,

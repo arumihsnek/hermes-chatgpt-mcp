@@ -511,3 +511,126 @@ async def _test_oauth_http_pkce_flow_and_refresh_rotation(tmp_path):
             })
             assert refresh.status_code == 200
             assert refresh.json()["refresh_token"] != token_data["refresh_token"]
+
+
+def test_beta_oauth_consent_can_escalate_manage_and_board_create(tmp_path, monkeypatch):
+    asyncio.run(_test_beta_oauth_consent_can_escalate_manage_and_board_create(tmp_path, monkeypatch))
+
+
+async def _test_beta_oauth_consent_can_escalate_manage_and_board_create(tmp_path, monkeypatch):
+    fixture = make_hermes_fixture(tmp_path)
+    monkeypatch.setenv("HERMES_KANBAN_HOME", str(fixture.root))
+    settings = replace(
+        _settings(),
+        hermes_kanban_home=fixture.root,
+        default_board=fixture.board,
+        kanban_read_boards=None,
+        kanban_create_boards=None,
+        oauth_state_file=tmp_path / "beta-consent-escalation-state.json",
+        surface="beta",
+        board_create_enabled=True,
+    )
+    auth = AuthService(settings)
+    resolver = HermesBoardResolver(settings, hermes_module=kanban_db)
+    app = create_app(board_resolver=resolver, settings=settings, auth_service=auth, surface="beta")
+    callback = "https://chatgpt.com/connector/oauth/callback"
+    transport = httpx.ASGITransport(app=app)
+
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=transport, base_url=settings.public_base_url, follow_redirects=False) as client:
+            registration = await client.post(
+                "/oauth/register",
+                json={
+                    "client_name": "ChatGPT narrow",
+                    "redirect_uris": [callback],
+                    "token_endpoint_auth_method": "none",
+                    "grant_types": ["authorization_code"],
+                    "response_types": ["code"],
+                    "scope": "hermes:read hermes:create",
+                },
+            )
+            assert registration.status_code == 201, registration.text
+            client_data = registration.json()
+            assert client_data["scope"] == "hermes:read hermes:create"
+
+            def params(state: str) -> tuple[str, dict]:
+                verifier = "verifier-" + state[:10] + "x" * 28
+                challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+                return verifier, {
+                    "response_type": "code",
+                    "client_id": client_data["client_id"],
+                    "redirect_uri": callback,
+                    "scope": "hermes:read hermes:create",
+                    "state": state,
+                    "code_challenge": challenge,
+                    "code_challenge_method": "S256",
+                    "resource": settings.public_base_url,
+                }
+
+            # Scenario A: escalate hermes:manage at consent; token carries the
+            # manage scope with a board write grant.
+            verifier_a, params_a = params("state-escalate-manage")
+            approved_a = await client.post(
+                "/oauth/authorize",
+                data={
+                    **params_a,
+                    "username": "chatgpt",
+                    "password": "correct horse battery staple",
+                    "access_mode": "write",
+                    "board": fixture.board,
+                    "scope_extra_manage": "hermes:manage",
+                },
+            )
+            assert approved_a.status_code == 303, approved_a.text
+            code_a = parse_qs(urlsplit(approved_a.headers["location"]).query)["code"][0]
+            token_a = await client.post(
+                "/oauth/token",
+                data={
+                    "grant_type": "authorization_code",
+                    "client_id": client_data["client_id"],
+                    "code": code_a,
+                    "redirect_uri": callback,
+                    "code_verifier": verifier_a,
+                },
+            )
+            assert token_a.status_code == 200, token_a.text
+            body_a = token_a.json()
+            assert "hermes:manage" in body_a["scope"].split()
+            claims_a = auth.verified_claims(body_a["access_token"])
+            assert claims_a is not None
+            assert claims_a["board"] == fixture.board
+            assert claims_a["board_access"] == "write"
+
+            # Scenario B: escalate hermes:board:create at consent; token is an
+            # admin grant with no board claim and no board command scopes.
+            verifier_b, params_b = params("state-escalate-admin")
+            approved_b = await client.post(
+                "/oauth/authorize",
+                data={
+                    **params_b,
+                    "username": "chatgpt",
+                    "password": "correct horse battery staple",
+                    "access_mode": "read",
+                    "scope_extra_admin": "hermes:board:create",
+                },
+            )
+            assert approved_b.status_code == 303, approved_b.text
+            code_b = parse_qs(urlsplit(approved_b.headers["location"]).query)["code"][0]
+            token_b = await client.post(
+                "/oauth/token",
+                data={
+                    "grant_type": "authorization_code",
+                    "client_id": client_data["client_id"],
+                    "code": code_b,
+                    "redirect_uri": callback,
+                    "code_verifier": verifier_b,
+                },
+            )
+            assert token_b.status_code == 200, token_b.text
+            body_b = token_b.json()
+            scope_b = body_b["scope"].split()
+            assert "hermes:board:create" in scope_b
+            assert "hermes:create" not in scope_b
+            claims_b = auth.verified_claims(body_b["access_token"])
+            assert claims_b is not None
+            assert "board" not in claims_b

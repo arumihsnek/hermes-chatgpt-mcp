@@ -130,7 +130,11 @@ async def _test_create_task_scope_isolation_and_real_command_path(tmp_path):
                 {"name": "create_task", "arguments": {"request": {"title": "different title", "idempotency_key": "mcp-integration-1"}}},
                 5,
             )
-            assert duplicate["result"]["structuredContent"]["task_id"] == task_id
+            assert duplicate["result"].get("isError") is not True, duplicate
+            dup_payload = duplicate["result"]["structuredContent"]
+            assert dup_payload["task_id"] == task_id
+            assert dup_payload["created"] is False
+            assert dup_payload["idempotent_replay"] is True
 
             read_back = await _rpc(
                 client,

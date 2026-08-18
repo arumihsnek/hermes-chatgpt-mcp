@@ -810,7 +810,16 @@ class AuthService:
         board_command_scopes = {self.create_scope}
         if self.manage_scope in self.supported_scopes:
             board_command_scopes.add(self.manage_scope)
-        write_available = bool(requested_scopes & board_command_scopes)
+        # The resource owner may widen a narrow client grant (e.g. ChatGPT
+        # registers with read+create) at consent time without a client-side
+        # re-registration. Each optional scope gets its own checkbox field.
+        scope_extras: list[tuple[str, str]] = []
+        if self.manage_scope in self.supported_scopes and self.manage_scope not in requested_scopes:
+            scope_extras.append(("scope_extra_manage", self.manage_scope))
+        if self.board_create_scope in self.supported_scopes and self.board_create_scope not in requested_scopes:
+            scope_extras.append(("scope_extra_admin", self.board_create_scope))
+        potential_scopes = set(requested_scopes) | {scope for _, scope in scope_extras}
+        write_available = bool(potential_scopes & board_command_scopes)
         access_controls = (
             "<fieldset><legend>Access</legend>"
             "<label><input type='radio' name='access_mode' value='read' checked> Read all boards</label>"
@@ -819,12 +828,27 @@ class AuthService:
             if write_available and options
             else "<p>read-only access to all boards.</p>"
         )
+        scope_controls = ""
+        if scope_extras:
+            parts = [
+                (
+                    f"<label><input type='checkbox' name='{name}' value='{html.escape(scope)}'> "
+                    f"Permitir tambien el scope {html.escape(scope)}</label>"
+                )
+                for name, scope in scope_extras
+            ]
+            scope_controls = (
+                "<fieldset><legend>Scopes adicionales (opcional)</legend>"
+                + "".join(parts)
+                + "<p>Nota: hermes:board:create no puede combinarse con un board de escritura;"
+                " si lo marcas, esta autorizacion sera solo lectura + administracion de boards.</p></fieldset>"
+            )
         return (
             "<!doctype html><meta charset='utf-8'><title>Hermes MCP authorization</title>"
             "<h1>Authorize Hermes MCP access</h1>"
             "<p>read-only access covers all active Hermes boards. Write access is limited to one board selected below.</p>"
             '<form method="post" action="/oauth/authorize">'
-            f"{hidden}{access_controls}<label>Username <input name='username' autocomplete='username'></label>"
+            f"{hidden}{access_controls}{scope_controls}<label>Username <input name='username' autocomplete='username'></label>"
             "<label>Password <input type='password' name='password' autocomplete='current-password'></label>"
             "<button type='submit'>Authorize</button></form>"
         )
