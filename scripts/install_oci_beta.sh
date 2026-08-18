@@ -355,6 +355,10 @@ PY
 sudo -n chown ubuntu:ubuntu "$env_file"
 sudo -n chmod 0600 "$env_file"
 
+# Install the beta package into the dedicated venv so the running service
+# picks up the current worktree source (editable = live source).
+sudo -n /opt/venvs/hermes-chatgpt-mcp/bin/pip install -e "$candidate_worktree" --quiet
+
 sudo -n systemctl daemon-reload
 sudo -n systemctl enable "$service_name"
 service_started_by_installer=1
