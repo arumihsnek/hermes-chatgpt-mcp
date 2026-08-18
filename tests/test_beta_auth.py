@@ -40,6 +40,20 @@ def test_beta_registration_default_does_not_grant_board_administration():
 
     assert client["scope"] == "hermes:read hermes:create"
     assert "hermes:board:create" not in client["scope"].split()
+    assert "hermes:admin" not in client["scope"].split()
+
+
+def test_beta_admin_scope_is_supported_but_requires_explicit_consent():
+    service = _service()
+    assert "hermes:admin" in service.supported_scopes
+    token = service.issue_access_token(
+        client_id="administrator",
+        subject="user",
+        scopes=["hermes:read", "hermes:admin"],
+    )
+    verified = service.verify_token(token)
+    assert verified is not None
+    assert "hermes:admin" in verified.scopes
 
 
 def test_beta_management_scope_requires_one_write_board_grant():
