@@ -87,6 +87,16 @@ def test_beta_openresty_include_is_limited_to_the_beta_mcp_routes():
     assert "location ^~ /oauth/" in include
     assert include.count("proxy_pass http://127.0.0.1:8791;") == 5
     assert "kanban.hermesinthenight.duckdns.org" not in include
+    # Root POSTs must reach the MCP transport (ChatGPT connectors use the
+    # declared server URL / OAuth issuer as the session endpoint) while
+    # GET/HEAD keep serving the landing page, plus discovery fallback for
+    # connectors configured with a /mcp-suffixed URL.
+    assert "location = / {\n    error_page 405 = @beta_mcp_root;" in include
+    assert "location @beta_mcp_root {" in include
+    assert 'proxy_pass http://127.0.0.1:8791/mcp;' in include
+    assert "location ^~ /mcp/.well-known/ {" in include
+    assert 'proxy_pass http://127.0.0.1:8791/.well-known/;' in include
+    assert include.count("proxy_pass http://127.0.0.1:8791;") == 5
 
 
 def test_beta_installer_keeps_credentials_private_and_never_restarts_stable():
