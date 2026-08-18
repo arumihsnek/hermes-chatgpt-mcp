@@ -374,7 +374,7 @@ async def _test_beta_capability_projection_is_scope_and_board_bound(tmp_path, mo
     assert managed_boards["other-board"]["capabilities"] == {
         "read": True,
         "create": False,
-        "manage": True,  # beta surface: hermes:manage applies to every board
+        "manage": False,
     }
     assert managed_payload["global_capabilities"] == {"create_board": False}
     administrative_payload = administrative["result"]["structuredContent"]
@@ -659,11 +659,8 @@ async def _test_management_commands_are_global_on_beta_and_return_safe_errors(tm
 
     _assert_tool_error(missing, "TASK_NOT_FOUND", forbidden_path=fixture.root)
     _assert_tool_error(conflict, "CONFLICT", forbidden_path=fixture.root)
-    # Beta surface: card writes are GLOBAL across boards.
-    assert cross_board["result"].get("isError") is not True, cross_board
-    assert cross_board["result"]["structuredContent"]["board"] == "other-board"
-    assert cross_board["result"]["structuredContent"]["author"] == "chatgpt_mcp"
-    assert after_cross != before_cross
+    _assert_tool_error(cross_board, "BOARD_SESSION_MISMATCH", forbidden_path=fixture.root)
+    assert after_cross == before_cross
     assert commented["result"]["structuredContent"]["author"] == "chatgpt_mcp"
     assert commented["result"]["structuredContent"]["board"] == fixture.board
     assert assigned["result"]["structuredContent"] == {
