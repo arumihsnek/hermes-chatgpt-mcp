@@ -8,6 +8,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 BoardSlug = Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")]
 TaskId = Annotated[str, Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")]
+BoardMetadata = Annotated[str, Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9#][A-Za-z0-9 ._:#-]{0,127}$")]
+# Display-only icon/color: permits unicode incl. emoji; blocks control chars and slashes.
+BoardIcon = Annotated[str, Field(min_length=1, max_length=128, pattern=r"^[^\x00-\x1f\x7f/]{1,128}$")]
 
 
 class StrictModel(BaseModel):
@@ -33,6 +36,9 @@ class TaskOrder(str, Enum):
     ASSIGNEE = "assignee"
     TITLE = "title"
     UPDATED = "updated"
+    CREATED = "created"
+    CREATED_DESC = "created-desc"
+    CREATED_AT = "created_at"  # convenience alias for CREATED (mapped in the adapter)
 
 
 class BoardQuery(StrictModel):
@@ -60,10 +66,80 @@ class BoardListView(StrictModel):
     default_board: BoardSlug
 
 
+class BetaBoardCapabilities(StrictModel):
+    read: bool
+    create: bool
+    manage: bool
+
+
+class GlobalCapabilities(StrictModel):
+    create_board: bool
+
+
+class BetaBoardSummary(StrictModel):
+    slug: BoardSlug
+    name: str = Field(min_length=1, max_length=512)
+    description: str = Field(default="", max_length=2_000)
+    project_id: str | None = Field(default=None, max_length=128)
+    created_at: int | None = None
+    is_default: bool
+    task_counts: dict[str, int] = Field(default_factory=dict)
+    capabilities: BetaBoardCapabilities
+
+
+class BetaBoardListView(StrictModel):
+    items: list[BetaBoardSummary] = Field(max_length=50)
+    default_board: BoardSlug
+    global_capabilities: GlobalCapabilities
+
+
 AssigneeName = Annotated[str, Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")]
 TenantName = Annotated[str, Field(min_length=1, max_length=128)]
 SessionId = Annotated[str, Field(min_length=1, max_length=256)]
 IdempotencyKey = Annotated[str, Field(min_length=1, max_length=256, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$")]
+
+
+class CreateBoardInput(StrictModel):
+    slug: BoardSlug
+    name: str | None = Field(default=None, min_length=1, max_length=512)
+    description: str | None = Field(default=None, max_length=2_000)
+    icon: BoardIcon | None = None
+    color: BoardIcon | None = None
+
+
+class CreateBoardResult(StrictModel):
+    slug: BoardSlug
+    name: str = Field(min_length=1, max_length=512)
+    description: str = Field(max_length=2_000)
+    icon: BoardIcon | None = None
+    color: BoardIcon | None = None
+    created: bool
+    is_default: bool
+
+
+class AddCommentInput(BoardQuery):
+    task_id: TaskId
+    body: str = Field(min_length=1, max_length=16_000)
+
+
+class AddCommentResult(StrictModel):
+    board: BoardSlug
+    task_id: TaskId
+    comment_id: int
+    author: str
+    created_at: int
+
+
+class AssignTaskInput(BoardQuery):
+    task_id: TaskId
+    assignee: AssigneeName
+
+
+class AssignTaskResult(StrictModel):
+    board: BoardSlug
+    task_id: TaskId
+    assignee: AssigneeName
+    status: str
 
 
 class CreateTaskInput(BoardQuery):
@@ -167,6 +243,7 @@ class BoardView(StrictModel):
     assignee_counts: dict[str, dict[str, int]] = Field(default_factory=dict)
     oldest_ready_age_seconds: int | None = None
     generated_at: int | None = None
+    capabilities: BetaBoardCapabilities | None = None
 
 
 class TaskListView(StrictModel):
@@ -229,6 +306,9 @@ class ActivityView(StrictModel):
 
 class CreateTaskResult(StrictModel):
     created: bool
+    # True when the create returned an existing task matching the same
+    # idempotency_key (no new row written).
+    idempotent_replay: bool = False
     task_id: str
     board: str
     title: str

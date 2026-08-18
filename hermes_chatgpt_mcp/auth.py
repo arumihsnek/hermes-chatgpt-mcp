@@ -63,6 +63,38 @@ class _Refresh:
     board_access: str | None = None
 
 
+@dataclass(frozen=True)
+class AuthPolicy:
+    read_scope: str
+    create_scope: str
+    manage_scope: str
+    board_create_scope: str
+    offline_scope: str
+    supported_scopes: tuple[str, ...]
+    registration_defaults: tuple[str, ...]
+
+
+STABLE_AUTH_POLICY = AuthPolicy(
+    read_scope="hermes:read",
+    create_scope="hermes:create",
+    manage_scope="hermes:manage",
+    board_create_scope="hermes:board:create",
+    offline_scope="offline_access",
+    supported_scopes=("hermes:read", "hermes:create", "offline_access"),
+    registration_defaults=("hermes:read", "hermes:create"),
+)
+
+BETA_AUTH_POLICY = AuthPolicy(
+    read_scope="hermes:read",
+    create_scope="hermes:create",
+    manage_scope="hermes:manage",
+    board_create_scope="hermes:board:create",
+    offline_scope="offline_access",
+    supported_scopes=("hermes:read", "hermes:create", "hermes:manage", "hermes:board:create", "offline_access"),
+    registration_defaults=("hermes:read", "hermes:create"),
+)
+
+
 def _b64(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
@@ -91,8 +123,17 @@ class AuthService:
     _state_version = 2
     _board_pattern = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, policy: AuthPolicy | None = None) -> None:
         self.settings = settings
+        policy = policy or (BETA_AUTH_POLICY if settings.surface == "beta" else STABLE_AUTH_POLICY)
+        self.policy = policy
+        self.scope = policy.read_scope
+        self.read_scope = policy.read_scope
+        self.create_scope = policy.create_scope
+        self.manage_scope = policy.manage_scope
+        self.board_create_scope = policy.board_create_scope
+        self.offline_scope = policy.offline_scope
+        self.supported_scopes = policy.supported_scopes
         self._clients: dict[str, _Client] = {}
         self._codes: dict[str, _Code] = {}
         self._refresh_tokens: dict[str, _Refresh] = {}
@@ -120,9 +161,8 @@ class AuthService:
             return None
         return self._token_payload(token)
 
-    @classmethod
     def _scope_string(
-        cls,
+        self,
         value: str | None,
         *,
         default: str | None = None,
@@ -130,12 +170,49 @@ class AuthService:
     ) -> str:
         raw = (value or default or "").split()
         scopes = tuple(dict.fromkeys(raw))
-        allowed_scopes = allowed or set(cls.supported_scopes)
+        allowed_scopes = allowed or set(self.supported_scopes)
         if not scopes or not set(scopes).issubset(allowed_scopes):
             raise OAuthError("unsupported scope", code="invalid_scope")
-        if cls.create_scope in scopes and cls.read_scope not in scopes:
+        if self.create_scope in scopes and self.read_scope not in scopes:
             raise OAuthError("hermes:create requires hermes:read", code="invalid_scope")
-        return " ".join(scope for scope in cls.supported_scopes if scope in scopes)
+        if self.manage_scope in scopes and self.read_scope not in scopes:
+            raise OAuthError("hermes:manage requires hermes:read", code="invalid_scope")
+        if self.board_create_scope in scopes and self.read_scope not in scopes:
+            raise OAuthError("hermes:board:create requires hermes:read", code="invalid_scope")
+        return " ".join(scope for scope in self.supported_scopes if scope in scopes)
+
+    def _validate_grant(self, scope_value: str, board: str | None, board_access: str | None) -> None:
+        scopes = set(scope_value.split())
+        command_scopes = {self.create_scope, self.manage_scope}
+        has_command_scope = bool(scopes & command_scopes)
+        has_board_administration_scope = self.board_create_scope in scopes
+        if board_access not in {None, "write"}:
+            raise OAuthError("invalid board access", code="invalid_request")
+        if self.settings.surface == "beta":
+            # Beta surface: card writes are GLOBAL across all boards. A board
+            # claim is optional and only informational (kept for compatibility
+            # with previously minted tokens); it never narrows the grant.
+            if board is not None and board_access != "write":
+                raise OAuthError("board grant must be write access", code="invalid_request")
+            return
+        if has_board_administration_scope:
+            # The admin scope is intentionally global and can never carry a
+            # single-board claim on the stable surface. It MAY be paired with
+            # hermes:create / hermes:manage so one consent can create boards
+            # and write cards anywhere.
+            if board is not None or board_access is not None:
+                raise OAuthError(
+                    "board administration cannot carry a board claim; "
+                    "card writes are global when command scopes are combined",
+                    code="invalid_scope",
+                )
+            return
+        if has_command_scope:
+            if board is None or board_access != "write":
+                raise OAuthError("command scope requires a selected board", code="invalid_scope")
+            return
+        if board is not None or board_access is not None:
+            raise OAuthError("board grant must be write access", code="invalid_request")
 
     @staticmethod
     def _client_from_state(value: object) -> _Client | None:
@@ -227,16 +304,9 @@ class AuthService:
                 if normalized_scope != refresh.scope:
                     refresh.scope = normalized_scope
                     migrate_state = True
-                scopes = set(normalized_scope.split())
-                # v0.2 could persist a refresh token with hermes:create even
-                # though no board claim existed yet. Keep the service and all
-                # safe read grants available, but discard that unbound write
-                # grant instead of manufacturing a board during migration.
-                if refresh.board_access == "write":
-                    if refresh.board is None or self.create_scope not in scopes:
-                        migrate_state = True
-                        continue
-                elif refresh.board is not None or self.create_scope in scopes:
+                try:
+                    self._validate_grant(normalized_scope, refresh.board, refresh.board_access)
+                except OAuthError:
                     migrate_state = True
                     continue
                 loaded_refresh[digest] = refresh
@@ -352,7 +422,7 @@ class AuthService:
             if raw_scope:
                 requested_scope = self._scope_string(str(raw_scope))
             else:
-                default_scopes = [self.read_scope, self.create_scope]
+                default_scopes = list(self.policy.registration_defaults)
                 if "refresh_token" in grant_types:
                     default_scopes.append(self.offline_scope)
                 requested_scope = self._scope_string(" ".join(default_scopes))
@@ -375,7 +445,7 @@ class AuthService:
             self.settings,
             "dcr",
             client_fp=fingerprint(client_id),
-            requested_scopes=scope_summary(payload.get("scope") or self.scope, self.supported_scopes),
+            requested_scopes=scope_summary(payload.get("scope") or self.read_scope, self.supported_scopes),
             granted_scopes=scope_summary(requested_scope, self.supported_scopes),
             allowed_scopes=scope_summary(requested_scope, self.supported_scopes),
             redirect=redirect_identity(redirects[0]),
@@ -438,16 +508,14 @@ class AuthService:
         )
         scope_value = self._scope_string(scope, default=client.scope, allowed=set(self.supported_scopes))
         board = self._validate_board(board)
+        command_scopes = {self.create_scope, self.manage_scope}
         if write_grant:
-            if board is None or self.create_scope not in scope_value.split():
-                raise OAuthError("write board grant requires hermes:create and board", code="invalid_scope")
+            if board is None or not (command_scopes & set(scope_value.split())):
+                raise OAuthError("write board grant requires a command scope and board", code="invalid_scope")
             board_access = "write"
         else:
-            if board is not None:
-                raise OAuthError("read-only grant cannot select a write board", code="invalid_request")
-            if self.create_scope in scope_value.split():
-                raise OAuthError("write scope requires a selected board", code="invalid_scope")
             board_access = None
+        self._validate_grant(scope_value, board, board_access)
         grant_id = secrets.token_urlsafe(18)
         code = secrets.token_urlsafe(32)
         flow_fp = request_fingerprint(client_id, redirect_uri, scope_value, code_challenge)
@@ -493,14 +561,7 @@ class AuthService:
     ) -> str:
         scope_value = self._scope_string(" ".join(scopes or [self.scope]))
         board = self._validate_board(board)
-        if board_access not in {None, "write"}:
-            raise OAuthError("invalid board access", code="invalid_request")
-        if board_access == "write" and (board is None or self.create_scope not in scope_value.split()):
-            raise OAuthError("write board grant requires hermes:create", code="invalid_scope")
-        if self.create_scope in scope_value.split() and board_access != "write":
-            raise OAuthError("hermes:create requires a selected board", code="invalid_scope")
-        if board is not None and board_access != "write":
-            raise OAuthError("board grant must be write access", code="invalid_request")
+        self._validate_grant(scope_value, board, board_access)
         grant_id = grant_id or secrets.token_urlsafe(18)
         with self._lock:
             revoked = grant_id in self._revoked_grants
@@ -760,7 +821,20 @@ class AuthService:
                 f'{html.escape(str(item.get("name") or slug))}</option>'
             )
         board_select = "".join(option_parts)
-        write_available = self.create_scope in query.get("scope", "").split()
+        requested_scopes = set(query.get("scope", "").split())
+        board_command_scopes = {self.create_scope}
+        if self.manage_scope in self.supported_scopes:
+            board_command_scopes.add(self.manage_scope)
+        # The resource owner may widen a narrow client grant (e.g. ChatGPT
+        # registers with read+create) at consent time without a client-side
+        # re-registration. Each optional scope gets its own checkbox field.
+        scope_extras: list[tuple[str, str]] = []
+        if self.manage_scope in self.supported_scopes and self.manage_scope not in requested_scopes:
+            scope_extras.append(("scope_extra_manage", self.manage_scope))
+        if self.board_create_scope in self.supported_scopes and self.board_create_scope not in requested_scopes:
+            scope_extras.append(("scope_extra_admin", self.board_create_scope))
+        potential_scopes = set(requested_scopes) | {scope for _, scope in scope_extras}
+        write_available = bool(potential_scopes & board_command_scopes)
         access_controls = (
             "<fieldset><legend>Access</legend>"
             "<label><input type='radio' name='access_mode' value='read' checked> Read all boards</label>"
@@ -769,12 +843,28 @@ class AuthService:
             if write_available and options
             else "<p>read-only access to all boards.</p>"
         )
+        scope_controls = ""
+        if scope_extras:
+            parts = [
+                (
+                    f"<label><input type='checkbox' name='{name}' value='{html.escape(scope)}'> "
+                    f"Permitir tambien el scope {html.escape(scope)}</label>"
+                )
+                for name, scope in scope_extras
+            ]
+            scope_controls = (
+                "<fieldset><legend>Scopes adicionales (opcional)</legend>"
+                + "".join(parts)
+                + "<p>Nota: hermes:board:create es global y no interioriza un board de"
+                " escritura; si lo incluyes, los scopes command (hermes:create/hermes:manage)"
+                " pasan a permitir escribir cards en CUALQUIER board con este mismo token.</p></fieldset>"
+            )
         return (
             "<!doctype html><meta charset='utf-8'><title>Hermes MCP authorization</title>"
             "<h1>Authorize Hermes MCP access</h1>"
             "<p>read-only access covers all active Hermes boards. Write access is limited to one board selected below.</p>"
             '<form method="post" action="/oauth/authorize">'
-            f"{hidden}{access_controls}<label>Username <input name='username' autocomplete='username'></label>"
+            f"{hidden}{access_controls}{scope_controls}<label>Username <input name='username' autocomplete='username'></label>"
             "<label>Password <input type='password' name='password' autocomplete='current-password'></label>"
             "<button type='submit'>Authorize</button></form>"
         )

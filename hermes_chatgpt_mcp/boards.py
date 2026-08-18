@@ -12,6 +12,15 @@ from .hermes import ReadOnlyHermesStore, load_kanban_module
 _LEGACY_DEFAULT_SLUG = "default"
 
 
+def _canonical_board_slug(slug: str) -> str:
+    """Apply Hermes' strip/lower identity rule before route or command locks."""
+    normalized = str(slug).strip().lower()
+    try:
+        return ReadOnlyHermesStore.validate_board_slug(normalized)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("invalid board slug") from exc
+
+
 class BoardResolutionError(LookupError):
     """A safe, stable error raised while resolving an MCP board request."""
 
@@ -101,7 +110,7 @@ class HermesBoardResolver:
             entries = self.hermes.list_boards(include_archived=False)
         except Exception as exc:
             raise ConfigurationError("Hermes canonical board discovery is unavailable") from exc
-        if not isinstance(entries, list) or len(entries) > self.max_board_count:
+        if not isinstance(entries, list):
             raise ConfigurationError("Hermes board count exceeds the configured MCP bound")
         result: list[dict[str, Any]] = []
         seen: set[str] = set()
@@ -130,6 +139,17 @@ class HermesBoardResolver:
 
     def _canonical_entry_map(self) -> dict[str, dict[str, Any]]:
         return {str(entry["slug"]): entry for entry in self._canonical_entries()}
+
+    def _exposed_entry_map(self) -> dict[str, dict[str, Any]]:
+        entries = self._canonical_entry_map()
+        if self.read_policy is None:
+            exposed = entries
+        else:
+            exposed = {slug: entry for slug, entry in entries.items() if slug in self.read_policy}
+        return exposed
+
+    def _exposed_named_board_count(self) -> int:
+        return len(self.list_handles())
 
     def _db_path(self, slug: str) -> Path:
         try:
@@ -176,11 +196,9 @@ class HermesBoardResolver:
                 raise ConfigurationError("configured board database is unavailable") from exc
 
     def list_handles(self) -> list[BoardHandle]:
-        entries = self._canonical_entry_map()
+        entries = self._exposed_entry_map()
         handles: list[BoardHandle] = []
         for slug, entry in entries.items():
-            if self.read_policy is not None and slug not in self.read_policy:
-                continue
             try:
                 handles.append(self._handle(entry))
             except BoardResolutionError:
@@ -190,13 +208,15 @@ class HermesBoardResolver:
                 # a fixture or partially initialized home has no database for it.
                 if self.read_policy is None:
                     continue
-        return handles[: self.max_board_count]
+        if len(handles) > self.max_board_count:
+            raise ConfigurationError("Hermes board count exceeds the configured MCP bound")
+        return handles
 
     def resolve(
         self,
         requested: str | None,
         *,
-        operation: Literal["read", "create"],
+        operation: Literal["read", "create", "manage"],
     ) -> BoardHandle:
         slug = self.current_default_slug() if requested is None else requested
         try:
@@ -240,6 +260,20 @@ class HermesBoardResolver:
 
         return HermesCreateAdapter(self.store(handle))
 
+    def board_admin_adapter(self):
+        from .command import HermesBoardAdminAdapter
+
+        return HermesBoardAdminAdapter(
+            self.hermes,
+            max_board_count=self.max_board_count,
+            active_named_board_count=self._exposed_named_board_count,
+        )
+
+    def management_adapter(self, handle: BoardHandle):
+        from .command import HermesCardManagementAdapter
+
+        return HermesCardManagementAdapter(handle, self.hermes)
+
     def create_allowed(self, slug: str) -> bool:
         return self.create_policy is None or slug in self.create_policy
 
@@ -272,7 +306,7 @@ class SingleBoardResolver:
         self,
         requested: str | None,
         *,
-        operation: Literal["read", "create"],
+        operation: Literal["read", "create", "manage"],
     ) -> BoardHandle:
         if requested is not None and requested != self.handle.slug:
             raise BoardResolutionError("BOARD_NOT_FOUND", "requested board is unavailable")
@@ -286,6 +320,20 @@ class SingleBoardResolver:
 
     def command_adapter(self, handle: BoardHandle):
         return self._command_adapter
+
+    def board_admin_adapter(self):
+        from .command import HermesBoardAdminAdapter
+
+        return HermesBoardAdminAdapter(
+            self.adapter.store.hermes,
+            max_board_count=self.settings.max_board_count,
+            active_named_board_count=lambda: 0 if self.handle.slug == _LEGACY_DEFAULT_SLUG else 1,
+        )
+
+    def management_adapter(self, handle: BoardHandle):
+        from .command import HermesCardManagementAdapter
+
+        return HermesCardManagementAdapter(handle, self.adapter.store.hermes)
 
     def create_allowed(self, slug: str) -> bool:
         return slug == self.handle.slug
