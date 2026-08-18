@@ -174,7 +174,7 @@ def create_app(
         port=settings.port,
         streamable_http_path="/mcp",
         json_response=True,
-        stateless_http=True,
+        stateless_http=False,
         transport_security=TransportSecuritySettings(
             allowed_hosts=list(dict.fromkeys([public_host, public_hostname, "localhost", "127.0.0.1"]))
         ),
