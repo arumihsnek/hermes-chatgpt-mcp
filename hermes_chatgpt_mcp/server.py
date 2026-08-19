@@ -800,7 +800,10 @@ def create_app(
 
     @mcp.custom_route("/healthz", methods=["GET"], include_in_schema=False)
     async def healthz(request: Request) -> Response:
-        return JSONResponse({"status": "ok", "build": build_metadata.public_dict()})
+        payload: dict[str, object] = {"status": "ok"}
+        if beta:
+            payload["build"] = build_metadata.public_dict()
+        return JSONResponse(payload)
 
     @mcp.custom_route("/.well-known/oauth-authorization-server", methods=["GET"], include_in_schema=False)
     async def oauth_metadata(request: Request) -> Response:

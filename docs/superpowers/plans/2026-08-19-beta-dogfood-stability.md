@@ -63,8 +63,9 @@ Run: `git add hermes_chatgpt_mcp/release.py hermes_chatgpt_mcp/config.py tests/t
 - Create: `tests/test_health.py`
 
 **Interfaces:**
-- `/healthz` returns `{"status":"ok","build":{...}}` using `BuildMetadata.public_dict()`.
-- Existing local health behavior remains valid when no manifest is configured.
+- Beta `/healthz` returns `{"status":"ok","build":{...}}` using `BuildMetadata.public_dict()`.
+- Stable `/healthz` remains exactly `{"status":"ok"}` for backwards compatibility.
+- Existing local beta health behavior remains valid when no manifest is configured.
 
 - [ ] **Step 1: Write the failing health assertion**
 

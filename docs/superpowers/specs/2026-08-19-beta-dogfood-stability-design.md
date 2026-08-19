@@ -37,9 +37,11 @@ state directory. It contains only the deployed commit SHA, surface name, and
 UTC deployment timestamp. The service reads this optional manifest at startup;
 it never exposes credentials, filesystem paths, or environment contents.
 
-The public `/healthz` response adds a bounded `build` object while retaining
-`status: "ok"`. Local development without a manifest remains usable, but the
-beta installer fails closed if the manifest does not report the requested SHA.
+The beta `/healthz` response adds a bounded `build` object while retaining
+`status: "ok"`; the stable health response remains byte-compatible with its
+existing `{"status":"ok"}` contract. Local development without a manifest
+remains usable, but the beta installer fails closed if the manifest does not
+report the requested SHA.
 
 ### 2. Deployment provenance gate
 
