@@ -1,0 +1,1477 @@
+{
+  "metadata": {
+    "version": "v4.0-draft",
+    "date": "2026-08-19",
+    "hermes_version": "0.20.2",
+    "source_head": "39cfd1ab41",
+    "board": "hermes-chatgpt-mcp",
+    "author": "t_1419658e",
+    "topology": "single_mcp_privilege_separated_adapters",
+    "adr": "t_484d4ab0",
+    "evidence": [
+      "t_484d4ab0",
+      "t_4ce4ba8f",
+      "t_4d983898",
+      "t_2d568471",
+      "operator_authoritative_20260819"
+    ]
+  },
+  "status_vocab": {
+    "AVAILABLE_VALIDATED": "✅ DISPONIBLE Y VALIDADO",
+    "AVAILABLE_INCONSISTENT": "⚠️ DISPONIBLE CON ERRORES / INCONSISTENCIAS",
+    "PLANNED_V4": "📅 PLANIFICADO V4",
+    "PLANNED_V4X": "📅 PLANIFICADO V4.x",
+    "NOT_PROVEN": "❓ NOT_PROVEN",
+    "NOT_AVAILABLE": "⛔ NO DISPONIBLE / NO PLANIFICADO"
+  },
+  "current_scopes_proven": {
+    "hermes:read": "Read-only baseline (all read tools)",
+    "hermes:create": "Proven for create_task only",
+    "hermes:manage": "Proven for add_comment, assign_task only",
+    "hermes:board:create": "Proven for create_board only",
+    "offline_access": "Connection flow only (not a tool scope)"
+  },
+  "tools": [
+    {
+      "name": "list_profiles",
+      "domain": "Profiles",
+      "current_live_tool": null,
+      "exposure": "ABSENT",
+      "status_code": "PLANNED_V4",
+      "v4_contract": "list_profiles",
+      "risk": "READ",
+      "current_scope": "hermes:read",
+      "proposed_scope": "hermes:profile:read",
+      "priority": "P0",
+      "target": "V4",
+      "evidence": [
+        "t_c2257b50"
+      ],
+      "caveat": "spawnable: dispatcher_eligible vs end_to_end_observed"
+    },
+    {
+      "name": "get_profile",
+      "domain": "Profiles",
+      "current_live_tool": null,
+      "exposure": "ABSENT",
+      "status_code": "PLANNED_V4",
+      "v4_contract": "get_profile",
+      "risk": "READ",
+      "current_scope": "hermes:read",
+      "proposed_scope": "hermes:profile:read",
+      "priority": "P0",
+      "target": "V4",
+      "evidence": [
+        "t_c2257b50"
+      ],
+      "caveat": null
+    },
+    {
+      "name": "list_skills",
+      "domain": "Skills",
+      "current_live_tool": null,
+      "exposure": "ABSENT",
+      "status_code": "PLANNED_V4",
+      "v4_contract": "list_skills",
+      "risk": "READ",
+      "current_scope": "hermes:read",
+      "proposed_scope": "hermes:profile:read",
+      "priority": "P0",
+      "target": "V4",
+      "evidence": [
+        "t_2d78d03f"
+      ],
+      "caveat": "P0-4: MUST use skills list/skill_view, never inspect"
+    },
+    {
+      "name": "validate_profile_skills",
+      "domain": "Skills",
+      "current_live_tool": null,
+      "exposure": "ABSENT",
+      "status_code": "PLANNED_V4",
+      "v4_contract": "validate_profile_skills",
+      "risk": "READ",
+      "current_scope": "hermes:read",
+      "proposed_scope": "hermes:profile:read",
+      "priority": "P0",
+      "target": "V4",
+      "evidence": [
+        "t_2d78d03f"
+      ],
+      "caveat": "P0-5: force-load union semantics"
+    },
+    {
+      "name": "validate_dispatch_requirements",
+      "domain": "Profiles",
+      "current_live_tool": null,
+      "exposure": "ABSENT",
+      "status_code": "PLANNED_V4",
+      "v4_contract": "validate_dispatch_requirements",
+      "risk": "READ",
+      "current_scope": "hermes:read",
+      "proposed_scope": "hermes:profile:read",
+      "priority": "P0",
+      "target": "V4",
+      "evidence": [
+        "t_4d983898"
+      ],
+      "caveat": "Combines 3 dispatcher gates"
+    },
+    {
+      "name": "create_task",
+      "domain": "Task CRUD",
+      "current_live_tool": "create_task",
+      "exposure": "LIVE",
+      "status_code": "AVAILABLE_VALIDATED",
+      "v4_contract": "create_task",
+      "risk": "WRITE",
+      "current_scope": "hermes:create",
+      "proposed_scope": "hermes:task:create",
+      "priority": "P0",
+      "target": "V4",
+      "evidence": [
+        "docs_program_live_call"
+      ],
+      "caveat": "V4 extends with skills/model/provider/goal_mode/workspace; scope hermes:create explicitly proven"
+    },
+    {
+      "name": "get_task",
+      "domain": "Task CRUD",
+      "current_live_tool": "get_task",
+      "exposure": "LIVE",
+      "status_code": "AVAILABLE_VALIDATED",
+      "v4_contract": "get_task",
+      "risk": "READ",
+      "current_scope": "hermes:read",
+      "proposed_scope": "hermes:task:read",
+      "priority": "P0",
+      "target": "V4",
+      "evidence": [
+        "docs_program_live_call"
+      ],
+      "caveat": null
+    },
+    {
+      "name": "list_tasks",
+      "domain": "Task CRUD",
+      "current_live_tool": "list_tasks",
+      "exposure": "LIVE",
+      "status_code": "AVAILABLE_VALIDATED",
+      "v4_contract": "list_tasks",
+      "risk": "READ",
+      "current_scope": "hermes:read",
+      "proposed_scope": "hermes:task:read",
+      "priority": "P0",
+      "target": "V4",
+      "evidence": [
+        "docs_program_live_call"
+      ],
+      "caveat": null
+    },
+    {
+      "name": "edit_task",
+      "domain": "Task CRUD",
+      "current_live_tool": "edit_task",
+      "exposure": "LIVE",
+      "status_code": "AVAILABLE_INCONSISTENT",
+      "v4_contract": "edit_task",
+      "risk": "WRITE",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "hermes:task:write",
+      "priority": "P0",
+      "target": "V4",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "CURRENT only edits completed task result; scope NOT_PROVEN / inherited policy"
+    },
+    {
+      "name": "complete_task",
+      "domain": "Task CRUD",
+      "current_live_tool": "complete_tasks",
+      "exposure": "LIVE",
+      "status_code": "AVAILABLE_VALIDATED",
+      "v4_contract": "complete_task",
+      "risk": "WRITE",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "hermes:task:write",
+      "priority": "P0",
+      "target": "V4",
+      "evidence": [
+        "board_QA_t_59a2a2f5"
+      ],
+      "caveat": "scope NOT_PROVEN / inherited policy"
+    },
+    {
+      "name": "list_active_workers",
+      "domain": "Workers",
+      "current_live_tool": null,
+      "exposure": "ABSENT",
+      "status_code": "NOT_PROVEN",
+      "v4_contract": "list_active_workers",
+      "risk": "READ",
+      "current_scope": "hermes:read",
+      "proposed_scope": "hermes:worker:read",
+      "priority": "P0",
+      "target": "V4",
+      "evidence": [
+        "t_ad6925aa"
+      ],
+      "caveat": "Dashboard plugin mount STILL_NOT_PROVEN"
+    },
+    {
+      "name": "get_run",
+      "domain": "Workers",
+      "current_live_tool": null,
+      "exposure": "ABSENT",
+      "status_code": "PLANNED_V4",
+      "v4_contract": "get_run",
+      "risk": "READ",
+      "current_scope": "hermes:read",
+      "proposed_scope": "hermes:worker:read",
+      "priority": "P0",
+      "target": "V4",
+      "evidence": [
+        "t_ad6925aa"
+      ],
+      "caveat": "CURRENT runs(task_id) is task-scoped; per-run_id is planned"
+    },
+    {
+      "name": "inspect_run",
+      "domain": "Workers",
+      "current_live_tool": null,
+      "exposure": "ABSENT",
+      "status_code": "PLANNED_V4",
+      "v4_contract": "inspect_run",
+      "risk": "READ",
+      "current_scope": "hermes:read",
+      "proposed_scope": "hermes:worker:read",
+      "priority": "P0",
+      "target": "V4",
+      "evidence": [
+        "t_ad6925aa"
+      ],
+      "caveat": null
+    },
+    {
+      "name": "terminate_run",
+      "domain": "Workers",
+      "current_live_tool": null,
+      "exposure": "ABSENT",
+      "status_code": "PLANNED_V4",
+      "v4_contract": "terminate_run",
+      "risk": "ADMIN",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "hermes:worker:terminate",
+      "priority": "P0",
+      "target": "V4",
+      "evidence": [
+        "t_ad6925aa"
+      ],
+      "caveat": "Routes through reclaim_task; UNSAFE_TO_TEST"
+    },
+    {
+      "name": "get_build_info",
+      "domain": "Runtime",
+      "current_live_tool": null,
+      "exposure": "ABSENT",
+      "status_code": "PLANNED_V4",
+      "v4_contract": "get_build_info",
+      "risk": "READ",
+      "current_scope": "hermes:read",
+      "proposed_scope": "hermes:gateway:read",
+      "priority": "P0",
+      "target": "V4",
+      "evidence": [
+        "t_ad6925aa"
+      ],
+      "caveat": null
+    },
+    {
+      "name": "gateway_status",
+      "domain": "Runtime",
+      "current_live_tool": null,
+      "exposure": "ABSENT",
+      "status_code": "PLANNED_V4",
+      "v4_contract": "gateway_status",
+      "risk": "READ",
+      "current_scope": "hermes:read",
+      "proposed_scope": "hermes:gateway:read",
+      "priority": "P0",
+      "target": "V4",
+      "evidence": [
+        "t_ad6925aa"
+      ],
+      "caveat": null
+    },
+    {
+      "name": "attach_file",
+      "domain": "Attachments",
+      "current_live_tool": "attach",
+      "exposure": "LIVE_PARTIAL",
+      "status_code": "AVAILABLE_INCONSISTENT",
+      "v4_contract": "attach_file",
+      "risk": "WRITE",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "hermes:attachment:create",
+      "priority": "P0",
+      "target": "V4",
+      "evidence": [
+        "t_2499ad0a",
+        "operator_discovery"
+      ],
+      "caveat": "CURRENT local_path only (SERVER_LOCAL_BOUND); content_base64 MISSING; scope NOT_PROVEN / inherited policy"
+    },
+    {
+      "name": "list_attachments",
+      "domain": "Attachments",
+      "current_live_tool": "attachments",
+      "exposure": "LIVE",
+      "status_code": "NOT_PROVEN",
+      "v4_contract": "list_attachments",
+      "risk": "READ",
+      "current_scope": "hermes:read",
+      "proposed_scope": "hermes:attachment:read",
+      "priority": "P0",
+      "target": "V4",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "exposure only; no invocation evidence"
+    },
+    {
+      "name": "add_comment",
+      "domain": "Comments",
+      "current_live_tool": "add_comment",
+      "exposure": "LIVE",
+      "status_code": "AVAILABLE_VALIDATED",
+      "v4_contract": "add_comment",
+      "risk": "WRITE",
+      "current_scope": "hermes:manage",
+      "proposed_scope": "hermes:comment:create",
+      "priority": "P0",
+      "target": "V4",
+      "evidence": [
+        "docs_program_live_call"
+      ],
+      "caveat": "Scope hermes:manage explicitly proven per live schema"
+    },
+    {
+      "name": "get_activity",
+      "domain": "Comments",
+      "current_live_tool": "get_activity",
+      "exposure": "LIVE",
+      "status_code": "AVAILABLE_VALIDATED",
+      "v4_contract": "get_activity",
+      "risk": "READ",
+      "current_scope": "hermes:read",
+      "proposed_scope": "hermes:task:read",
+      "priority": "P0",
+      "target": "V4",
+      "evidence": [
+        "docs_program_live_call"
+      ],
+      "caveat": null
+    },
+    {
+      "name": "get_task_graph",
+      "domain": "Task Graph",
+      "current_live_tool": "get_task_graph",
+      "exposure": "LIVE",
+      "status_code": "NOT_PROVEN",
+      "v4_contract": "get_task_graph",
+      "risk": "READ",
+      "current_scope": "hermes:read",
+      "proposed_scope": "hermes:task:read",
+      "priority": "P0",
+      "target": "V4",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "exposure only; no invocation evidence in docs session"
+    },
+    {
+      "name": "link_tasks",
+      "domain": "Task Graph",
+      "current_live_tool": "link_tasks",
+      "exposure": "LIVE",
+      "status_code": "AVAILABLE_VALIDATED",
+      "v4_contract": "link_tasks",
+      "risk": "WRITE",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "hermes:task:create",
+      "priority": "P0",
+      "target": "V4",
+      "evidence": [
+        "docs_program_live_call"
+      ],
+      "caveat": "scope NOT_PROVEN / inherited policy"
+    },
+    {
+      "name": "kanban_assignees",
+      "domain": "Profiles",
+      "current_live_tool": "assignees",
+      "exposure": "LIVE",
+      "status_code": "NOT_PROVEN",
+      "v4_contract": "kanban_assignees",
+      "risk": "READ",
+      "current_scope": "hermes:read",
+      "proposed_scope": "hermes:profile:read",
+      "priority": "P0",
+      "target": "V4",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "exposure only; no invocation in docs session"
+    },
+    {
+      "name": "kanban_runs",
+      "domain": "Workers",
+      "current_live_tool": "runs",
+      "exposure": "LIVE",
+      "status_code": "AVAILABLE_VALIDATED",
+      "v4_contract": "kanban_runs",
+      "risk": "READ",
+      "current_scope": "hermes:read",
+      "proposed_scope": "hermes:worker:read",
+      "priority": "P0",
+      "target": "V4",
+      "evidence": [
+        "docs_program_live_call"
+      ],
+      "caveat": "CURRENT runs(task_id) != planned get_run(run_id)/inspect_run/workers_active"
+    },
+    {
+      "name": "kanban_reclaim",
+      "domain": "Workers",
+      "current_live_tool": "reclaim_task",
+      "exposure": "LIVE",
+      "status_code": "NOT_PROVEN",
+      "v4_contract": "kanban_reclaim",
+      "risk": "ADMIN",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "hermes:worker:terminate",
+      "priority": "P0",
+      "target": "V4",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "Destructive; UNSAFE_TO_TEST; scope NOT_PROVEN"
+    },
+    {
+      "name": "kanban_request_review",
+      "domain": "Lifecycle",
+      "current_live_tool": "request_review",
+      "exposure": "LIVE",
+      "status_code": "NOT_PROVEN",
+      "v4_contract": "kanban_request_review",
+      "risk": "WRITE",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "hermes:task:write",
+      "priority": "P0",
+      "target": "V4",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "Force-loads sdlc-review (P0-5); scope NOT_PROVEN"
+    },
+    {
+      "name": "kanban_list_boards",
+      "domain": "Boards",
+      "current_live_tool": "list_boards",
+      "exposure": "LIVE",
+      "status_code": "NOT_PROVEN",
+      "v4_contract": "kanban_list_boards",
+      "risk": "READ",
+      "current_scope": "hermes:read",
+      "proposed_scope": "hermes:board:read",
+      "priority": "P0",
+      "target": "V4",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "exposure only; no invocation in docs session"
+    },
+    {
+      "name": "get_board",
+      "domain": "Boards",
+      "current_live_tool": "get_board",
+      "exposure": "LIVE",
+      "status_code": "AVAILABLE_INCONSISTENT",
+      "v4_contract": "get_board",
+      "risk": "READ",
+      "current_scope": "hermes:read",
+      "proposed_scope": "hermes:board:read",
+      "priority": "P0",
+      "target": "V4",
+      "evidence": [
+        "docs_program_live_call"
+      ],
+      "caveat": "Invoked in docs session but capability readback inconsistent"
+    },
+    {
+      "name": "create_board",
+      "domain": "Boards",
+      "current_live_tool": "create_board",
+      "exposure": "LIVE",
+      "status_code": "NOT_PROVEN",
+      "v4_contract": "create_board",
+      "risk": "WRITE",
+      "current_scope": "hermes:board:create",
+      "proposed_scope": "hermes:board:create",
+      "priority": "P0",
+      "target": "V4",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "NOT called in docs program; scope hermes:board:create from live schema"
+    },
+    {
+      "name": "get_dispatch",
+      "domain": "Runtime",
+      "current_live_tool": "get_dispatch",
+      "exposure": "LIVE",
+      "status_code": "NOT_PROVEN",
+      "v4_contract": "get_dispatch",
+      "risk": "READ",
+      "current_scope": "hermes:read",
+      "proposed_scope": "hermes:gateway:read",
+      "priority": "P1",
+      "target": "V4",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "exposure only"
+    },
+    {
+      "name": "diagnostics",
+      "domain": "Observability",
+      "current_live_tool": "diagnostics",
+      "exposure": "LIVE",
+      "status_code": "NOT_PROVEN",
+      "v4_contract": "diagnostics",
+      "risk": "READ",
+      "current_scope": "hermes:read",
+      "proposed_scope": "hermes:config:read",
+      "priority": "P1",
+      "target": "V4",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "exposure only"
+    },
+    {
+      "name": "stats",
+      "domain": "Observability",
+      "current_live_tool": "stats",
+      "exposure": "LIVE",
+      "status_code": "NOT_PROVEN",
+      "v4_contract": "stats",
+      "risk": "READ",
+      "current_scope": "hermes:read",
+      "proposed_scope": "hermes:config:read",
+      "priority": "P1",
+      "target": "V4",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "exposure only"
+    },
+    {
+      "name": "log",
+      "domain": "Observability",
+      "current_live_tool": "log",
+      "exposure": "LIVE",
+      "status_code": "NOT_PROVEN",
+      "v4_contract": "log",
+      "risk": "READ",
+      "current_scope": "hermes:read",
+      "proposed_scope": "hermes:task:read",
+      "priority": "P1",
+      "target": "V4",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "exposure only"
+    },
+    {
+      "name": "context",
+      "domain": "Workers",
+      "current_live_tool": "context",
+      "exposure": "LIVE",
+      "status_code": "NOT_PROVEN",
+      "v4_contract": "context",
+      "risk": "READ",
+      "current_scope": "hermes:read",
+      "proposed_scope": "hermes:worker:read",
+      "priority": "P1",
+      "target": "V4",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "exposure only"
+    },
+    {
+      "name": "tail",
+      "domain": "Observability",
+      "current_live_tool": "tail",
+      "exposure": "LIVE",
+      "status_code": "AVAILABLE_VALIDATED",
+      "v4_contract": "tail",
+      "risk": "READ",
+      "current_scope": "hermes:read",
+      "proposed_scope": "hermes:task:read",
+      "priority": "P1",
+      "target": "V4",
+      "evidence": [
+        "docs_program_live_call"
+      ],
+      "caveat": null
+    },
+    {
+      "name": "block_task",
+      "domain": "Lifecycle",
+      "current_live_tool": "block_tasks",
+      "exposure": "LIVE",
+      "status_code": "NOT_PROVEN",
+      "v4_contract": "block_task",
+      "risk": "WRITE",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "hermes:task:write",
+      "priority": "P1",
+      "target": "V4",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "exposure only; scope NOT_PROVEN"
+    },
+    {
+      "name": "unblock_task",
+      "domain": "Lifecycle",
+      "current_live_tool": "unblock_tasks",
+      "exposure": "LIVE",
+      "status_code": "NOT_PROVEN",
+      "v4_contract": "unblock_task",
+      "risk": "WRITE",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "hermes:task:write",
+      "priority": "P1",
+      "target": "V4",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "exposure only; scope NOT_PROVEN"
+    },
+    {
+      "name": "promote_task",
+      "domain": "Lifecycle",
+      "current_live_tool": "promote_tasks",
+      "exposure": "LIVE",
+      "status_code": "NOT_PROVEN",
+      "v4_contract": "promote_task",
+      "risk": "WRITE",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "hermes:task:write",
+      "priority": "P1",
+      "target": "V4",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "exposure only; scope NOT_PROVEN"
+    },
+    {
+      "name": "request_changes",
+      "domain": "Lifecycle",
+      "current_live_tool": "request_changes",
+      "exposure": "LIVE",
+      "status_code": "NOT_PROVEN",
+      "v4_contract": "request_changes",
+      "risk": "WRITE",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "hermes:task:write",
+      "priority": "P1",
+      "target": "V4",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "exposure only; scope NOT_PROVEN"
+    },
+    {
+      "name": "reopen_review",
+      "domain": "Lifecycle",
+      "current_live_tool": "reopen_review",
+      "exposure": "LIVE",
+      "status_code": "NOT_PROVEN",
+      "v4_contract": "reopen_review",
+      "risk": "WRITE",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "hermes:task:write",
+      "priority": "P2",
+      "target": "V4",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "exposure only; scope NOT_PROVEN"
+    },
+    {
+      "name": "claim",
+      "domain": "Workers",
+      "current_live_tool": "claim",
+      "exposure": "LIVE",
+      "status_code": "NOT_PROVEN",
+      "v4_contract": "claim",
+      "risk": "WRITE",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "hermes:task:create",
+      "priority": "P1",
+      "target": "V4",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "exposure only; scope NOT_PROVEN"
+    },
+    {
+      "name": "heartbeat",
+      "domain": "Workers",
+      "current_live_tool": "heartbeat",
+      "exposure": "LIVE",
+      "status_code": "NOT_PROVEN",
+      "v4_contract": "heartbeat",
+      "risk": "WRITE",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "hermes:notification:create",
+      "priority": "P1",
+      "target": "V4",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "exposure only; scope NOT_PROVEN"
+    },
+    {
+      "name": "assign_task",
+      "domain": "Task CRUD",
+      "current_live_tool": "assign_task",
+      "exposure": "LIVE",
+      "status_code": "AVAILABLE_VALIDATED",
+      "v4_contract": "assign_task",
+      "risk": "WRITE",
+      "current_scope": "hermes:manage",
+      "proposed_scope": "hermes:task:write",
+      "priority": "P1",
+      "target": "V4",
+      "evidence": [
+        "docs_program_live_call"
+      ],
+      "caveat": "Scope hermes:manage explicitly proven per live schema"
+    },
+    {
+      "name": "set_model",
+      "domain": "Task CRUD",
+      "current_live_tool": "set_model",
+      "exposure": "LIVE",
+      "status_code": "NOT_PROVEN",
+      "v4_contract": "set_model",
+      "risk": "WRITE",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "hermes:task:write",
+      "priority": "P1",
+      "target": "V4",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "exposure only; scope NOT_PROVEN"
+    },
+    {
+      "name": "reassign_tasks",
+      "domain": "Task CRUD",
+      "current_live_tool": "reassign_tasks",
+      "exposure": "LIVE",
+      "status_code": "NOT_PROVEN",
+      "v4_contract": "reassign_tasks",
+      "risk": "WRITE",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "hermes:task:write",
+      "priority": "P2",
+      "target": "V4",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "exposure only; scope NOT_PROVEN"
+    },
+    {
+      "name": "swarm",
+      "domain": "Task CRUD",
+      "current_live_tool": "swarm",
+      "exposure": "LIVE",
+      "status_code": "NOT_PROVEN",
+      "v4_contract": "swarm",
+      "risk": "WRITE",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "hermes:task:create",
+      "priority": "P1",
+      "target": "V4",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "exposure only; scope NOT_PROVEN"
+    },
+    {
+      "name": "dispatch",
+      "domain": "Runtime",
+      "current_live_tool": "dispatch",
+      "exposure": "LIVE",
+      "status_code": "AVAILABLE_INCONSISTENT",
+      "v4_contract": "dispatch",
+      "risk": "ADMIN",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "hermes:config:write",
+      "priority": "P1",
+      "target": "V4",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "Observed BACKEND_ERROR on manual call; scope NOT_PROVEN"
+    },
+    {
+      "name": "decompose",
+      "domain": "Lifecycle",
+      "current_live_tool": "decompose",
+      "exposure": "LIVE",
+      "status_code": "NOT_PROVEN",
+      "v4_contract": "decompose",
+      "risk": "WRITE",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "hermes:task:write",
+      "priority": "P1",
+      "target": "V4",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "exposure only; scope NOT_PROVEN"
+    },
+    {
+      "name": "specify",
+      "domain": "Lifecycle",
+      "current_live_tool": "specify",
+      "exposure": "LIVE",
+      "status_code": "NOT_PROVEN",
+      "v4_contract": "specify",
+      "risk": "WRITE",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "hermes:task:create",
+      "priority": "P2",
+      "target": "V4",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "exposure only; scope NOT_PROVEN"
+    },
+    {
+      "name": "unlink_tasks",
+      "domain": "Task Graph",
+      "current_live_tool": "unlink_tasks",
+      "exposure": "LIVE",
+      "status_code": "AVAILABLE_VALIDATED",
+      "v4_contract": "unlink_tasks",
+      "risk": "WRITE",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "hermes:task:write",
+      "priority": "P2",
+      "target": "V4",
+      "evidence": [
+        "docs_program_live_call"
+      ],
+      "caveat": "scope NOT_PROVEN / inherited policy"
+    },
+    {
+      "name": "attach-rm",
+      "domain": "Attachments",
+      "current_live_tool": "attach-rm",
+      "exposure": "LIVE",
+      "status_code": "NOT_PROVEN",
+      "v4_contract": "attach-rm",
+      "risk": "WRITE",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "hermes:attachment:delete",
+      "priority": "P2",
+      "target": "V4",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "exposure only; scope NOT_PROVEN"
+    },
+    {
+      "name": "init",
+      "domain": "Boards",
+      "current_live_tool": "init",
+      "exposure": "LIVE",
+      "status_code": "NOT_PROVEN",
+      "v4_contract": "init",
+      "risk": "WRITE",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "hermes:board:create",
+      "priority": "P2",
+      "target": "V4",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "Scope NOT_PROVEN / inherited policy; do not assume hermes:board:create"
+    },
+    {
+      "name": "watch",
+      "domain": "Observability",
+      "current_live_tool": "watch",
+      "exposure": "LIVE",
+      "status_code": "NOT_PROVEN",
+      "v4_contract": "watch",
+      "risk": "READ",
+      "current_scope": "hermes:read",
+      "proposed_scope": "hermes:task:read",
+      "priority": "P2",
+      "target": "V4",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "exposure only"
+    },
+    {
+      "name": "notify-list",
+      "domain": "Notifications",
+      "current_live_tool": "notify-list",
+      "exposure": "LIVE",
+      "status_code": "NOT_PROVEN",
+      "v4_contract": "notify-list",
+      "risk": "READ",
+      "current_scope": "hermes:read",
+      "proposed_scope": "hermes:notification:read",
+      "priority": "P2",
+      "target": "V4",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "exposure only"
+    },
+    {
+      "name": "notify-subscribe",
+      "domain": "Notifications",
+      "current_live_tool": "notify-subscribe",
+      "exposure": "LIVE",
+      "status_code": "NOT_PROVEN",
+      "v4_contract": "notify-subscribe",
+      "risk": "WRITE",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "hermes:notification:create",
+      "priority": "P2",
+      "target": "V4",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "exposure only; scope NOT_PROVEN"
+    },
+    {
+      "name": "notify-unsubscribe",
+      "domain": "Notifications",
+      "current_live_tool": "notify-unsubscribe",
+      "exposure": "LIVE",
+      "status_code": "NOT_PROVEN",
+      "v4_contract": "notify-unsubscribe",
+      "risk": "WRITE",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "hermes:notification:read",
+      "priority": "P2",
+      "target": "V4",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "exposure only; scope NOT_PROVEN"
+    },
+    {
+      "name": "schedule_tasks",
+      "domain": "Task CRUD",
+      "current_live_tool": "schedule_tasks",
+      "exposure": "LIVE",
+      "status_code": "NOT_PROVEN",
+      "v4_contract": "schedule_tasks",
+      "risk": "WRITE",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "hermes:task:create",
+      "priority": "P2",
+      "target": "V4",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "exposure only; scope NOT_PROVEN"
+    },
+    {
+      "name": "archive_tasks",
+      "domain": "Lifecycle",
+      "current_live_tool": "archive_tasks",
+      "exposure": "LIVE",
+      "status_code": "NOT_PROVEN",
+      "v4_contract": "archive_tasks",
+      "risk": "WRITE",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "hermes:task:write",
+      "priority": "P2",
+      "target": "V4",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "exposure only; scope NOT_PROVEN"
+    },
+    {
+      "name": "get_attachment",
+      "domain": "Attachments",
+      "current_live_tool": null,
+      "exposure": "ABSENT",
+      "status_code": "PLANNED_V4",
+      "v4_contract": "get_attachment",
+      "risk": "READ",
+      "current_scope": "hermes:read",
+      "proposed_scope": "hermes:attachment:read",
+      "priority": "P1",
+      "target": "V4",
+      "evidence": [
+        "t_59a2a2f5"
+      ],
+      "caveat": null
+    },
+    {
+      "name": "get_kanban_config",
+      "domain": "Config",
+      "current_live_tool": null,
+      "exposure": "ABSENT",
+      "status_code": "PLANNED_V4",
+      "v4_contract": "get_kanban_config",
+      "risk": "READ",
+      "current_scope": "hermes:read",
+      "proposed_scope": "hermes:config:read",
+      "priority": "P1",
+      "target": "V4",
+      "evidence": [
+        "t_ef94f514"
+      ],
+      "caveat": "Managed overlay STILL_NOT_PROVEN"
+    },
+    {
+      "name": "get_spawn_status",
+      "domain": "Workers",
+      "current_live_tool": null,
+      "exposure": "ABSENT",
+      "status_code": "PLANNED_V4",
+      "v4_contract": "get_spawn_status",
+      "risk": "READ",
+      "current_scope": "hermes:read",
+      "proposed_scope": "hermes:worker:read",
+      "priority": "P1",
+      "target": "V4",
+      "evidence": [
+        "t_c2257b50"
+      ],
+      "caveat": "Only 4 profiles observed spawn"
+    },
+    {
+      "name": "get_run_log",
+      "domain": "Workers",
+      "current_live_tool": null,
+      "exposure": "ABSENT",
+      "status_code": "PLANNED_V4",
+      "v4_contract": "get_run_log",
+      "risk": "READ",
+      "current_scope": "hermes:read",
+      "proposed_scope": "hermes:worker:read",
+      "priority": "P1",
+      "target": "V4",
+      "evidence": [
+        "t_59a2a2f5"
+      ],
+      "caveat": null
+    },
+    {
+      "name": "subscribe_notifications",
+      "domain": "Notifications",
+      "current_live_tool": null,
+      "exposure": "ABSENT",
+      "status_code": "PLANNED_V4",
+      "v4_contract": "subscribe_notifications",
+      "risk": "WRITE",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "hermes:notification:create",
+      "priority": "P1",
+      "target": "V4",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "Maps to current live notify-subscribe"
+    },
+    {
+      "name": "poll_notifications",
+      "domain": "Notifications",
+      "current_live_tool": null,
+      "exposure": "ABSENT",
+      "status_code": "PLANNED_V4X",
+      "v4_contract": "poll_notifications",
+      "risk": "READ",
+      "current_scope": "hermes:read",
+      "proposed_scope": "hermes:notification:read",
+      "priority": "P1",
+      "target": "V4.x",
+      "evidence": [
+        "t_59a2a2f5"
+      ],
+      "caveat": null
+    },
+    {
+      "name": "daemon",
+      "domain": "Runtime",
+      "current_live_tool": "daemon",
+      "exposure": "LIVE",
+      "status_code": "AVAILABLE_INCONSISTENT",
+      "v4_contract": null,
+      "risk": "ADMIN",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "DO_NOT_EXPOSE",
+      "priority": "DO_NOT_EXPOSE",
+      "target": "N/A",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "Status/snapshot only; standalone CLI DEPRECATED"
+    },
+    {
+      "name": "gc",
+      "domain": "Maintenance",
+      "current_live_tool": "gc",
+      "exposure": "LIVE",
+      "status_code": "NOT_PROVEN",
+      "v4_contract": null,
+      "risk": "ADMIN",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "DO_NOT_EXPOSE",
+      "priority": "DO_NOT_EXPOSE",
+      "target": "N/A",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "Destructive; risk-based exclusion"
+    },
+    {
+      "name": "repair",
+      "domain": "Maintenance",
+      "current_live_tool": "repair",
+      "exposure": "LIVE",
+      "status_code": "NOT_PROVEN",
+      "v4_contract": null,
+      "risk": "ADMIN",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "DO_NOT_EXPOSE",
+      "priority": "DO_NOT_EXPOSE",
+      "target": "N/A",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "Destructive; risk-based exclusion"
+    },
+    {
+      "name": "boards-rm",
+      "domain": "Boards",
+      "current_live_tool": "boards-rm",
+      "exposure": "LIVE",
+      "status_code": "NOT_PROVEN",
+      "v4_contract": null,
+      "risk": "ADMIN",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "DO_NOT_EXPOSE",
+      "priority": "DO_NOT_EXPOSE",
+      "target": "N/A",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "Destructive; risk-based exclusion"
+    },
+    {
+      "name": "boards-switch",
+      "domain": "Boards",
+      "current_live_tool": "boards-switch",
+      "exposure": "LIVE",
+      "status_code": "NOT_PROVEN",
+      "v4_contract": null,
+      "risk": "WRITE",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "DO_NOT_EXPOSE",
+      "priority": "DO_NOT_EXPOSE",
+      "target": "N/A",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "Board scope at connection init; not for remote"
+    },
+    {
+      "name": "boards-rename",
+      "domain": "Boards",
+      "current_live_tool": "boards-rename",
+      "exposure": "LIVE",
+      "status_code": "NOT_PROVEN",
+      "v4_contract": null,
+      "risk": "WRITE",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "DO_NOT_EXPOSE",
+      "priority": "DO_NOT_EXPOSE",
+      "target": "N/A",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "Risk-based exclusion"
+    },
+    {
+      "name": "boards-set-default-workdir",
+      "domain": "Boards",
+      "current_live_tool": "boards-set-default-workdir",
+      "exposure": "LIVE",
+      "status_code": "NOT_PROVEN",
+      "v4_contract": null,
+      "risk": "WRITE",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "DO_NOT_EXPOSE",
+      "priority": "DO_NOT_EXPOSE",
+      "target": "N/A",
+      "evidence": [
+        "operator_discovery"
+      ],
+      "caveat": "Risk-based exclusion"
+    },
+    {
+      "name": "raw_terminal_process",
+      "domain": "Platform",
+      "current_live_tool": null,
+      "exposure": "ABSENT",
+      "status_code": "NOT_AVAILABLE",
+      "v4_contract": null,
+      "risk": "DESTRUCTIVE",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "DO_NOT_EXPOSE",
+      "priority": "DO_NOT_EXPOSE",
+      "target": "N/A",
+      "evidence": [
+        "t_5caf4595"
+      ],
+      "caveat": "Unrestricted shell; no MCP-safe contract"
+    },
+    {
+      "name": "delegate_task",
+      "domain": "Platform",
+      "current_live_tool": null,
+      "exposure": "ABSENT",
+      "status_code": "NOT_AVAILABLE",
+      "v4_contract": null,
+      "risk": "DESTRUCTIVE",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "DO_NOT_EXPOSE",
+      "priority": "DO_NOT_EXPOSE",
+      "target": "N/A",
+      "evidence": [
+        "t_5caf4595"
+      ],
+      "caveat": "Spawns subagents with full privileges"
+    },
+    {
+      "name": "secrets",
+      "domain": "Security",
+      "current_live_tool": null,
+      "exposure": "ABSENT",
+      "status_code": "NOT_AVAILABLE",
+      "v4_contract": null,
+      "risk": "ADMIN",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "DO_NOT_EXPOSE",
+      "priority": "DO_NOT_EXPOSE",
+      "target": "N/A",
+      "evidence": [
+        "t_59a2a2f5"
+      ],
+      "caveat": "Credential management; no MCP-safe contract"
+    },
+    {
+      "name": "auth_login_logout",
+      "domain": "Security",
+      "current_live_tool": null,
+      "exposure": "ABSENT",
+      "status_code": "NOT_AVAILABLE",
+      "v4_contract": null,
+      "risk": "ADMIN",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "DO_NOT_EXPOSE",
+      "priority": "DO_NOT_EXPOSE",
+      "target": "N/A",
+      "evidence": [
+        "t_59a2a2f5"
+      ],
+      "caveat": "Auth state mutation"
+    },
+    {
+      "name": "update",
+      "domain": "Maintenance",
+      "current_live_tool": null,
+      "exposure": "ABSENT",
+      "status_code": "NOT_AVAILABLE",
+      "v4_contract": null,
+      "risk": "ADMIN",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "DO_NOT_EXPOSE",
+      "priority": "DO_NOT_EXPOSE",
+      "target": "N/A",
+      "evidence": [
+        "t_59a2a2f5"
+      ],
+      "caveat": "System mutation"
+    },
+    {
+      "name": "uninstall",
+      "domain": "Maintenance",
+      "current_live_tool": null,
+      "exposure": "ABSENT",
+      "status_code": "NOT_AVAILABLE",
+      "v4_contract": null,
+      "risk": "DESTRUCTIVE",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "DO_NOT_EXPOSE",
+      "priority": "DO_NOT_EXPOSE",
+      "target": "N/A",
+      "evidence": [
+        "t_59a2a2f5"
+      ],
+      "caveat": "Destructive"
+    },
+    {
+      "name": "config_set_global",
+      "domain": "Config",
+      "current_live_tool": null,
+      "exposure": "ABSENT",
+      "status_code": "NOT_AVAILABLE",
+      "v4_contract": null,
+      "risk": "ADMIN",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "DO_NOT_EXPOSE",
+      "priority": "DO_NOT_EXPOSE",
+      "target": "N/A",
+      "evidence": [
+        "t_59a2a2f5"
+      ],
+      "caveat": "Global config mutation"
+    },
+    {
+      "name": "computer_use",
+      "domain": "Platform",
+      "current_live_tool": null,
+      "exposure": "ABSENT",
+      "status_code": "NOT_AVAILABLE",
+      "v4_contract": null,
+      "risk": "DESTRUCTIVE",
+      "current_scope": "NOT_PROVEN",
+      "proposed_scope": "DO_NOT_EXPOSE",
+      "priority": "DO_NOT_EXPOSE",
+      "target": "N/A",
+      "evidence": [
+        "t_5caf4595"
+      ],
+      "caveat": "Unsafe platform operations"
+    }
+  ],
+  "summary": {
+    "total_tools": 79,
+    "by_priority": {
+      "P0": 29,
+      "P1": 23,
+      "P2": 12,
+      "P3": 0,
+      "DO_NOT_EXPOSE": 15
+    },
+    "by_status": {
+      "AVAILABLE_VALIDATED": 11,
+      "AVAILABLE_INCONSISTENT": 5,
+      "PLANNED_V4": 15,
+      "PLANNED_V4X": 1,
+      "NOT_PROVEN": 39,
+      "NOT_AVAILABLE": 8
+    }
+  },
+  "p0_blockers": [
+    {
+      "id": "P0-1",
+      "title": "Add content_base64 to MCP connector AttachInput",
+      "severity": "BLOCKING",
+      "evidence": "t_2499ad0a"
+    },
+    {
+      "id": "P0-2",
+      "title": "Unify attachment size cap (25MB agent vs 10MB MCP)",
+      "severity": "HIGH",
+      "evidence": "t_2499ad0a"
+    },
+    {
+      "id": "P0-3",
+      "title": "Pin deployed connector SHA",
+      "severity": "MEDIUM",
+      "evidence": "t_2499ad0a"
+    },
+    {
+      "id": "P0-4",
+      "title": "V4 skill queries: use skills list or skill_view, never inspect",
+      "severity": "MEDIUM",
+      "evidence": "t_2d78d03f"
+    },
+    {
+      "id": "P0-5",
+      "title": "Preserve sdlc-review force-load pattern",
+      "severity": "PRODUCTION_CRITICAL",
+      "evidence": "t_2d78d03f"
+    }
+  ],
+  "not_proven": [
+    {
+      "item": "Dashboard plugin API live mount/auth",
+      "classification": "STILL_NOT_PROVEN"
+    },
+    {
+      "item": "Deployed connector SHA",
+      "classification": "STILL_NOT_PROVEN"
+    },
+    {
+      "item": "Live /kanban connector delivery/ACL",
+      "classification": "UNSAFE_TO_TEST"
+    },
+    {
+      "item": "Live Kanban terminate/reclaim behavior",
+      "classification": "UNSAFE_TO_TEST"
+    },
+    {
+      "item": "Live heartbeat/stale/crash/timeout behavior",
+      "classification": "UNSAFE_TO_TEST"
+    },
+    {
+      "item": "Provider credentials/model quota",
+      "classification": "STILL_NOT_PROVEN"
+    },
+    {
+      "item": "Native /v1/runs listener auth",
+      "classification": "STILL_NOT_PROVEN"
+    },
+    {
+      "item": "MCP protocol support for base64 file content",
+      "classification": "NOT_PROVEN"
+    },
+    {
+      "item": "ChatGPT client ability to send content_base64",
+      "classification": "NOT_PROVEN"
+    }
+  ],
+  "mcp_topology": {
+    "decision": "Single MCP server with internally privilege-separated adapters",
+    "adr": "t_484d4ab0",
+    "rejected": [
+      "Separate companion MCP for profiles/skills",
+      "Separate companion MCP for runtime/workers",
+      "Serverless/Lambda MCP"
+    ]
+  }
+}
