@@ -29,6 +29,7 @@ from .boards import (
 from .command import HermesCreateAdapter
 from .config import Settings
 from .diagnostics import emit, fingerprint, redirect_identity, request_fingerprint, scope_summary
+from .release import load_build_metadata
 from .schemas import (
     AddCommentInput,
     AddCommentResult,
@@ -223,6 +224,7 @@ def create_app(
         if surface != configured_surface:
             raise ValueError("surface override must match settings.surface")
     effective_surface = configured_surface if surface is None else surface
+    build_metadata = load_build_metadata(settings.build_metadata_file)
     expected_policy = BETA_AUTH_POLICY if effective_surface == "beta" else STABLE_AUTH_POLICY
     auth_service = auth_service or AuthService(settings)
     if auth_service.policy != expected_policy:
@@ -798,7 +800,7 @@ def create_app(
 
     @mcp.custom_route("/healthz", methods=["GET"], include_in_schema=False)
     async def healthz(request: Request) -> Response:
-        return JSONResponse({"status": "ok"})
+        return JSONResponse({"status": "ok", "build": build_metadata.public_dict()})
 
     @mcp.custom_route("/.well-known/oauth-authorization-server", methods=["GET"], include_in_schema=False)
     async def oauth_metadata(request: Request) -> Response:
