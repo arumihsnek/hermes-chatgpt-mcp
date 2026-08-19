@@ -107,6 +107,7 @@ class Settings:
     oauth_diagnostics: bool = False
     surface: Literal["stable", "beta"] = "stable"
     board_create_enabled: bool = False
+    build_metadata_file: Path | None = None
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -156,4 +157,9 @@ class Settings:
             oauth_diagnostics=_boolean("MCP_OAUTH_DIAGNOSTICS"),
             surface=_surface(),
             board_create_enabled=_boolean("MCP_BOARD_CREATE_ENABLED"),
+            build_metadata_file=(
+                Path(value).expanduser()
+                if (value := _env("MCP_BUILD_METADATA_FILE"))
+                else None
+            ),
         )
