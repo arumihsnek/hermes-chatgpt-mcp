@@ -1,5 +1,9 @@
 # hermes-chatgpt-mcp
 
+## V4 control-plane documentation
+
+The canonical V4 control-plane documentation is indexed at [`docs/v4/README.md`](docs/v4/README.md). The legacy documents below remain historical or version-scoped unless explicitly revalidated against the V4 evidence set.
+
 `hermes-chatgpt-mcp` is an authenticated remote MCP facade for the canonical
 Hermes Kanban service. Its stable surface keeps the query adapter read-only,
 discovers all active canonical Hermes boards for reading, and exposes one
