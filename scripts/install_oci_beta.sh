@@ -12,6 +12,7 @@ include_target="$include_dir/hermes-chatgpt-mcp-beta.locations"
 include_inside="/usr/local/openresty/nginx/conf/conf.d/hermes-chatgpt-mcp-beta.locations"
 default_env_file="/home/ubuntu/.hermes/hermes-chatgpt-mcp-beta.env"
 state_dir="/var/lib/hermes-chatgpt-mcp-beta"
+build_metadata_file="$state_dir/build.json"
 edge_config="${MCP_OPENRESTY_CONF:-/opt/1panel/apps/openresty/openresty/conf/conf.d/hermes-subdomains.conf}"
 marker_begin="# BEGIN hermes-chatgpt-mcp-beta managed include"
 marker_end="# END hermes-chatgpt-mcp-beta managed include"
@@ -96,10 +97,12 @@ include_was_present=0
 edge_was_present=0
 env_was_present=0
 state_dir_was_present=0
+build_metadata_was_present=0
 service_backup=""
 include_backup=""
 edge_backup=""
 env_backup=""
+build_metadata_backup=""
 rollback_failed=0
 rollback_errors=()
 
@@ -169,6 +172,15 @@ rollback() {
                 rollback_error "environment removal"
             fi
         fi
+        if [[ "$build_metadata_was_present" == 1 ]]; then
+            if ! sudo -n install -o ubuntu -g ubuntu -m 0644 "$build_metadata_backup" "$build_metadata_file"; then
+                rollback_error "release metadata restore"
+            fi
+        else
+            if ! sudo -n rm -f "$build_metadata_file"; then
+                rollback_error "release metadata removal"
+            fi
+        fi
         if [[ "$state_dir_was_present" == 0 ]]; then
             if ! sudo -n rm -rf -- "$state_dir"; then
                 rollback_error "state removal"
@@ -198,6 +210,13 @@ rollback() {
             fi
         elif sudo -n test -e "$env_file"; then
             rollback_error "environment absence revalidation"
+        fi
+        if [[ "$build_metadata_was_present" == 1 ]]; then
+            if ! sudo -n test -f "$build_metadata_file" || ! sudo -n cmp -s "$build_metadata_backup" "$build_metadata_file"; then
+                rollback_error "release metadata revalidation"
+            fi
+        elif sudo -n test -e "$build_metadata_file"; then
+            rollback_error "release metadata absence revalidation"
         fi
         if [[ "$state_dir_was_present" == 1 ]]; then
             if ! sudo -n test -d "$state_dir"; then
@@ -268,6 +287,7 @@ service_backup="$rollback_dir/service"
 include_backup="$rollback_dir/include"
 edge_backup="$rollback_dir/edge"
 env_backup="$rollback_dir/env"
+build_metadata_backup="$rollback_dir/build-metadata"
 
 if sudo -n test -e "$service_target"; then
     service_was_present=1
@@ -290,6 +310,10 @@ fi
 if sudo -n test -e "$env_file"; then
     env_was_present=1
     sudo -n cp -- "$env_file" "$env_backup"
+fi
+if sudo -n test -e "$build_metadata_file"; then
+    build_metadata_was_present=1
+    sudo -n cp -- "$build_metadata_file" "$build_metadata_backup"
 fi
 if sudo -n test -d "$state_dir"; then
     state_dir_was_present=1
@@ -341,12 +365,13 @@ values.update(
         "MCP_SURFACE": "beta",
         "MCP_BOARD_CREATE_ENABLED": "1",
         "MCP_OAUTH_STATE_FILE": "/var/lib/hermes-chatgpt-mcp-beta/oauth-state.json",
+        "MCP_BUILD_METADATA_FILE": "/var/lib/hermes-chatgpt-mcp-beta/build.json",
     }
 )
 ordered = [
     "HERMES_AGENT_ROOT", "HERMES_KANBAN_HOME", "MCP_PUBLIC_BASE_URL", "MCP_HOST", "MCP_PORT",
     "MCP_SURFACE", "MCP_BOARD_CREATE_ENABLED", "MCP_OAUTH_USERNAME", "MCP_OAUTH_PASSWORD",
-    "MCP_OAUTH_SIGNING_KEY", "MCP_OAUTH_STATE_FILE",
+    "MCP_OAUTH_SIGNING_KEY", "MCP_OAUTH_STATE_FILE", "MCP_BUILD_METADATA_FILE",
 ]
 extra = [key for key in values if key not in ordered]
 path.write_text("".join(f"{key}={values[key]}\n" for key in ordered + extra), encoding="utf-8")
@@ -354,6 +379,26 @@ path.chmod(0o600)
 PY
 sudo -n chown ubuntu:ubuntu "$env_file"
 sudo -n chmod 0600 "$env_file"
+
+sudo -n /usr/bin/python3 - "$build_metadata_file" "$candidate_commit" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+path = Path(sys.argv[1])
+payload = {
+    "build_commit": sys.argv[2],
+    "surface": "beta",
+    "deployed_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+}
+path.write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
+path.chmod(0o644)
+PY
+sudo -n chown ubuntu:ubuntu "$build_metadata_file"
+sudo -n chmod 0644 "$build_metadata_file"
 
 # Install the beta package into the dedicated venv so the running service
 # picks up the current worktree source (editable = live source).
@@ -367,15 +412,26 @@ sudo -n systemctl is-active --quiet "$service_name"
 
 healthy=0
 for _ in $(seq 1 20); do
-    if /opt/venvs/hermes-chatgpt-mcp/bin/python - <<'PY'
+    if /opt/venvs/hermes-chatgpt-mcp/bin/python - "$candidate_commit" <<'PY'
 import http.client
+import json
+import sys
 
 try:
     connection = http.client.HTTPConnection("127.0.0.1", 8791, timeout=1)
     connection.request("GET", "/healthz")
     response = connection.getresponse()
-    healthy = response.status == 200 and response.read(128) == b'{"status":"ok"}'
+    health = json.loads(response.read(4096))
+    expected_commit = sys.argv[1]
+    healthy = (
+        response.status == 200
+        and health.get("status") == "ok"
+        and health["build"]["build_commit"] == expected_commit
+        and health["build"]["surface"] == "beta"
+    )
 except OSError:
+    healthy = False
+except (KeyError, TypeError, ValueError, json.JSONDecodeError):
     healthy = False
 raise SystemExit(0 if healthy else 1)
 PY

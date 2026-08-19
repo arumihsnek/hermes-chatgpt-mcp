@@ -82,9 +82,27 @@ def test_beta_installer_and_unit_share_the_dedicated_python_runtime():
 
     runtime = "/opt/venvs/hermes-chatgpt-mcp/bin/python"
     assert f"ExecStart={runtime} -m hermes_chatgpt_mcp.beta_server" in unit
-    assert f"{runtime} - <<'PY'" in installer
+    assert f"{runtime} - \"$candidate_commit\" <<'PY'" in installer
     assert f"{runtime.rsplit('/', 1)[0]}/pip install -e" in installer
     assert "/home/ubuntu/hermes-agent/venv/bin/python - <<'PY'" not in installer
+
+
+def test_beta_unit_declares_release_metadata_path():
+    unit = Path("deploy/systemd/hermes-chatgpt-mcp-beta.service").read_text(encoding="utf-8")
+
+    assert "Environment=MCP_BUILD_METADATA_FILE=/var/lib/hermes-chatgpt-mcp-beta/build.json" in unit
+
+
+def test_beta_installer_writes_and_verifies_the_requested_release_metadata():
+    installer = Path("scripts/install_oci_beta.sh").read_text(encoding="utf-8")
+
+    assert 'build_metadata_file="$state_dir/build.json"' in installer
+    assert '"build_commit": sys.argv[2]' in installer
+    assert '"surface": "beta"' in installer
+    assert '"MCP_BUILD_METADATA_FILE": "/var/lib/hermes-chatgpt-mcp-beta/build.json"' in installer
+    assert 'expected_commit = sys.argv[1]' in installer
+    assert 'health["build"]["build_commit"] == expected_commit' in installer
+    assert 'health["build"]["surface"] == "beta"' in installer
 
 
 def test_beta_openresty_include_is_limited_to_the_beta_mcp_routes():
