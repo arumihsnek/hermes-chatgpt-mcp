@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Annotated
+from typing import Any, Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -600,7 +600,7 @@ class NotifySubscribeInput(BoardQuery):
     platform: str = Field(min_length=1, max_length=64)
     chat_id: str = Field(min_length=1, max_length=256)
     thread_id: str | None = Field(default=None, max_length=256)
-    delivery: str | None = Field(default=None, max_length=256)
+    delivery: Literal["notify", "notify+wake", "wake"] | None = None
 
 
 class NotifySubscribeResult(StrictModel):

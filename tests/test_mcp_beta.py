@@ -733,6 +733,115 @@ async def _test_management_commands_are_global_on_beta_and_return_safe_errors(tm
     }
 
 
+def test_notify_subscribe_rejects_unknown_delivery_mode(tmp_path, monkeypatch):
+    asyncio.run(_test_notify_subscribe_rejects_unknown_delivery_mode(tmp_path, monkeypatch))
+
+
+async def _test_notify_subscribe_rejects_unknown_delivery_mode(tmp_path, monkeypatch):
+    fixture, settings, auth, _, app = _beta_app(tmp_path, monkeypatch)
+    manager = _token(auth, "notify-manager", ["hermes:read", "hermes:manage"], board=fixture.board)
+    transport = httpx.ASGITransport(app=app)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=transport, base_url=settings.public_base_url) as client:
+            before = tree_fingerprint(fixture.root)
+            invalid = await _rpc(
+                client,
+                manager,
+                "tools/call",
+                {
+                    "name": "notify-subscribe",
+                    "arguments": {
+                        "request": {
+                            "board": fixture.board,
+                            "task_id": "review-task",
+                            "platform": "qa",
+                            "chat_id": "invalid-delivery",
+                            "delivery": "test",
+                        }
+                    },
+                },
+            )
+            after = tree_fingerprint(fixture.root)
+
+    assert invalid["result"]["isError"] is True
+    assert "notify" in str(invalid)
+    assert "Traceback" not in str(invalid)
+    assert after == before
+
+
+def test_notify_subscribe_preserves_supported_delivery_mode(tmp_path, monkeypatch):
+    asyncio.run(_test_notify_subscribe_preserves_supported_delivery_mode(tmp_path, monkeypatch))
+
+
+async def _test_notify_subscribe_preserves_supported_delivery_mode(tmp_path, monkeypatch):
+    fixture, settings, auth, _, app = _beta_app(tmp_path, monkeypatch)
+    manager = _token(auth, "notify-roundtrip", ["hermes:read", "hermes:manage"], board=fixture.board)
+    transport = httpx.ASGITransport(app=app)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=transport, base_url=settings.public_base_url) as client:
+            subscribed = await _rpc(
+                client,
+                manager,
+                "tools/call",
+                {
+                    "name": "notify-subscribe",
+                    "arguments": {
+                        "request": {
+                            "board": fixture.board,
+                            "task_id": "review-task",
+                            "platform": "qa",
+                            "chat_id": "supported-delivery",
+                            "delivery": "wake",
+                        }
+                    },
+                },
+            )
+            listed = await _rpc(
+                client,
+                manager,
+                "tools/call",
+                {
+                    "name": "notify-list",
+                    "arguments": {
+                        "request": {
+                            "board": fixture.board,
+                            "task_id": "review-task",
+                            "limit": 5,
+                        }
+                    },
+                },
+                2,
+            )
+            await _rpc(
+                client,
+                manager,
+                "tools/call",
+                {
+                    "name": "notify-unsubscribe",
+                    "arguments": {
+                        "request": {
+                            "board": fixture.board,
+                            "task_id": "review-task",
+                            "platform": "qa",
+                            "chat_id": "supported-delivery",
+                        }
+                    },
+                },
+                3,
+            )
+
+    assert subscribed["result"]["structuredContent"]["delivery"] == "wake"
+    assert listed["result"]["structuredContent"]["subscriptions"] == [
+        {
+            "task_id": "review-task",
+            "platform": "qa",
+            "chat_id": "supported-delivery",
+            "thread_id": None,
+            "delivery": "wake",
+        }
+    ]
+
+
 def test_beta_scope_matrix_denies_only_the_unauthorized_mutations(tmp_path, monkeypatch):
     asyncio.run(_test_beta_scope_matrix_denies_only_the_unauthorized_mutations(tmp_path, monkeypatch))
 
