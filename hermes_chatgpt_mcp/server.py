@@ -345,6 +345,8 @@ def create_app(
     async def run_beta_command(callback, *args, task_command: bool = False, **kwargs):
         try:
             return callback(*args, **kwargs)
+        except BoardResolutionError as exc:
+            raise tool_error(exc.code, exc.message) from exc
         except TaskNotFoundError as exc:
             raise tool_error("TASK_NOT_FOUND", "task was not found on the selected board") from exc
         except ValueError as exc:

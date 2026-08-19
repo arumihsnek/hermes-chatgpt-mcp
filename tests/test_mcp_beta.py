@@ -644,6 +644,39 @@ async def _test_public_board_creation_returns_safe_conflicts_for_reserved_and_ar
     assert not (fixture.root / "kanban" / "boards" / "archived-public-board").exists()
 
 
+def test_beta_board_rename_unknown_slug_is_not_an_implicit_create(tmp_path, monkeypatch):
+    asyncio.run(_test_beta_board_rename_unknown_slug_is_not_an_implicit_create(tmp_path, monkeypatch))
+
+
+async def _test_beta_board_rename_unknown_slug_is_not_an_implicit_create(tmp_path, monkeypatch):
+    fixture, settings, auth, _, app = _beta_app(tmp_path, monkeypatch)
+    administrator = _token(
+        auth,
+        "rename-administrator",
+        ["hermes:read", "hermes:create", "hermes:manage", "hermes:board:create", "hermes:admin"],
+        board=fixture.board,
+    )
+    target = "unknown-rename-board"
+    transport = httpx.ASGITransport(app=app)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=transport, base_url=settings.public_base_url) as client:
+            before = tree_fingerprint(fixture.root)
+            result = await _rpc(
+                client,
+                administrator,
+                "tools/call",
+                {
+                    "name": "boards-rename",
+                    "arguments": {"request": {"slug": target, "name": "Must Not Exist"}},
+                },
+            )
+            after = tree_fingerprint(fixture.root)
+
+    _assert_tool_error(result, "BOARD_NOT_FOUND", forbidden_path=fixture.root)
+    assert after == before
+    assert not (fixture.root / "kanban" / "boards" / target).exists()
+
+
 def test_management_commands_are_global_on_beta_and_return_safe_errors(tmp_path, monkeypatch):
     asyncio.run(_test_management_commands_are_global_on_beta_and_return_safe_errors(tmp_path, monkeypatch))
 

@@ -9,7 +9,7 @@ from typing import Any, Iterable
 from collections.abc import Callable
 from pathlib import Path
 
-from .boards import BoardHandle, _canonical_board_slug
+from .boards import BoardHandle, BoardResolutionError, _canonical_board_slug
 from .hermes import ReadOnlyHermesStore
 from .schemas import (
     AddCommentResult,
@@ -272,6 +272,25 @@ class HermesBoardAdminAdapter:
                 )
                 return self._result(metadata, fallback_slug=lookup_slug)
 
+    def _require_existing_board(self, slug: str) -> str:
+        normalized = _canonical_board_slug(slug)
+        try:
+            entries = self.hermes.list_boards(include_archived=True)
+        except Exception as exc:
+            raise BoardResolutionError("BOARD_NOT_FOUND", "requested board is unavailable") from exc
+        for entry in entries if isinstance(entries, list) else ():
+            if not isinstance(entry, dict):
+                continue
+            try:
+                entry_slug = _canonical_board_slug(str(entry.get("slug") or ""))
+            except ValueError:
+                continue
+            if entry_slug != normalized:
+                continue
+            if bool(entry.get("archived")):
+                raise BoardResolutionError("BOARD_NOT_FOUND", "requested board is unavailable")
+            return normalized
+        raise BoardResolutionError("BOARD_NOT_FOUND", "requested board is unavailable")
 
     def remove_board(self, slug: str, *, confirm: bool) -> dict[str, Any]:
         if not confirm:
@@ -280,17 +299,17 @@ class HermesBoardAdminAdapter:
         return dict(self.hermes.remove_board(normalized, archive=True))
 
     def switch_board(self, slug: str) -> dict[str, Any]:
-        normalized = _canonical_board_slug(slug)
+        normalized = self._require_existing_board(slug)
         self.hermes.set_current_board(normalized)
         entries = self.hermes.list_boards(include_archived=False)
         return next((dict(item) for item in entries if str(item.get("slug")) == normalized), {"slug": normalized})
 
     def rename_board(self, slug: str, *, name: str | None = None, description: str | None = None) -> dict[str, Any]:
-        normalized = _canonical_board_slug(slug)
+        normalized = self._require_existing_board(slug)
         return dict(self.hermes.write_board_metadata(normalized, name=name, description=description))
 
     def set_default_workdir(self, slug: str, workdir: str) -> dict[str, Any]:
-        normalized = _canonical_board_slug(slug)
+        normalized = self._require_existing_board(slug)
         root = Path(workdir).expanduser().resolve()
         return dict(self.hermes.write_board_metadata(normalized, default_workdir=str(root)))
 

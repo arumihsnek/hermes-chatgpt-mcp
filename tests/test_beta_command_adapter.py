@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from hermes_chatgpt_mcp.adapter import HermesReadOnlyAdapter
-from hermes_chatgpt_mcp.boards import BoardHandle
+from hermes_chatgpt_mcp.boards import BoardHandle, BoardResolutionError
 from hermes_chatgpt_mcp.command import HermesBoardAdminAdapter, HermesCardManagementAdapter
 from hermes_chatgpt_mcp.hermes import ReadOnlyHermesStore
 
@@ -81,6 +81,40 @@ def test_board_admin_creates_canonical_directory_without_changing_current_board(
     assert (board_dir / "board.json").is_file()
     assert (board_dir / "kanban.db").is_file()
     assert fixture.db_path.is_file()
+
+
+def test_board_admin_rejects_unknown_rename_without_creating_board(tmp_path, monkeypatch):
+    from hermes_cli import kanban_db
+
+    fixture = make_hermes_fixture(tmp_path)
+    monkeypatch.setenv("HERMES_KANBAN_HOME", str(fixture.root))
+    adapter = HermesBoardAdminAdapter(kanban_db)
+
+    with pytest.raises(BoardResolutionError) as exc:
+        adapter.rename_board("unknown-rename-board", name="Must Not Exist")
+
+    assert exc.value.code == "BOARD_NOT_FOUND"
+    assert not (fixture.root / "kanban" / "boards" / "unknown-rename-board").exists()
+
+
+def test_board_admin_rejects_unknown_switch_and_workdir_without_mutation(tmp_path, monkeypatch):
+    from hermes_cli import kanban_db
+
+    fixture = make_hermes_fixture(tmp_path)
+    monkeypatch.setenv("HERMES_KANBAN_HOME", str(fixture.root))
+    adapter = HermesBoardAdminAdapter(kanban_db)
+    current_before = kanban_db.get_current_board()
+
+    with pytest.raises(BoardResolutionError) as switch_exc:
+        adapter.switch_board("unknown-switch-board")
+    with pytest.raises(BoardResolutionError) as workdir_exc:
+        adapter.set_default_workdir("unknown-workdir-board", str(tmp_path / "workdir"))
+
+    assert switch_exc.value.code == "BOARD_NOT_FOUND"
+    assert workdir_exc.value.code == "BOARD_NOT_FOUND"
+    assert kanban_db.get_current_board() == current_before
+    assert not (fixture.root / "kanban" / "boards" / "unknown-switch-board").exists()
+    assert not (fixture.root / "kanban" / "boards" / "unknown-workdir-board").exists()
 
 
 def test_archive_rm_deletes_only_already_archived_tasks(tmp_path, monkeypatch):
