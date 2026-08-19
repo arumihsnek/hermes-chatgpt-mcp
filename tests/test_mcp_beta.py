@@ -171,6 +171,68 @@ def test_stable_default_and_beta_tool_discovery_are_exact(tmp_path, monkeypatch)
     asyncio.run(_test_stable_default_and_beta_tool_discovery_are_exact(tmp_path, monkeypatch))
 
 
+async def _test_beta_protocol_dispatches_every_discovered_name_without_writes(tmp_path, monkeypatch):
+    """Separate MCP dispatch from the external ChatGPT connector resolver.
+
+    ChatGPT's ``api_tool.list_resources`` layer is outside this repository.
+    This test proves the narrower server-side boundary: every name returned by
+    the same HTTP ``tools/list`` surface is known to the subsequent HTTP
+    ``tools/call`` dispatcher. Empty arguments deliberately stop at schema or
+    scope validation for request-bearing tools, so this is a no-mutation probe.
+    """
+    fixture, settings, auth, _, app = _beta_app(tmp_path, monkeypatch)
+    token = _token(auth, "protocol-boundary-reader", ["hermes:read"])
+    transport = httpx.ASGITransport(app=app)
+
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=transport, base_url=settings.public_base_url) as client:
+            first = await _rpc(client, token, "tools/list", request_id=1)
+            second = await _rpc(client, token, "tools/list", request_id=2)
+            first_tools = first["result"]["tools"]
+            second_tools = second["result"]["tools"]
+            first_names = [tool["name"] for tool in first_tools]
+            second_names = [tool["name"] for tool in second_tools]
+
+            assert first_names == second_names
+            assert len(first_names) == len(set(first_names))
+            assert first["result"].get("nextCursor") in (None, "")
+            assert second["result"].get("nextCursor") in (None, "")
+
+            for request_id, name, arguments in (
+                (3, "list_boards", {}),
+                (4, "get_board", {"request": {"board": fixture.board}}),
+                (5, "tail", {"request": {"board": fixture.board, "task_id": "review-task", "limit": 1}}),
+                (6, "watch", {"request": {"board": fixture.board, "task_id": "review-task", "limit": 1}}),
+            ):
+                stable_call = await _rpc(
+                    client,
+                    token,
+                    "tools/call",
+                    {"name": name, "arguments": arguments},
+                    request_id=request_id,
+                )
+                assert "error" not in stable_call, (name, stable_call)
+                assert isinstance(stable_call.get("result"), dict), (name, stable_call)
+
+            third = await _rpc(client, token, "tools/list", request_id=7)
+            assert [tool["name"] for tool in third["result"]["tools"]] == first_names
+
+            for request_id, name in enumerate(first_names, start=10):
+                dispatched = await _rpc(
+                    client,
+                    token,
+                    "tools/call",
+                    {"name": name, "arguments": {}},
+                    request_id=request_id,
+                )
+                assert "error" not in dispatched, (name, dispatched)
+                assert isinstance(dispatched.get("result"), dict), (name, dispatched)
+
+
+def test_beta_protocol_dispatches_every_discovered_name_without_writes(tmp_path, monkeypatch):
+    asyncio.run(_test_beta_protocol_dispatches_every_discovered_name_without_writes(tmp_path, monkeypatch))
+
+
 async def _test_stable_default_and_beta_tool_discovery_are_exact(tmp_path, monkeypatch):
     stable_fixture = make_hermes_fixture(tmp_path / "stable")
     stable_settings = _settings()
