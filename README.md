@@ -411,9 +411,10 @@ printed. The stable environment and OAuth state remain separate.
 Before mutation it validates the beta edge include. After installing the beta
 unit it runs an OpenResty syntax check, enables and restarts only
 `hermes-chatgpt-mcp-beta.service`, waits for `GET http://127.0.0.1:8791/healthz`
-to return `{"status":"ok"}`, and reloads the existing OpenResty hook. These
-are installer behaviors; this repository has not run the installer or claimed
-live OCI, DNS, TLS, or ChatGPT success.
+to return `{"status":"ok"}`, and reloads the existing OpenResty hook. The
+2026-08-19 dogfood release ran these checks and also passed the public beta
+health verifier; this does not assert that a ChatGPT connector has refreshed
+its cached OAuth/discovery state.
 
 The installer has an automatic transactional rollback for a failed beta
 installation: it restores the prior beta unit, include, edge configuration,

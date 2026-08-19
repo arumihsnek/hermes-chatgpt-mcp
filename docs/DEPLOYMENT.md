@@ -84,8 +84,10 @@ After the beta artifacts are installed, the script reloads systemd, enables and
 restarts only the beta unit, checks the beta loopback health response
 `status=ok` with the exact build attestation on `127.0.0.1:8791`, and reloads
 the existing OpenResty hook.
-The installer does not restart `hermes-chatgpt-mcp.service`. A successful local
-check is not a claim of public DNS, TLS, OCI, or ChatGPT validation.
+The installer does not restart `hermes-chatgpt-mcp.service`. The 2026-08-19
+dogfood release also passed the public HTTPS verifier and MCP discovery probe;
+this does not claim that a ChatGPT connector has refreshed cached OAuth or
+tool-schema state.
 
 ## Sandbox boundary
 
@@ -168,10 +170,10 @@ sudo systemctl is-active hermes-chatgpt-mcp-beta.service
 curl --fail http://127.0.0.1:8791/healthz
 ```
 
-An operator may separately check the configured beta HTTPS origin and OAuth
-metadata after DNS/TLS are available. That external check is pending here;
-the repository tests prove configuration shape and ASGI behavior, not live
-edge success.
+An operator should separately re-run the configured beta HTTPS verifier and
+OAuth metadata checks after every deployment. The repository tests prove
+configuration shape and ASGI behavior; the public release gate is the exact
+SHA read back from `/healthz` and verified by `scripts/verify_beta_release.py`.
 
 ## Restart persistence check
 
