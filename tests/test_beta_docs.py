@@ -83,3 +83,20 @@ def test_stable_only_claims_and_beta_board_claim_exception_are_explicit() -> Non
     assert "On the stable surface, the MCP tool allowlist contains exactly eight tools:" in security
     assert "On the stable surface, the create tool is the only public mutator" in integration
     assert "On the stable surface, only `HermesCreateAdapter.create_task`" in integration
+
+
+def test_beta_dogfood_runbook_defines_release_and_safety_gates() -> None:
+    runbook = (ROOT / "docs/BETA_DOGFOOD.md").read_text(encoding="utf-8")
+
+    for marker in (
+        "hermes-chatgpt-e2e-20260818t224300z",
+        "hermes:create",
+        "hermes:manage",
+        "hermes:admin",
+        "AUTH_READ_ONLY",
+        "BLOCKED_PLATFORM",
+        "scripts/verify_beta_release.py",
+        "notify-subscribe.delivery",
+        "do not run",
+    ):
+        assert marker in runbook, f"missing dogfood release marker: {marker}"

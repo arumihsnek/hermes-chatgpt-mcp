@@ -424,6 +424,11 @@ stable endpoint; stable OAuth authorization is separate from beta OAuth
 authorization. Treat deliberate beta disablement or removal as a separate,
 change-controlled operator action after stable health is confirmed.
 
+For controlled real dogfood, follow [`docs/BETA_DOGFOOD.md`](docs/BETA_DOGFOOD.md).
+The beta installer writes a non-secret release manifest and requires loopback
+health to attest the requested commit and `surface=beta`. The public result can
+be checked with `scripts/verify_beta_release.py` before connecting ChatGPT.
+
 ## Limitations of v0.4
 
 - Board reads are intentionally global to the configured Hermes resource owner;

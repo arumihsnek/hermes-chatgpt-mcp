@@ -68,6 +68,12 @@ file contains the beta public origin, loopback port `8791`,
 and a signing key separate from stable. Credential values are never printed or
 committed.
 
+It also writes the non-secret `/var/lib/hermes-chatgpt-mcp-beta/build.json`
+manifest containing the requested commit, `surface: beta`, and deployment
+time. The loopback health check requires those values to match the candidate;
+the public counterpart is verified with
+`python scripts/verify_beta_release.py --url https://kanban-beta.hermesinthenight.duckdns.org --commit "$CANDIDATE_SHA"`.
+
 The beta unit keeps `ProtectSystem=full`, `ProtectHome=read-only`,
 `NoNewPrivileges`, private devices/temp space, and write access only to
 canonical named-board storage plus the beta state directory. Its OpenResty
@@ -76,7 +82,8 @@ beta hostname; it does not proxy a general Hermes UI route.
 
 After the beta artifacts are installed, the script reloads systemd, enables and
 restarts only the beta unit, checks the beta loopback health response
-`{"status":"ok"}` on `127.0.0.1:8791`, and reloads the existing OpenResty hook.
+`status=ok` with the exact build attestation on `127.0.0.1:8791`, and reloads
+the existing OpenResty hook.
 The installer does not restart `hermes-chatgpt-mcp.service`. A successful local
 check is not a claim of public DNS, TLS, OCI, or ChatGPT validation.
 
