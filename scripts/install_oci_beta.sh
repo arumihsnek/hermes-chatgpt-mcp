@@ -367,7 +367,7 @@ sudo -n systemctl is-active --quiet "$service_name"
 
 healthy=0
 for _ in $(seq 1 20); do
-    if /home/ubuntu/hermes-agent/venv/bin/python - <<'PY'
+    if /opt/venvs/hermes-chatgpt-mcp/bin/python - <<'PY'
 import http.client
 
 try:

@@ -62,7 +62,7 @@ def test_beta_unit_has_a_separate_listener_state_and_narrow_sandbox():
     assert "Description=Hermes ChatGPT MCP beta service" in unit
     assert "User=ubuntu" in unit
     assert "WorkingDirectory=/home/ubuntu/code/hermes-chatgpt-mcp/.worktrees/hermes-chatgpt-mcp-beta" in unit
-    assert "ExecStart=/home/ubuntu/hermes-agent/venv/bin/python -m hermes_chatgpt_mcp.beta_server" in unit
+    assert "ExecStart=/opt/venvs/hermes-chatgpt-mcp/bin/python -m hermes_chatgpt_mcp.beta_server" in unit
     assert "Environment=MCP_SURFACE=beta" in unit
     assert "Environment=MCP_ENV_FILE=/home/ubuntu/.hermes/hermes-chatgpt-mcp-beta.env" in unit
     assert "Environment=MCP_PORT=8791" in unit
@@ -74,6 +74,17 @@ def test_beta_unit_has_a_separate_listener_state_and_narrow_sandbox():
     assert "/var/lib/hermes-chatgpt-mcp/oauth-state.json" not in unit
     assert "/home/ubuntu/.hermes/kanban.db" not in unit
     assert "ReadWritePaths=/home/ubuntu/.hermes\n" not in unit
+
+
+def test_beta_installer_and_unit_share_the_dedicated_python_runtime():
+    unit = Path("deploy/systemd/hermes-chatgpt-mcp-beta.service").read_text(encoding="utf-8")
+    installer = Path("scripts/install_oci_beta.sh").read_text(encoding="utf-8")
+
+    runtime = "/opt/venvs/hermes-chatgpt-mcp/bin/python"
+    assert f"ExecStart={runtime} -m hermes_chatgpt_mcp.beta_server" in unit
+    assert f"{runtime} - <<'PY'" in installer
+    assert f"{runtime.rsplit('/', 1)[0]}/pip install -e" in installer
+    assert "/home/ubuntu/hermes-agent/venv/bin/python - <<'PY'" not in installer
 
 
 def test_beta_openresty_include_is_limited_to_the_beta_mcp_routes():

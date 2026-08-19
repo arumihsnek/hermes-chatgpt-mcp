@@ -17,7 +17,7 @@ Environment=MCP_BOARD_CREATE_ENABLED=1
 Environment=MCP_OAUTH_STATE_FILE=/var/lib/hermes-chatgpt-mcp-beta/oauth-state.json
 # OAuth diagnostics are disabled during normal operation.
 Environment=MCP_OAUTH_DIAGNOSTICS=0
-ExecStart=/home/ubuntu/hermes-agent/venv/bin/python -m hermes_chatgpt_mcp.beta_server
+ExecStart=/opt/venvs/hermes-chatgpt-mcp/bin/python -m hermes_chatgpt_mcp.beta_server
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=15
