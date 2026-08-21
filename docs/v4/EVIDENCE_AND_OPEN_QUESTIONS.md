@@ -1,7 +1,7 @@
 # V4 Evidence and Open Questions
 
 **Status:** CANONICAL V4 DESIGN / CURRENT EVIDENCE
-**Last reconciled:** 2026-08-19
+**Last reconciled:** 2026-08-19 (canonical design) + **2026-08-21 release-candidate truth-sync** (see [CHECKPOINT-2026-08-21.md](CHECKPOINT-2026-08-21.md))
 **Documentation base:** 9900c10 (local ref only; deployed SHA NOT_PROVEN)
 **See also:** [README.md](README.md) | [CURRENT_STATE.md](CURRENT_STATE.md) | [STALE_DOCS.md](STALE_DOCS.md)
 
@@ -129,3 +129,28 @@ The canonical set explicitly rejects these claims or scopes them correctly:
 - Final catalog: t_1419658e
 - Synthesis/local evidence: t_2d568471 and parents
 - Historical repository docs: [STALE_DOCS.md](STALE_DOCS.md)
+
+---
+
+## 8. 2026-08-21 Release-Candidate Decision Trail & Supersession (truth-sync — supplemental)
+
+This section records the live release-candidate decision trail and supersession links so older cards are not mistaken as current authority. The canonical design evidence above (sections 1–7, dated 2026-08-19) remains authoritative for architecture/scope. Full reconciliation in [CHECKPOINT-2026-08-21.md](CHECKPOINT-2026-08-21.md).
+
+### Decision trail
+- **`t_72108336` (V4-GAP-TRIAGE, done) + human decision in comment 579:** Do **NOT** convert all G1–G20 into Phase-S/beta blockers. G1 is the only substantive new platform correction blocking immediate Phase-S; minimal fresh-session/provenance test-integrity is required; remaining gaps belong to existing V4 waves, dogfood, or other boards.
+- **Outcome-gate recovery:** `t_b0901b4a` blocked/gave-up (partial, useful) → `t_c4c38028` (freeze candidate, running) → `t_09f51d5a` (adversarial/race, todo) → `t_8c125abe` (reactivate review, todo) → `t_fc541b39` (independent ACCEPT, blocked) → `t_7c2f0fdd` (real-board dogfood, todo). Gate closeout **NOT_PROVEN** until `t_fc541b39` ACCEPT + `t_7c2f0fdd` proof.
+- **Provenance:** `t_415df0f5` PASS (independent review); `t_dadd5ebf` fresh provenance **GO** — evidence only, **NOT release/build/deploy authorization**.
+- **Canary:** `t_be036abf` requires fresh MCP/OAuth session + observed receipt before first mutation; mismatch/unknown identity ⇒ FAIL (§6 of checkpoint).
+
+### Supersession notes
+- **`t_e1b6bae8`** (S-UNBLOCK-CHAIN) — HISTORICAL / SUPERSEDED for the current release chain (tied to older recovery preconditions). Not deleted; `t_e187bee7` is the current hold-rebind authority.
+- **Old "Release triage note" (TBD)** on `my-hermes-config` PR #49 — superseded by the 2026-08-21 decision trail above and by `t_72108336` comment 579. (Orchestration-scope report `t_b67c9ab8`; do not duplicate the full connector roadmap there.)
+- **`t_b0901b4a`** — partial/gave-up with successor chain; never read as a completed gate.
+- **Canonical 2026-08-19 docs** — authoritative for design/scope; where they conflict on *release-candidate* status, Kanban (live) wins and the doc should be re-reconciled.
+
+### Evidence-state summary (point-in-time)
+- Deployed connector SHA: **STILL_NOT_PROVEN** (must be pinned at clean-build identity).
+- Outcome-gate closeout: **NOT_PROVEN** (pending `t_fc541b39` + `t_7c2f0fdd`).
+- G1: **blocked** (current Phase-S blocker).
+- Release authorization: **NOT_GRANTED** (separate revision-bound human gate).
+- All canonical UNSAFE_TO_TEST items remain unresolved by safety classification.

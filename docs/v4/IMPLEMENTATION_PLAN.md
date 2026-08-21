@@ -1,12 +1,30 @@
 # Hermes ChatGPT MCP V4 Implementation Plan
 
 **Status:** CANONICAL V4 DESIGN / CURRENT EVIDENCE
-**Last reconciled:** 2026-08-19
+**Last reconciled:** 2026-08-19 (canonical design) + **2026-08-21 release-candidate truth-sync** (see [CHECKPOINT-2026-08-21.md](CHECKPOINT-2026-08-21.md))
 **Documentation base:** 9900c10 (local ref only; deployed SHA NOT_PROVEN)
 **See also:** [README.md](README.md) | [CURRENT_STATE.md](CURRENT_STATE.md) | [EVIDENCE_AND_OPEN_QUESTIONS.md](EVIDENCE_AND_OPEN_QUESTIONS.md)
 **Derived from:** t_8a7b081c (`V4-IMPLEMENTATION-PLAN-DRAFT.md`)
 
 ---
+
+## Phase-S Release-Candidate Gates (2026-08-21 truth-sync — supplemental)
+
+This section overlays the immediate Phase-S gate sequence on top of the V4 implementation plan. It does **not** redefine the V4 P0 feature scope below. See [CHECKPOINT-2026-08-21.md](CHECKPOINT-2026-08-21.md) for the authoritative critical path and governance.
+
+**Current blocker:** G1 (outcome-aware dependency authorization) — `t_b0901b4a` gave-up (partial) → `t_c4c38028` (freeze candidate) → `t_09f51d5a` (adversarial/race) → `t_8c125abe` (reactivate review) → `t_fc541b39` (independent ACCEPT) → `t_7c2f0fdd` (real-board dogfood). Gate closeout is **NOT_PROVEN** until `t_fc541b39` ACCEPT + `t_7c2f0fdd` proof.
+
+**Phase-S gate sequence (gated, evidence-backed):**
+1. Outcome-gate candidate closeout (`t_c4c38028`) + independent ACCEPT (`t_fc541b39`).
+2. Real-board gate proof (`t_7c2f0fdd`).
+3. Hold rebind to fresh GO + accepted gate (`t_e187bee7`; current authority — `t_e1b6bae8` is HISTORICAL/SUPERSEDED).
+4. Clean build with pinned/rollback-ready identity (deployed connector SHA still **STILL_NOT_PROVEN**; must be pinned here).
+5. Canary + fresh-session/provenance handshake (`t_be036abf`): fresh MCP/OAuth session + observed receipt (canary/release ID, Connector SHA, Core SHA/version, schema/tool-surface version, scopes actually granted/effective); mismatch/unknown identity ⇒ FAIL before mutation.
+6. Canary E2E PASS (`t_be036abf`).
+7. Exact-release human gate (revision-bound authorization — separate from any provenance `GO`).
+8. Traffic switch → post-switch smoke → release acceptance → V4 cut.
+
+> `t_dadd5ebf` fresh provenance **GO** is evidence only; it does **NOT** authorize build/deploy/release. The exact-release human gate is a separate, revision-bound authorization.
 
 ## Core V4 Control-Plane Capabilities (P0 Feature Scope)## Core V4 Control-Plane Capabilities (P0 Feature Scope)
 These are the essential features required for the V4 release, beyond just the synthesis P0 blockers.

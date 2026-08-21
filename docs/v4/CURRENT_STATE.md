@@ -1,7 +1,7 @@
 # V4 Current State — Canonical Source of Truth
 
 **Status:** CANONICAL V4 DESIGN / CURRENT EVIDENCE
-**Last reconciled:** 2026-08-19
+**Last reconciled:** 2026-08-19 (canonical design) + **2026-08-21 release-candidate truth-sync** (see [CHECKPOINT-2026-08-21.md](CHECKPOINT-2026-08-21.md))
 **Documentation base:** 9900c10 (local ref only; deployed SHA NOT_PROVEN)
 **See also:** [README.md](README.md) | [EVIDENCE_AND_OPEN_QUESTIONS.md](EVIDENCE_AND_OPEN_QUESTIONS.md)
 
@@ -244,7 +244,18 @@ This document derives exclusively from **local read-only investigations** comple
 
 ---
 
-## 15. Cross-References
+## 15. Release-Candidate Truth-Sync (2026-08-21)
+
+This section overlays the live Kanban release-candidate state onto the canonical design above. The canonical design (sections 1–14, dated 2026-08-19) remains authoritative for architecture/scope. Current task status always comes from Kanban; see [CHECKPOINT-2026-08-21.md](CHECKPOINT-2026-08-21.md) for the full reconciliation.
+
+- **Immediate Phase-S blocker:** G1 (outcome-aware dependency authorization). All other G2–G20 are *not* wholesale beta blockers per the 2026-08-21 triage (`t_72108336` comment 579).
+- **Outcome-gate recovery chain:** `t_b0901b4a` (gave-up, partial) → `t_c4c38028` (freeze candidate, running) → `t_09f51d5a` (adversarial/race, todo) → `t_8c125abe` (reactivate review, todo) → `t_fc541b39` (independent ACCEPT, blocked) → `t_7c2f0fdd` (real-board dogfood, todo). Gate closeout is **NOT_PROVEN** until `t_fc541b39` ACCEPT + `t_7c2f0fdd` proof.
+- **Provenance:** `t_415df0f5` PASS (independent review); `t_dadd5ebf` fresh provenance **GO** — evidence only, **NOT release/build/deploy authorization**.
+- **Hold rebind:** current authority `t_e187bee7` (depends on `t_7c2f0fdd` + `t_dadd5ebf`); `t_e1b6bae8` is HISTORICAL/SUPERSEDED for the current chain (not deleted, not current authority).
+- **Canary handshake:** `t_be036abf` requires a fresh MCP/OAuth session + observed receipt (canary/release ID, Connector SHA, Core SHA/version, schema/tool-surface version, scopes actually granted/effective) before first mutation; mismatch/unknown identity ⇒ FAIL.
+- **Deployed connector SHA** remains **STILL_NOT_PROVEN**; must be pinned at clean-build identity (next semantic checkpoint), not claimed here.
+
+## 16. Cross-References
 
 - **Spec/ADR:** [CONTROL_PLANE_SPEC.md](CONTROL_PLANE_SPEC.md) | [MCP_TOPOLOGY_ADR.md](MCP_TOPOLOGY_ADR.md)
 - **Catalog:** [TOOL_CATALOG.md](TOOL_CATALOG.md) | [v4-tool-catalog.json](v4-tool-catalog.json)

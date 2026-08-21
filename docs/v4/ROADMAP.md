@@ -1,7 +1,7 @@
 # Hermes ChatGPT MCP V4 Roadmap
 
 **Status:** CANONICAL V4 DESIGN / CURRENT EVIDENCE
-**Last reconciled:** 2026-08-19
+**Last reconciled:** 2026-08-19 (canonical design) + **2026-08-21 release-candidate truth-sync** (see [CHECKPOINT-2026-08-21.md](CHECKPOINT-2026-08-21.md))
 **Documentation base:** 9900c10 (local ref only; deployed SHA NOT_PROVEN)
 **See also:** [README.md](README.md) | [CURRENT_STATE.md](CURRENT_STATE.md) | [EVIDENCE_AND_OPEN_QUESTIONS.md](EVIDENCE_AND_OPEN_QUESTIONS.md)
 **Derived from:** t_8a7b081c (`V4-ROADMAP-DRAFT.md`)
@@ -28,6 +28,38 @@ Enable reliable, secure, and observable AI agent orchestration via the Hermes Ch
 - Authorization readback inconsistency (`get_board` capability readback inconsistent with successful writes)
 - Command registration/`--help` != behavioral PASS
 - Dogfood mutations MUST use disposable `hermes-chatgpt-e2e-*` fixture board(s), NEVER project board `hermes-chatgpt-mcp`. Read-only control-plane checks may read the project board.
+
+## Phase-S vs V4 Horizons (2026-08-21 truth-sync — supplemental)
+
+The canonical roadmap below is the long-range V4 plan. This section overlays the **immediate Phase-S release-candidate** horizon so the two are not confused. See [CHECKPOINT-2026-08-21.md](CHECKPOINT-2026-08-21.md) for the full critical path and governance rules.
+
+**Decision (2026-08-21, `t_72108336` comment 579):** Do **NOT** convert all G1–G20 into Phase-S/beta blockers.
+- **G1** (outcome-aware dependency authorization) is the *only* substantive new platform correction blocking immediate Phase-S.
+- A minimal fresh-session / provenance test-integrity requirement is required for immediate E2E (the canary handshake).
+- G2–G20 belong to existing V4 waves, the dogfood program, or other boards; tracked, not blocking, unless a concrete release-safety regression is proven.
+
+**Immediate-E2E coverage vs later architecture:** G2 / G6 / G14 / G15 / G16 are minimally covered at immediate E2E via the fresh-session/provenance handshake; their full identity/session architecture remains later Wave0+ / other layers.
+
+**Cross-board ownership:** G18 / G19 → `chatgpt-hermes-orchestration`; Telegram transport / full human-gate UX → `hermes-control-plane`; model/routing intelligence → Profile Factory. None delay immediate Phase-S unless a proven regression.
+
+### Gap → Owner table (compact)
+
+| Gap | Disposition for immediate Phase-S | Owner / lane |
+|-----|-----------------------------------|--------------|
+| G1 | **Immediate blocker** — outcome-aware dependency authorization | recovery chain `t_c4c38028`→`t_fc541b39`→`t_7c2f0fdd` |
+| G2 / G6 / G14 / G15 / G16 | Immediate test integrity (handshake) + later full architecture | Wave0+ / other layers |
+| G3 / G4 / G5 | Hermes Core / control-plane regressions | Hermes Core / control-plane |
+| G7 | Auth principal separation | control-plane |
+| G8 | Wave1 | `t_5ae3cfd5` |
+| G9 / G10 | Profile Factory / model intelligence | Profile Factory |
+| G11 | Wave3 | `t_94a82805` |
+| G12 | Wave2 | `t_bc1e909d` |
+| G13 | Cross-layer reconciliation | cross-layer |
+| G17 | Phase-S exact-release minimum + control-plane full | control-plane |
+| G18 / G19 | Orchestration | `chatgpt-hermes-orchestration` |
+| G20 | Governance regression | governance |
+
+> A provenance `GO` (e.g. `t_dadd5ebf`) is evidence, **not** release authorization. The exact-release human gate is a separate, revision-bound authorization.
 
 ## P0 Blockers (Release Blockers — NOT the whole P0 feature scope)
 The following five synthesis items are RELEASE BLOCKERS for V4:

@@ -1,12 +1,30 @@
 # Hermes ChatGPT MCP V4 Dogfood / QA Plan
 
 **Status:** CANONICAL V4 DESIGN / CURRENT EVIDENCE
-**Last reconciled:** 2026-08-19
+**Last reconciled:** 2026-08-19 (canonical design) + **2026-08-21 release-candidate truth-sync** (see [CHECKPOINT-2026-08-21.md](CHECKPOINT-2026-08-21.md))
 **Documentation base:** 9900c10 (local ref only; deployed SHA NOT_PROVEN)
 **See also:** [README.md](README.md) | [CURRENT_STATE.md](CURRENT_STATE.md) | [EVIDENCE_AND_OPEN_QUESTIONS.md](EVIDENCE_AND_OPEN_QUESTIONS.md)
 **Derived from:** t_8a7b081c (`V4-DOGFOOD-QA-PLAN-DRAFT.md`)
 
 ---
+
+## Phase-S Candidate E2E — Fresh-Session / Provenance Handshake (2026-08-21 truth-sync — supplemental)
+
+This section adds the immediate Phase-S candidate E2E bridge on top of the V4 dogfood plan. It is **not** a replacement for the disposable-fixture rule below; it tightens the canary entry condition. See [CHECKPOINT-2026-08-21.md](CHECKPOINT-2026-08-21.md) §6 and task `t_be036abf` (comment 580).
+
+**Entry gate before the canary's first mutation:**
+1. Establish a **fresh MCP/OAuth session** — no token/session reused from prior QA.
+2. Capture a **minimal observed receipt**:
+   - expected canary / release ID
+   - Connector SHA
+   - Core SHA / version
+   - schema / tool-surface version
+   - scopes **actually granted / effective** (not merely requested)
+3. **Mismatch or unknown identity ⇒ FAIL before any mutation.** Do not proceed; do not write to the live board.
+
+**Coverage vs architecture:** This handshake provides *immediate-E2E* coverage for G2 / G6 / G14 / G15 / G16 (identity/scope readback). It is **not** a substitute for their full identity/session architecture, which remains later Wave0+ / other layers.
+
+> A provenance `GO` (e.g. `t_dadd5ebf`) is evidence, **not** release/build/deploy authorization. This handshake is a prerequisite gate, not the exact-release human gate.
 
 ## Overview## Overview
 This plan uses the Hermes ChatGPT MCP connector itself as both subject and control plane for dogfooding and QA. All tests and validation will be performed using the MCP interface. CLI/source may appear only in an `Oracle/contrast` column or note for verification.

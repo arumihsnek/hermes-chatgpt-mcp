@@ -1,8 +1,10 @@
 # V4 Control-Plane Documentation
 
 **Status:** CANONICAL V4 DESIGN / CURRENT EVIDENCE
-**Last reconciled:** 2026-08-19
+**Last reconciled:** 2026-08-19 (canonical design) + **2026-08-21 release-candidate truth-sync** (see [CHECKPOINT-2026-08-21.md](CHECKPOINT-2026-08-21.md))
 **Documentation base:** 9900c10 (local ref only; deployed SHA NOT_PROVEN)
+
+> **Truth-sync note (2026-08-21):** The canonical 2026-08-19 design docs below remain authoritative for architecture/scope. A supplemental reconciliation checkpoint brings them up to the live Kanban release-candidate state: [CHECKPOINT-2026-08-21.md](CHECKPOINT-2026-08-21.md). Docs are a point-in-time snapshot; current task status always comes from Kanban. A provenance `GO` (e.g. `t_dadd5ebf`) is evidence, not release authorization.
 
 ---
 
@@ -23,6 +25,7 @@
 | [DOGFOOD_QA_PLAN.md](DOGFOOD_QA_PLAN.md) | MCP-as-SUT dogfood plan; disposable fixture boards only | Canonical |
 | [EVIDENCE_AND_OPEN_QUESTIONS.md](EVIDENCE_AND_OPEN_QUESTIONS.md) | Evidence hierarchy, STILL_NOT_PROVEN/UNSAFE_TO_TEST, dogfood incidents | Canonical |
 | [STALE_DOCS.md](STALE_DOCS.md) | Canonicalized stale-document inventory | Canonical |
+| [CHECKPOINT-2026-08-21.md](CHECKPOINT-2026-08-21.md) | **2026-08-21 release-candidate truth-sync** — Phase-S critical path, blockers, GO≠authorization, gap→owner | Reconciliation (supplemental) |
 
 ---
 
@@ -46,6 +49,7 @@
 - **Matrices:** [KANBAN_CLI_MATRIX.md](KANBAN_CLI_MATRIX.md) + [HERMES_CAPABILITIES_MATRIX.md](HERMES_CAPABILITIES_MATRIX.md)
 - **Planning:** [ROADMAP.md](ROADMAP.md) + [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) + [DOGFOOD_QA_PLAN.md](DOGFOOD_QA_PLAN.md)
 - **Evidence & History:** [EVIDENCE_AND_OPEN_QUESTIONS.md](EVIDENCE_AND_OPEN_QUESTIONS.md) + [STALE_DOCS.md](STALE_DOCS.md)
+- **2026-08-21 release-candidate truth-sync:** [CHECKPOINT-2026-08-21.md](CHECKPOINT-2026-08-21.md)
 
 ---
 
