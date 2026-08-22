@@ -8,6 +8,12 @@ narrowly scoped command, `create_task`, through Hermes'
 
 ## Stable v0.4 scope
 
+The deployable candidate also supports `MCP_CHATGPT_COMPAT_MODE=true` together
+with `MCP_SURFACE=beta`. This freezes the advertised connector contract to
+exactly eleven tools (the seven reads, `create_task`, `create_board`,
+`add_comment`, and `assign_task`) while retaining beta's existing OAuth scopes
+and selected-board gates. It is opt-in and does not alter the stable service.
+
 The stable public surface is seven READ tools plus one WRITE tool:
 
 - READ: `list_boards`, `get_board`, `list_tasks`, `get_task`,

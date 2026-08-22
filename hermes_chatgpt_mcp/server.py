@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import logging
 import os
 from typing import Literal
@@ -13,6 +14,7 @@ from mcp.server.fastmcp.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
 from starlette.requests import Request
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.cors import CORSMiddleware
 from starlette.routing import Route, request_response
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -205,6 +207,30 @@ def _strictify_tools(mcp: FastMCP) -> None:
         tool.parameters = model.model_json_schema()
 
 
+def _session_fingerprint(value: str | None) -> str | None:
+    """Return a stable, non-reversible correlation value for an MCP session."""
+    if not value:
+        return None
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+
+
+class _McpObservabilityMiddleware(BaseHTTPMiddleware):
+    """Log transport facts without recording credentials or request content."""
+
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path != "/mcp" or request.method != "POST":
+            return await call_next(request)
+        response = await call_next(request)
+        logger.info(
+            "mcp_transport request_path=%s protocol_version=%s session_fp=%s status=%s",
+            request.url.path,
+            request.headers.get("mcp-protocol-version", ""),
+            _session_fingerprint(request.headers.get("mcp-session-id")),
+            response.status_code,
+        )
+        return response
+
+
 def create_app(
     adapter: HermesReadOnlyAdapter | None = None,
     *,
@@ -224,6 +250,8 @@ def create_app(
         if surface != configured_surface:
             raise ValueError("surface override must match settings.surface")
     effective_surface = configured_surface if surface is None else surface
+    if settings.chatgpt_compat_mode and effective_surface != "beta":
+        raise ValueError("MCP_CHATGPT_COMPAT_MODE requires MCP_SURFACE=beta")
     build_metadata = load_build_metadata(settings.build_metadata_file)
     expected_policy = BETA_AUTH_POLICY if effective_surface == "beta" else STABLE_AUTH_POLICY
     auth_service = auth_service or AuthService(settings)
@@ -1107,8 +1135,23 @@ def create_app(
         except OAuthError as exc:
             return _json_error(exc)
 
+    if settings.chatgpt_compat_mode:
+        # The API-style ChatGPT connector needs only this deliberately frozen
+        # contract. Keep beta OAuth gates and handlers, but do not advertise
+        # any of the wider beta control-plane leaves.
+        allowed_tools = {
+            "list_boards", "get_board", "list_tasks", "get_task",
+            "get_task_graph", "get_dispatch", "get_activity", "create_task",
+            "create_board", "add_comment", "assign_task",
+        }
+        mcp._tool_manager._tools = {  # type: ignore[attr-defined]
+            name: tool
+            for name, tool in mcp._tool_manager._tools.items()  # type: ignore[attr-defined]
+            if name in allowed_tools
+        }
     _strictify_tools(mcp)
     app = mcp.streamable_http_app()
+    app.add_middleware(_McpObservabilityMiddleware)
 
     # FastMCP 1.28.1 derives protected-resource ``scopes_supported`` from the
     # resource-wide required scopes. The resource requires hermes:read for

@@ -107,6 +107,7 @@ class Settings:
     oauth_diagnostics: bool = False
     surface: Literal["stable", "beta"] = "stable"
     board_create_enabled: bool = False
+    chatgpt_compat_mode: bool = False
     build_metadata_file: Path | None = None
 
     @classmethod
@@ -157,6 +158,7 @@ class Settings:
             oauth_diagnostics=_boolean("MCP_OAUTH_DIAGNOSTICS"),
             surface=_surface(),
             board_create_enabled=_boolean("MCP_BOARD_CREATE_ENABLED"),
+            chatgpt_compat_mode=_boolean("MCP_CHATGPT_COMPAT_MODE"),
             build_metadata_file=(
                 Path(value).expanduser()
                 if (value := _env("MCP_BUILD_METADATA_FILE"))

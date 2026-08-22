@@ -107,6 +107,68 @@ def test_settings_beta_derives_beta_mcp_surface_without_explicit_override(tmp_pa
     asyncio.run(_test_settings_beta_derives_beta_mcp_surface_without_explicit_override(tmp_path, monkeypatch))
 
 
+def test_chatgpt_compat_mode_freezes_exact_eleven_tool_contract(tmp_path, monkeypatch):
+    asyncio.run(_test_chatgpt_compat_mode_freezes_exact_eleven_tool_contract(tmp_path, monkeypatch))
+
+
+async def _test_chatgpt_compat_mode_freezes_exact_eleven_tool_contract(tmp_path, monkeypatch):
+    fixture, settings, auth, resolver, _ = _beta_app(tmp_path, monkeypatch)
+    settings = replace(settings, chatgpt_compat_mode=True)
+    app = create_app(board_resolver=resolver, settings=settings, auth_service=auth, surface="beta")
+    token = _token(auth, "compat", ["hermes:read", "hermes:manage", "hermes:board:create"], board=fixture.board)
+    transport = httpx.ASGITransport(app=app)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=transport, base_url=settings.public_base_url) as client:
+            response = await client.post(
+                "/mcp",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Accept": "application/json, text/event-stream",
+                    "Content-Type": "application/json",
+                    "MCP-Protocol-Version": "2025-06-18",
+                },
+                json={"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
+            )
+    assert response.status_code == 200
+    assert {tool["name"] for tool in response.json()["result"]["tools"]} == {
+        "list_boards", "get_board", "list_tasks", "get_task", "get_task_graph",
+        "get_dispatch", "get_activity", "create_task", "create_board",
+        "add_comment", "assign_task",
+    }
+
+
+def test_stateless_chatgpt_matrix_does_not_require_session_replay(tmp_path, monkeypatch):
+    asyncio.run(_test_stateless_chatgpt_matrix_does_not_require_session_replay(tmp_path, monkeypatch))
+
+
+async def _test_stateless_chatgpt_matrix_does_not_require_session_replay(tmp_path, monkeypatch):
+    fixture, settings, auth, resolver, _ = _beta_app(tmp_path, monkeypatch)
+    settings = replace(settings, chatgpt_compat_mode=True)
+    app = create_app(board_resolver=resolver, settings=settings, auth_service=auth, surface="beta")
+    token = _token(auth, "matrix", ["hermes:read", "hermes:manage", "hermes:board:create"], board=fixture.board)
+    transport = httpx.ASGITransport(app=app)
+    base_headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json, text/event-stream",
+        "Content-Type": "application/json",
+        "MCP-Protocol-Version": "2025-06-18",
+    }
+    initialize = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "matrix", "version": "1"}}}
+    listed = {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=transport, base_url=settings.public_base_url) as client:
+            first = await client.post("/mcp", headers=base_headers, json=initialize)
+            assert first.status_code == 200
+            assert "mcp-session-id" not in first.headers
+            for session_id in (None, "stale-session", "wrong-session"):
+                headers = dict(base_headers)
+                if session_id:
+                    headers["MCP-Session-Id"] = session_id
+                repeated = await client.post("/mcp", headers=headers, json=listed)
+                assert repeated.status_code == 200, repeated.text
+                assert "mcp-session-id" not in repeated.headers
+
+
 async def _test_settings_beta_derives_beta_mcp_surface_without_explicit_override(tmp_path, monkeypatch):
     _, settings, auth, resolver, _ = _beta_app(tmp_path, monkeypatch)
     app = create_app(board_resolver=resolver, settings=settings, auth_service=auth)
