@@ -248,7 +248,23 @@ class HermesReadOnlyAdapter:
             task = self._get_task(conn, task_id)
             parent_ids = self.hermes.parent_ids(conn, task_id)
             parents = [self._get_task(conn, parent_id) for parent_id in parent_ids]
-        projection = project_dispatch(task, parents)
+            dependency_reasons: tuple[str, ...] | None = None
+            canonical_get_dispatch = getattr(self.hermes, "get_dispatch", None)
+            if callable(canonical_get_dispatch):
+                eligibility = canonical_get_dispatch(conn, task_id)
+                if getattr(eligibility, "eligible", False):
+                    dependency_reasons = ()
+                else:
+                    dependency_reasons = tuple(
+                        str(getattr(failure, "code", "dependency_not_satisfied"))
+                        for failure in getattr(eligibility, "failures", ())
+                    ) or ("dependency_not_satisfied",)
+            else:
+                # Older Hermes modules have no canonical gate evaluator. The
+                # local projection deliberately fails closed for historical
+                # parents instead of treating archived status as success.
+                dependency_reasons = None
+        projection = project_dispatch(task, parents, dependency_reasons=dependency_reasons)
         return DispatchView(
             task_id=projection.task_id,
             raw_status=projection.raw_status,

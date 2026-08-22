@@ -24,7 +24,12 @@ def _status(task: Any) -> str:
     return str(getattr(task, "status", ""))
 
 
-def project_dispatch(task: Any, parents: Iterable[Any]) -> DispatchProjection:
+def project_dispatch(
+    task: Any,
+    parents: Iterable[Any],
+    *,
+    dependency_reasons: Iterable[str] | None = None,
+) -> DispatchProjection:
     status = _status(task)
     reasons: list[str] = []
     if status in {"done", "archived"}:
@@ -50,9 +55,23 @@ def project_dispatch(task: Any, parents: Iterable[Any]) -> DispatchProjection:
     else:
         reasons.append("unsupported_status")
 
-    pending_parent = any(_status(parent) not in {"done", "archived"} for parent in parents)
-    if pending_parent:
-        reasons.append("dependency_not_satisfied")
+    if dependency_reasons is None:
+        pending_parent_reasons: list[str] = []
+        for parent in parents:
+            parent_status = _status(parent)
+            if parent_status == "archived":
+                # Historical retention is not success evidence.  An explicit
+                # replacement can only be accepted by the canonical Hermes
+                # dependency evaluator; this projection fails closed when it
+                # receives only a historical parent object.
+                pending_parent_reasons.append("parent_archived_unsatisfied")
+            elif parent_status == "superseded":
+                pending_parent_reasons.append("superseded_without_replacement")
+            elif parent_status != "done":
+                pending_parent_reasons.append("dependency_not_satisfied")
+        reasons.extend(pending_parent_reasons)
+    else:
+        reasons.extend(str(reason) for reason in dependency_reasons if reason)
     if getattr(task, "consecutive_failures", 0):
         reasons.append("consecutive_failures")
     if getattr(task, "last_failure_error", None):
