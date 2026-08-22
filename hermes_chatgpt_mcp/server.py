@@ -30,6 +30,12 @@ from .command import HermesCreateAdapter
 from .config import Settings
 from .diagnostics import emit, fingerprint, redirect_identity, request_fingerprint, scope_summary
 from .release import load_build_metadata
+from .ui import (
+    KANBAN_UI_MIME_TYPE,
+    KANBAN_UI_MAX_BYTES,
+    KANBAN_UI_RESOURCE_URI,
+    build_kanban_ui_html,
+)
 from .schemas import (
     AddCommentInput,
     AddCommentResult,
@@ -485,6 +491,7 @@ def create_app(
         description="Read the configured Hermes Kanban board summary and status counts.",
         annotations=readonly,
         structured_output=True,
+        meta={"ui": {"resourceUri": KANBAN_UI_RESOURCE_URI}},
     )
     async def get_board(request: BoardQuery) -> BoardView:
         handle = resolve_board(request.board, operation="read")
@@ -603,6 +610,20 @@ def create_app(
                 triage=request.triage,
                 idempotency_key=request.idempotency_key,
             )
+
+    @mcp.resource(
+        KANBAN_UI_RESOURCE_URI,
+        name="hermes_kanban_ui",
+        title="Hermes Kanban board",
+        description="Read-only Hermes Kanban board view.",
+        mime_type=KANBAN_UI_MIME_TYPE,
+        meta={"ui": {}},
+    )
+    def kanban_ui() -> str:
+        html = build_kanban_ui_html()
+        if len(html.encode("utf-8")) > KANBAN_UI_MAX_BYTES:
+            raise ValueError("Kanban UI resource exceeds size limit")
+        return html
 
     if beta:
         @mcp.tool(
