@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from types import SimpleNamespace
 
 import pytest
 
@@ -53,6 +54,27 @@ def test_all_query_adapter_reads_preserve_the_fixture_fingerprint(tmp_path):
     after = tree_fingerprint(fixture.root)
 
     assert after == before
+
+
+def test_dispatch_uses_canonical_dependency_gate_result(tmp_path, monkeypatch):
+    fixture = make_hermes_fixture(tmp_path)
+    adapter = HermesReadOnlyAdapter(
+        ReadOnlyHermesStore(
+            db_path=fixture.db_path,
+            board=fixture.board,
+            hermes_module=kanban_db,
+        )
+    )
+    canonical_failure = SimpleNamespace(
+        eligible=False,
+        failures=(SimpleNamespace(code="canonical_gate_failure"),),
+    )
+    monkeypatch.setattr(kanban_db, "get_dispatch", lambda conn, task_id: canonical_failure)
+
+    result = adapter.get_dispatch("child-ready")
+
+    assert result.state == "BLOCKED"
+    assert result.reasons == ["canonical_gate_failure"]
 
 
 def test_read_only_open_does_not_create_a_missing_database(tmp_path):

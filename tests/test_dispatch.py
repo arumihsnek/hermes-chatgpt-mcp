@@ -52,6 +52,15 @@ def test_dispatch_reports_dependency_and_assignment_gates():
     assert "unassigned" in unassigned_result.reasons
 
 
+def test_archived_parent_is_not_a_satisfied_dependency():
+    archived_parent = _task(id="parent", title="Archived parent", status="archived")
+
+    result = project_dispatch(_task(status="ready"), [archived_parent])
+
+    assert result.state is DispatchState.BLOCKED
+    assert "parent_archived_unsatisfied" in result.reasons
+
+
 def test_dispatch_keeps_running_out_of_ready_projection():
     result = project_dispatch(_task(status="running"), [])
 
