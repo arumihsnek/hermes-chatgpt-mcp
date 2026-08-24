@@ -53,12 +53,13 @@ service venv lacked PyYAML. The prior adapter-only PASS was rejected.
 
 A non-deployed immutable candidate is prepared:
 
-- source commit: `a7064355c83b18da16c86451cff07d983402972d`;
+- source commit: `dc25e8bf7a66be87e12da33613d83c874be50038`;
 - wheel SHA256:
-  `378a1a581c8501f135eab206eec90bf993cecb906e85a93f5f285ec44f8c7d79`;
+  `56b7b7f501eab2f3d1f0625af91c3dfe7185df16adeb8c571f4d169e34622a07`;
 - `PyYAML==6.0.3` is pinned;
-- the stable installer validates the exact source and wheel hashes, installs
-  into the service venv, and rejects an editable install;
+- the effective stable runtime is `/opt/venvs/hermes-chatgpt-mcp/bin/python`;
+  the installer validates exact source and wheel hashes, installs into that
+  venv, and rejects an editable install;
 - service working directory is no longer the mutable source worktree;
 - public-like disposable E2E passes OAuth register/authorize/token, MCP
   initialize, tools/list, `create_task(arguments.request)`, and get_task
