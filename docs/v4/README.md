@@ -26,6 +26,7 @@
 | [EVIDENCE_AND_OPEN_QUESTIONS.md](EVIDENCE_AND_OPEN_QUESTIONS.md) | Evidence hierarchy, STILL_NOT_PROVEN/UNSAFE_TO_TEST, dogfood incidents | Canonical |
 | [STALE_DOCS.md](STALE_DOCS.md) | Canonicalized stale-document inventory | Canonical |
 | [CHECKPOINT-2026-08-21.md](CHECKPOINT-2026-08-21.md) | **2026-08-21 release-candidate truth-sync** — Phase-S critical path, blockers, GO≠authorization, gap→owner | Reconciliation (supplemental) |
+| [RECOVERY-TRUTH-SYNC-2026-08-24.md](RECOVERY-TRUTH-SYNC-2026-08-24.md) | **2026-08-24 recovery truth-sync** — invalid historical restore, 165d current state, pinned baseline, fresh gate, MCP P0 | Reconciliation (supplemental) |
 
 ---
 
@@ -50,6 +51,7 @@
 - **Planning:** [ROADMAP.md](ROADMAP.md) + [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) + [DOGFOOD_QA_PLAN.md](DOGFOOD_QA_PLAN.md)
 - **Evidence & History:** [EVIDENCE_AND_OPEN_QUESTIONS.md](EVIDENCE_AND_OPEN_QUESTIONS.md) + [STALE_DOCS.md](STALE_DOCS.md)
 - **2026-08-21 release-candidate truth-sync:** [CHECKPOINT-2026-08-21.md](CHECKPOINT-2026-08-21.md)
+- **2026-08-24 recovery truth-sync:** [RECOVERY-TRUTH-SYNC-2026-08-24.md](RECOVERY-TRUTH-SYNC-2026-08-24.md)
 
 ---
 
