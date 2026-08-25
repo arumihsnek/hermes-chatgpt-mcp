@@ -1,7 +1,7 @@
 # Stale Documentation Inventory
 
 **Status:** CANONICAL V4 DESIGN / CURRENT EVIDENCE
-**Last reconciled:** 2026-08-19
+**Last reconciled:** 2026-08-19 + **2026-08-25 DAG soft-retire contract** (see [DAG-SOFT-RETIRE-CONTRACT.md](DAG-SOFT-RETIRE-CONTRACT.md))
 **Documentation base:** 9900c10 (local ref only; deployed SHA NOT_PROVEN)
 **See also:** [README.md](README.md) | [CURRENT_STATE.md](CURRENT_STATE.md) | [EVIDENCE_AND_OPEN_QUESTIONS.md](EVIDENCE_AND_OPEN_QUESTIONS.md)
 **Derived from:** t_4d983898 (`STALE-DOCS-INVENTORY.md`)
@@ -62,7 +62,8 @@ Dated `VERIFICATION-*`, `REPORT-*`, and `PLAN-*` files at the repository root ar
 3. **Current capability references:** `TOOL_CATALOG.md`, `v4-tool-catalog.json`, `KANBAN_CLI_MATRIX.md`, `HERMES_CAPABILITIES_MATRIX.md`, `capability-index.json`.
 4. **Planning and QA:** `ROADMAP.md`, `IMPLEMENTATION_PLAN.md`, and `DOGFOOD_QA_PLAN.md`.
 5. **Evidence and uncertainty:** `EVIDENCE_AND_OPEN_QUESTIONS.md`.
-6. **Historical evidence:** Existing dated docs remain at their original paths and are linked with dates/scope.
+6. **DAG / projection contract:** `DAG-SOFT-RETIRE-CONTRACT.md` (soft-retire `edge_state`, PROJECTION_RUNTIME_P0).
+7. **Historical evidence:** Existing dated docs remain at their original paths and are linked with dates/scope.
 
 ### Update rule
 

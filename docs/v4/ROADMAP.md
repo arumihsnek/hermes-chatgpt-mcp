@@ -1,7 +1,7 @@
 # Hermes ChatGPT MCP V4 Roadmap
 
 **Status:** CANONICAL V4 DESIGN / CURRENT EVIDENCE
-**Last reconciled:** 2026-08-19 (canonical design) + **2026-08-21 release-candidate truth-sync** (see [CHECKPOINT-2026-08-21.md](CHECKPOINT-2026-08-21.md))
+**Last reconciled:** 2026-08-19 (canonical design) + **2026-08-21 release-candidate truth-sync** (see [CHECKPOINT-2026-08-21.md](CHECKPOINT-2026-08-21.md)) + **2026-08-25 DAG soft-retire contract** (see [DAG-SOFT-RETIRE-CONTRACT.md](DAG-SOFT-RETIRE-CONTRACT.md))
 **Documentation base:** 9900c10 (local ref only; deployed SHA NOT_PROVEN)
 **See also:** [README.md](README.md) | [CURRENT_STATE.md](CURRENT_STATE.md) | [EVIDENCE_AND_OPEN_QUESTIONS.md](EVIDENCE_AND_OPEN_QUESTIONS.md)
 **Derived from:** t_8a7b081c (`V4-ROADMAP-DRAFT.md`)
@@ -103,6 +103,7 @@ The following five synthesis items are RELEASE BLOCKERS for V4:
 - [ ] Safe remote attachments
 - [ ] Authorization/contract/E2E/release gates (testing/contract/E2E gates, backwards compatibility, and release gating are P0/P1 delivery requirements, NEVER P3)
 - [ ] Regression coverage for artifact-completion semantics
+- [ ] **DAG `task_links.edge_state` soft-retire contract** — canonical at [DAG-SOFT-RETIRE-CONTRACT.md](DAG-SOFT-RETIRE-CONTRACT.md); migration NOT deployed until reader/evaluator/graph/dispatch/promotion/claim are all edge-aware (PROJECTION_RUNTIME_P0)
 
 ### P1 (Post-P0, Pre-Stable)
 - [ ] Profile routing update (effective toolsets)

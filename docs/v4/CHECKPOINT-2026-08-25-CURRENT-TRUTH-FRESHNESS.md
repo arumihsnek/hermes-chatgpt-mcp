@@ -2,7 +2,7 @@
 
 **Status:** DOCUMENTATION TRUTH-SYNC (supplemental to the canonical 2026-08-19 V4 design docs + 2026-08-21 and 2026-08-24 reconciliations)
 **Reconciliation date:** 2026-08-25 (UTC)
-**Authored by:** github-steward (task `t_6e482547`)
+**Authored by:** github-steward (task `t_6e482547`); **Augmented by:** github-steward (task `t_ed19e80c`) with DAG soft-retire contract cross-reference.
 **Documentation base:** `9900c10` (local ref only; deployed connector SHA is **NOT_PROVEN** — carried from canonical docs)
 **Companion review card:** `t_d83ac017` (independent truth-sync audit for this checkpoint)
 **Scope of this document:** Fix the documentation defect exposed by the Command Code cold-start test — repo docs and historical cards were allowed to outrank live Kanban/runtime truth. This is a documentation/system-design change only. No Git changes to any live runtime repo, no service/restart/deploy/OAuth/DCR/V4/downstream mutation.
@@ -137,6 +137,7 @@ These remain **RETAIN / LINK** as dated v0.x contracts (per `STALE_DOCS.md`); th
 
 1. Independent truth-sync audit of this checkpoint — `t_d83ac017`.
 2. Any downstream acceptance/release gate remains **NOT_GRANTED**; no document here authorizes build/deploy/release.
+3. **DAG soft-retire contract (2026-08-25, `t_ed19e80c`):** canonical `task_links.edge_state` soft-retire + PROJECTION_RUNTIME_P0 release blocker recorded at [DAG-SOFT-RETIRE-CONTRACT.md](DAG-SOFT-RETIRE-CONTRACT.md). This is documentation truth only; it does not authorize runtime mutation.
 
 ---
 

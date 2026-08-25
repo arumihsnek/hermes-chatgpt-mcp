@@ -1,7 +1,7 @@
 # V4 Current State — Canonical Source of Truth
 
 **Status:** CANONICAL V4 DESIGN / CURRENT EVIDENCE
-**Last reconciled:** 2026-08-19 (canonical design) + **2026-08-21 release-candidate truth-sync** (see [CHECKPOINT-2026-08-21.md](CHECKPOINT-2026-08-21.md)) + **2026-08-25 current-truth freshness** (see [CHECKPOINT-2026-08-25-CURRENT-TRUTH-FRESHNESS.md](CHECKPOINT-2026-08-25-CURRENT-TRUTH-FRESHNESS.md))
+**Last reconciled:** 2026-08-19 (canonical design) + **2026-08-21 release-candidate truth-sync** (see [CHECKPOINT-2026-08-21.md](CHECKPOINT-2026-08-21.md)) + **2026-08-25 current-truth freshness** (see [CHECKPOINT-2026-08-25-CURRENT-TRUTH-FRESHNESS.md](CHECKPOINT-2026-08-25-CURRENT-TRUTH-FRESHNESS.md)) + **2026-08-25 DAG soft-retire contract** (see [DAG-SOFT-RETIRE-CONTRACT.md](DAG-SOFT-RETIRE-CONTRACT.md))
 **Documentation base:** 9900c10 (local ref only; deployed SHA NOT_PROVEN)
 **See also:** [README.md](README.md) | [EVIDENCE_AND_OPEN_QUESTIONS.md](EVIDENCE_AND_OPEN_QUESTIONS.md) | [RECOVERY-TRUTH-SYNC-2026-08-24.md](RECOVERY-TRUTH-SYNC-2026-08-24.md)
 
@@ -230,6 +230,8 @@ This document derives exclusively from **local read-only investigations** comple
 4. **Discovery vs stale checkout:** Live connector discovery (54 tools) vs checked-out repo state (older schemas) — canonical docs must reconcile, not assume checkout is truth.
 5. **get_board capability inconsistency:** `get_board` capability readback inconsistent with successful writes (known issue).
 6. **Manual dispatch BACKEND_ERROR:** `dispatch` tool exists but manual call observed `BACKEND_ERROR` => inconsistent.
+7. **DAG edge_state soft-retire (PROJECTION_RUNTIME_P0):** runtime `165d1849e25c` is edge_state-blind in `parent_ids`/`child_ids`/`task_graph_context`/`recompute_ready`/`_parents_satisfied`/`claim_task`/MCP fallback; `retired`/`rebound` edges still exert gating power. Canonical contract: [DAG-SOFT-RETIRE-CONTRACT.md](DAG-SOFT-RETIRE-CONTRACT.md).
+8. **Fixture leakage dogfood (PASS):** `t_a161305b`/run1114 and `t_85b5b14b`/run1118 created with `pid999999`/`boom`/`worker` on canonical board; reclaimed+archived canonically, no DELETE, review PASS. Root = `gave_up`+`promoted` without atomic run/claim closure + test isolation failure.
 
 ---
 
@@ -273,11 +275,15 @@ This section overlays the live Kanban release-candidate state onto the canonical
 - **Canary handshake:** `t_be036abf` requires a fresh MCP/OAuth session + observed receipt (canary/release ID, Connector SHA, Core SHA/version, schema/tool-surface version, scopes actually granted/effective) before first mutation; mismatch/unknown identity ⇒ FAIL.
 - **Deployed connector SHA** remains **STILL_NOT_PROVEN**; must be pinned at clean-build identity (next semantic checkpoint), not claimed here.
 
+## 15b. DAG / Projection Soft-Retire Release Blocker (2026-08-25)
+
+The `task_links.edge_state` soft-retire contract (`active|retired|rebound`; retired/rebound carry zero gating power; provenance fields are historical evidence only) and its deployment invariant are canonical at [DAG-SOFT-RETIRE-CONTRACT.md](DAG-SOFT-RETIRE-CONTRACT.md). Current release blocker: runtime `165d1849e25c` is edge_state-blind (PROJECTION_RUNTIME_P0). Release path (fail-closed): deploy edge-aware runtime under fresh Human Gate + live readback → fresh upstream acceptance replacing historical `t_47fcecec` if required → open `barrier` → V4-CUT3. Do NOT delete retired edges or complete `barrier` for throughput. Current lanes: `t_31d1c67f` implementation, `t_20dd938c` review, `t_ef3ae8d4` activation-gate-prep; `barrier`/V4 remain closed.
+
 ## 16. Cross-References
 
 - **Spec/ADR:** [CONTROL_PLANE_SPEC.md](CONTROL_PLANE_SPEC.md) | [MCP_TOPOLOGY_ADR.md](MCP_TOPOLOGY_ADR.md)
 - **Catalog:** [TOOL_CATALOG.md](TOOL_CATALOG.md) | [v4-tool-catalog.json](v4-tool-catalog.json)
 - **Matrices:** [KANBAN_CLI_MATRIX.md](KANBAN_CLI_MATRIX.md) | [HERMES_CAPABILITIES_MATRIX.md](HERMES_CAPABILITIES_MATRIX.md)
 - **Planning:** [ROADMAP.md](ROADMAP.md) | [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) | [DOGFOOD_QA_PLAN.md](DOGFOOD_QA_PLAN.md)
-- **Evidence:** [EVIDENCE_AND_OPEN_QUESTIONS.md](EVIDENCE_AND_OPEN_QUESTIONS.md) | [STALE_DOCS.md](STALE_DOCS.md)
+- **Evidence:** [EVIDENCE_AND_OPEN_QUESTIONS.md](EVIDENCE_AND_OPEN_QUESTIONS.md) | [STALE_DOCS.md](STALE_DOCS.md) | [DAG-SOFT-RETIRE-CONTRACT.md](DAG-SOFT-RETIRE-CONTRACT.md)
 - **Current-truth freshness (2026-08-25):** [CHECKPOINT-2026-08-25-CURRENT-TRUTH-FRESHNESS.md](CHECKPOINT-2026-08-25-CURRENT-TRUTH-FRESHNESS.md) — Source Precedence Ladder, cold-start protocol, Project Model vs Current State Vector, dogfood finding

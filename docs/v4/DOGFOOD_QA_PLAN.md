@@ -252,6 +252,7 @@ Cover discovery/readback, create/edit/assign, profile/skill validation, workers/
 - Profile toolset/runtime mismatch
 - MCP connector gaps (addressed in P0)
 - Profile capabilities/refuses advisory nature
+- **Fixture-board isolation guard** — dogfood MUST use disposable `hermes-chatgpt-e2e-*` fixtures; `t_a161305b`/run1114 and `t_85b5b14b`/run1118 leaked onto canonical board (`pid999999`/`boom`/`worker`), reclaimed+archived (no DELETE), review PASS. Root = `gave_up`+`promoted` without atomic run/claim closure + test isolation failure. Canonical record: [DAG-SOFT-RETIRE-CONTRACT.md](DAG-SOFT-RETIRE-CONTRACT.md) §4.
 
 ### 15. Artifact-Completion Lifecycle Regression (from THIS docs program)
 | MCP Call Under Test | Status | Oracle/Contrast |

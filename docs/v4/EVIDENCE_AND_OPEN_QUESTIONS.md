@@ -1,7 +1,7 @@
 # V4 Evidence and Open Questions
 
 **Status:** CANONICAL V4 DESIGN / CURRENT EVIDENCE
-**Last reconciled:** 2026-08-19 (canonical design) + **2026-08-21 release-candidate truth-sync** (see [CHECKPOINT-2026-08-21.md](CHECKPOINT-2026-08-21.md))
+**Last reconciled:** 2026-08-19 (canonical design) + **2026-08-21 release-candidate truth-sync** (see [CHECKPOINT-2026-08-21.md](CHECKPOINT-2026-08-21.md)) + **2026-08-25 DAG soft-retire contract** (see [DAG-SOFT-RETIRE-CONTRACT.md](DAG-SOFT-RETIRE-CONTRACT.md))
 **Documentation base:** 9900c10 (local ref only; deployed SHA NOT_PROVEN)
 **See also:** [README.md](README.md) | [CURRENT_STATE.md](CURRENT_STATE.md) | [STALE_DOCS.md](STALE_DOCS.md)
 
@@ -97,7 +97,9 @@ These remain unresolved by design because testing them against a live/protected 
 3. **t_702 integration/stash incident:** the prior integration worker created a pre-safety stash. This task did not inspect, repair, drop, or mutate that stash or its non-authoritative worktree.
 4. **Discovery vs stale checkout:** live discovery shows 54 tools while the documentation base checkout is older; discovery and local checkout must be reconciled explicitly.
 5. **get_board capability inconsistency:** capability readback was inconsistent with successful writes; retain as a known issue until independently resolved.
-6. **Manual dispatch `BACKEND_ERROR`:** current `dispatch` exposure exists, but a manual call returned `BACKEND_ERROR`; do not call it validated.
+7. **Manual dispatch `BACKEND_ERROR`:** current `dispatch` exposure exists, but a manual call returned `BACKEND_ERROR`; do not call it validated.
+8. **DAG edge_state soft-retire (PROJECTION_RUNTIME_P0):** runtime `165d1849e25c` is edge_state-blind in `parent_ids`/`child_ids`/`task_graph_context`/`recompute_ready`/`_parents_satisfied`/`claim_task`/MCP fallback; `retired`/`rebound` edges still exert gating power. Canonical contract: [DAG-SOFT-RETIRE-CONTRACT.md](DAG-SOFT-RETIRE-CONTRACT.md).
+9. **Fixture leakage dogfood (PASS):** `t_a161305b`/run1114 and `t_85b5b14b`/run1118 created with `pid999999`/`boom`/`worker` on canonical board; reclaimed+archived canonically, no DELETE, review PASS. Root = `gave_up`+`promoted` without atomic run/claim closure + test isolation failure.
 
 ---
 
