@@ -1,11 +1,29 @@
 # V4 Current State — Canonical Source of Truth
 
 **Status:** CANONICAL V4 DESIGN / CURRENT EVIDENCE
-**Last reconciled:** 2026-08-19 (canonical design) + **2026-08-21 release-candidate truth-sync** (see [CHECKPOINT-2026-08-21.md](CHECKPOINT-2026-08-21.md))
+**Last reconciled:** 2026-08-19 (canonical design) + **2026-08-21 release-candidate truth-sync** (see [CHECKPOINT-2026-08-21.md](CHECKPOINT-2026-08-21.md)) + **2026-08-25 current-truth freshness** (see [CHECKPOINT-2026-08-25-CURRENT-TRUTH-FRESHNESS.md](CHECKPOINT-2026-08-25-CURRENT-TRUTH-FRESHNESS.md))
 **Documentation base:** 9900c10 (local ref only; deployed SHA NOT_PROVEN)
-**See also:** [README.md](README.md) | [EVIDENCE_AND_OPEN_QUESTIONS.md](EVIDENCE_AND_OPEN_QUESTIONS.md)
+**See also:** [README.md](README.md) | [EVIDENCE_AND_OPEN_QUESTIONS.md](EVIDENCE_AND_OPEN_QUESTIONS.md) | [RECOVERY-TRUTH-SYNC-2026-08-24.md](RECOVERY-TRUTH-SYNC-2026-08-24.md)
 
 ---
+
+## 0. CURRENT TRUTH PRECEDENCE (cold-start rule)
+
+Before answering "where are we now?", rank sources highest-authority first. A lower rank NEVER overrides a higher one; on conflict, mark the lower **STALE** before citing.
+
+1. live runtime / service readback (live MCP discovery, `/healthz`, read probes, public E2E — captured **at execution time**)
+2. live canonical Kanban state / latest runs / events
+3. fresh immutable evidence bound to exact SHA / run id
+4. current Git HEAD / worktrees / refs
+5. current checkpoints / manifests (dated snapshots)
+6. current repo docs (this `docs/v4` set at its base)
+7. historical terminal cards (superseded ancestors are NOT current authority)
+8. archived / superseded cards
+9. old docs (v0.1 / v0.3 / v0.4, pre-V4)
+10. project / harness memory
+11. inference
+
+A checked-out doc tree is **not** automatically truth; discovery ≠ validation; a stale checkout is not the runtime. Full ladder + cold-start protocol + Project Model vs Current State Vector split: [CHECKPOINT-2026-08-25-CURRENT-TRUTH-FRESHNESS.md](CHECKPOINT-2026-08-25-CURRENT-TRUTH-FRESHNESS.md).
 
 ## 1. Evidence Provenance Hierarchy
 
@@ -262,3 +280,4 @@ This section overlays the live Kanban release-candidate state onto the canonical
 - **Matrices:** [KANBAN_CLI_MATRIX.md](KANBAN_CLI_MATRIX.md) | [HERMES_CAPABILITIES_MATRIX.md](HERMES_CAPABILITIES_MATRIX.md)
 - **Planning:** [ROADMAP.md](ROADMAP.md) | [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) | [DOGFOOD_QA_PLAN.md](DOGFOOD_QA_PLAN.md)
 - **Evidence:** [EVIDENCE_AND_OPEN_QUESTIONS.md](EVIDENCE_AND_OPEN_QUESTIONS.md) | [STALE_DOCS.md](STALE_DOCS.md)
+- **Current-truth freshness (2026-08-25):** [CHECKPOINT-2026-08-25-CURRENT-TRUTH-FRESHNESS.md](CHECKPOINT-2026-08-25-CURRENT-TRUTH-FRESHNESS.md) — Source Precedence Ladder, cold-start protocol, Project Model vs Current State Vector, dogfood finding

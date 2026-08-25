@@ -29,6 +29,12 @@ Historical does not mean incorrect within its original scope. It means the docum
 | `docs/SECURITY.md` | RETAIN / LINK; VERSION-BOUND | Documents v0.4 eight-tool allowlist and scopes, not V4 inventory | Retain v0.4 security contract; add V4 security delta when surface changes |
 | `docs/evidence/MULTIBOARD-GLOBAL-READ-ONE-BOARD-WRITE-2026-08-16.md` | RETAIN / LINK as dated evidence | Dated multi-board evidence | Preserve unchanged; cite with date and scope |
 | `docs/evidence/OAUTH-CREATE-SCOPE-DIAGNOSIS-2026-08-16.md` | RETAIN / LINK as dated evidence | Orthogonal dated OAuth diagnosis | Preserve unchanged; do not promote to current registry |
+| `README.md` (root, "seven READ tools plus one WRITE") | RETAIN / LINK; REVALIDATE for current runtime | v0.4 public surface count; current live MCP surface is **54 tools** | Label as v0.4; never present as current runtime without qualification |
+| `docs/SECURITY.md` ("eight-tool allowlist") | RETAIN / LINK; VERSION-BOUND; REVALIDATE for current runtime | v0.4 eight-tool allowlist; V4 inventory is 54 tools | Retain v0.4 security contract; flag as not-current-runtime |
+| `docs/DEPLOYMENT.md` ("beta exposes eleven tools") | RETAIN / LINK; REVALIDATE for current runtime | Dated v0.x tool count; not current runtime count | Retain operational procedure; qualify any tool-count claim |
+| `docs/architecture/HERMES-INTEGRATION.md` ("eleven tools total") | RETAIN / LINK; REVALIDATE for current runtime | Dated 2026-08-16 v0.4 count; superseded by 54-tool discovery | Keep as v0.4 integration record; flag as not-current |
+| `docs/evidence/BETA-BOARD-MANAGEMENT-PLAN-2026-08-16.md` ("eleven tools") | RETAIN / LINK as dated plan | Dated beta plan tool count | Preserve as history; do not present as current |
+| `docs/superpowers/plans/2026-08-16-hermes-chatgpt-mcp-beta.md` ("eight stable / eleven beta") | RETAIN / LINK as dated plan | Dated plan tool counts | Preserve as history; do not present as current |
 
 ---
 

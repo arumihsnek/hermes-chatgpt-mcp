@@ -27,10 +27,13 @@
 | [STALE_DOCS.md](STALE_DOCS.md) | Canonicalized stale-document inventory | Canonical |
 | [CHECKPOINT-2026-08-21.md](CHECKPOINT-2026-08-21.md) | **2026-08-21 release-candidate truth-sync** — Phase-S critical path, blockers, GO≠authorization, gap→owner | Reconciliation (supplemental) |
 | [RECOVERY-TRUTH-SYNC-2026-08-24.md](RECOVERY-TRUTH-SYNC-2026-08-24.md) | **2026-08-24 recovery truth-sync** — invalid historical restore, 165d current state, pinned baseline, fresh gate, MCP P0 | Reconciliation (supplemental) |
+| [CHECKPOINT-2026-08-25-CURRENT-TRUTH-FRESHNESS.md](CHECKPOINT-2026-08-25-CURRENT-TRUTH-FRESHNESS.md) | **2026-08-25 current-truth freshness** — Source Precedence Ladder, cold-start protocol, Project Model vs Current State Vector, dogfood finding | Reconciliation (supplemental) |
 
 ---
 
 ## Evidence Hierarchy & Source-of-Truth Rules
+
+0. **Source precedence (cold-start rule):** live runtime readback > live Kanban/runs/events > fresh immutable evidence bound to exact SHA/run > current Git HEAD/worktrees/refs > current checkpoints/manifests > current repo docs > historical terminal cards > archived/superseded cards > old docs > project/harness memory > inference. A lower rank never overrides a higher one; on conflict mark the lower **STALE**. A checked-out doc tree is **not** automatically truth.
 
 1. **Primary (canonical):** Local read-only investigations completed 2026-08-19 (tasks t_2d568471 + 7 parents, t_4d983898, t_484d4ab0, t_4ce4ba8f, t_8a7b081c, t_1419658e). No public research, no repo mutations.
 2. **Authoritative live discovery:** Operator-authoritative connector discovery 2026-08-19 (54 tools exposed). Exposure ≠ validation.
@@ -52,6 +55,7 @@
 - **Evidence & History:** [EVIDENCE_AND_OPEN_QUESTIONS.md](EVIDENCE_AND_OPEN_QUESTIONS.md) + [STALE_DOCS.md](STALE_DOCS.md)
 - **2026-08-21 release-candidate truth-sync:** [CHECKPOINT-2026-08-21.md](CHECKPOINT-2026-08-21.md)
 - **2026-08-24 recovery truth-sync:** [RECOVERY-TRUTH-SYNC-2026-08-24.md](RECOVERY-TRUTH-SYNC-2026-08-24.md)
+- **2026-08-25 current-truth freshness (source precedence):** [CHECKPOINT-2026-08-25-CURRENT-TRUTH-FRESHNESS.md](CHECKPOINT-2026-08-25-CURRENT-TRUTH-FRESHNESS.md)
 
 ---
 
