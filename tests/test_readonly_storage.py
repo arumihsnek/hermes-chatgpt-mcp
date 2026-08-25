@@ -69,7 +69,7 @@ def test_dispatch_uses_canonical_dependency_gate_result(tmp_path, monkeypatch):
         eligible=False,
         failures=(SimpleNamespace(code="canonical_gate_failure"),),
     )
-    monkeypatch.setattr(kanban_db, "get_dispatch", lambda conn, task_id: canonical_failure)
+    monkeypatch.setattr(kanban_db, "get_dispatch", lambda conn, task_id: canonical_failure, raising=False)
 
     result = adapter.get_dispatch("child-ready")
 

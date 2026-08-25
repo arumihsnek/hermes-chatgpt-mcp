@@ -67,6 +67,23 @@ def _safe_data(value: Any, *, depth: int = 0, budget: int = 8_000) -> Any:
     return str(value)[:budget]
 
 
+def _fallback_dependency_reason(status: str) -> str | None:
+    """Map a parent status to a dependency reason for the fallback path.
+
+    Archived parents are NOT satisfying without canonical replacement
+    provenance; superseded is never satisfying; only done is satisfying.
+    Matches project_dispatch's fail-closed mapping but is kept separate
+    so the adapter contract is explicit and testable.
+    """
+    if status == "archived":
+        return "parent_archived_unsatisfied"
+    if status == "superseded":
+        return "superseded_without_replacement"
+    if status != "done":
+        return "dependency_not_satisfied"
+    return None
+
+
 class HermesReadOnlyAdapter:
     """Transform canonical Hermes query results into external MCP models."""
 
@@ -260,10 +277,30 @@ class HermesReadOnlyAdapter:
                         for failure in getattr(eligibility, "failures", ())
                     ) or ("dependency_not_satisfied",)
             else:
-                # Older Hermes modules have no canonical gate evaluator. The
-                # local projection deliberately fails closed for historical
-                # parents instead of treating archived status as success.
-                dependency_reasons = None
+                # Older Hermes modules have no canonical gate evaluator.
+                # Legacy-fallback must NOT treat retired/rebound edges as
+                # live (DISPATCH-EDGE-STATE-AWARENESS P0). parent_ids() is
+                # already active-edge-only at this pin (165d-based
+                # kanban_db), so deriving reasons from the filtered parents
+                # here enforces the same contract even without a canonical
+                # get_dispatch. Past this point dependency_reasons is always
+                # materialised (fail-closed only over ACTIVE parents).
+                dependency_reasons = tuple(
+                    r for r in (_fallback_dependency_reason(p.status) for p in parents)  # type: ignore[attr-defined]
+                    if r is not None
+                )
+
+        # Defense-in-depth: if for any reason dependency_reasons is still
+        # None (unreachable with the current branch but guards future
+        # refactors), materialise it here rather than letting
+        # project_dispatch treat it as None and re-derive from parents
+        # without the active-edge guarantee.
+        if dependency_reasons is None:
+            dependency_reasons = tuple(
+                r for r in (_fallback_dependency_reason(p.status) for p in parents)  # type: ignore[attr-defined]
+                if r is not None
+            )
+
         projection = project_dispatch(task, parents, dependency_reasons=dependency_reasons)
         return DispatchView(
             task_id=projection.task_id,
@@ -271,6 +308,7 @@ class HermesReadOnlyAdapter:
             state=projection.state.value,
             reasons=list(projection.reasons),
         )
+
 
     def _read_log(self, task_id: str, log_bytes: int) -> str | None:
         if log_bytes <= 0:
