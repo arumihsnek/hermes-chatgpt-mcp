@@ -21,6 +21,7 @@
 | [HERMES_CAPABILITIES_MATRIX.md](HERMES_CAPABILITIES_MATRIX.md) | Native Hermes tool/skill/profile registry matrix | Canonical |
 | [capability-index.json](capability-index.json) | Machine-readable capability index | Canonical |
 | [ROADMAP.md](ROADMAP.md) | Corrected P0-P3/DO_NOT_EXPOSE roadmap | Canonical |
+| [ROLLING-BOOTSTRAP-DELIVERY-STRATEGY.md](ROLLING-BOOTSTRAP-DELIVERY-STRATEGY.md) | **2026-08-25 rolling/self-hosting bootstrap delivery strategy** (B0–B4 tranches, stable protection, per-tranche candidate/rollback/acceptance, no big-bang wait) | Canonical (supplemental) |
 | [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) | Implementation plan with testing pyramid and release gates | Canonical |
 | [DOGFOOD_QA_PLAN.md](DOGFOOD_QA_PLAN.md) | MCP-as-SUT dogfood plan; disposable fixture boards only | Canonical |
 | [EVIDENCE_AND_OPEN_QUESTIONS.md](EVIDENCE_AND_OPEN_QUESTIONS.md) | Evidence hierarchy, STILL_NOT_PROVEN/UNSAFE_TO_TEST, dogfood incidents | Canonical |
@@ -51,7 +52,7 @@
 - **Specs:** [CONTROL_PLANE_SPEC.md](CONTROL_PLANE_SPEC.md) + [MCP_TOPOLOGY_ADR.md](MCP_TOPOLOGY_ADR.md)
 - **Catalog:** [TOOL_CATALOG.md](TOOL_CATALOG.md) + [v4-tool-catalog.json](v4-tool-catalog.json)
 - **Matrices:** [KANBAN_CLI_MATRIX.md](KANBAN_CLI_MATRIX.md) + [HERMES_CAPABILITIES_MATRIX.md](HERMES_CAPABILITIES_MATRIX.md)
-- **Planning:** [ROADMAP.md](ROADMAP.md) + [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) + [DOGFOOD_QA_PLAN.md](DOGFOOD_QA_PLAN.md)
+- **Planning:** [ROADMAP.md](ROADMAP.md) + [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) + [DOGFOOD_QA_PLAN.md](DOGFOOD_QA_PLAN.md) + [ROLLING-BOOTSTRAP-DELIVERY-STRATEGY.md](ROLLING-BOOTSTRAP-DELIVERY-STRATEGY.md)
 - **Evidence & History:** [EVIDENCE_AND_OPEN_QUESTIONS.md](EVIDENCE_AND_OPEN_QUESTIONS.md) + [STALE_DOCS.md](STALE_DOCS.md)
 - **2026-08-21 release-candidate truth-sync:** [CHECKPOINT-2026-08-21.md](CHECKPOINT-2026-08-21.md)
 - **2026-08-24 recovery truth-sync:** [RECOVERY-TRUTH-SYNC-2026-08-24.md](RECOVERY-TRUTH-SYNC-2026-08-24.md)
@@ -66,5 +67,6 @@ Derived from kanban tasks:
 - **Corrected Spec/ADR:** t_484d4ab0 (`V4-CONTROL-PLANE-SPEC-DRAFT.md`, `MCP-TOPOLOGY-ADR-DRAFT.md`)
 - **Matrices/Index:** t_4ce4ba8f (`HERMES-KANBAN-CLI-MATRIX-DRAFT.md`, `HERMES-NATIVE-CAPABILITIES-MATRIX-DRAFT.md`, `capability-index.json`)
 - **Roadmap/Impl/Dogfood:** t_8a7b081c (`V4-ROADMAP-DRAFT.md`, `V4-IMPLEMENTATION-PLAN-DRAFT.md`, `V4-DOGFOOD-QA-PLAN-DRAFT.md`)
+- **Rolling/Bootstrap Delivery Strategy:** t_4b01a9b7 (`ROLLING-BOOTSTRAP-DELIVERY-STRATEGY.md`) — adopted 2026-08-25, review-gated PR into this docs lane (no direct commit-to-stable)
 - **Tool Catalog:** t_1419658e (`V4-TOOL-CATALOG-DRAFT.md`, `v4-tool-catalog.json`)
 - **Synthesis & Local Research:** t_2d568471 + parents (t_c2257b50, t_2d78d03f, t_59a2a2f5, t_ad6925aa, t_ef94f514, t_2499ad0a, t_5caf4595)
