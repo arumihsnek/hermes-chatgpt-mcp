@@ -1,7 +1,7 @@
 # V4 Current State — Canonical Source of Truth
 
 **Status:** CANONICAL V4 DESIGN / CURRENT EVIDENCE
-**Last reconciled:** 2026-08-19 (canonical design) + **2026-08-21 release-candidate truth-sync** (see [CHECKPOINT-2026-08-21.md](CHECKPOINT-2026-08-21.md)) + **2026-08-25 current-truth freshness** (see [CHECKPOINT-2026-08-25-CURRENT-TRUTH-FRESHNESS.md](CHECKPOINT-2026-08-25-CURRENT-TRUTH-FRESHNESS.md)) + **2026-08-25 DAG soft-retire contract** (see [DAG-SOFT-RETIRE-CONTRACT.md](DAG-SOFT-RETIRE-CONTRACT.md))
+**Last reconciled:** 2026-08-19 (canonical design) + **2026-08-21 release-candidate truth-sync** (see [CHECKPOINT-2026-08-21.md](CHECKPOINT-2026-08-21.md)) + **2026-08-25 current-truth freshness** (see [CHECKPOINT-2026-08-25-CURRENT-TRUTH-FRESHNESS.md](CHECKPOINT-2026-08-25-CURRENT-TRUTH-FRESHNESS.md)) + **2026-08-25 DAG soft-retire contract** (see [DAG-SOFT-RETIRE-CONTRACT.md](DAG-SOFT-RETIRE-CONTRACT.md)) + **2026-08-25 rolling/bootstrap delivery strategy adopted** (see [ROLLING-BOOTSTRAP-DELIVERY-STRATEGY.md](ROLLING-BOOTSTRAP-DELIVERY-STRATEGY.md))
 **Documentation base:** 9900c10 (local ref only; deployed SHA NOT_PROVEN)
 **See also:** [README.md](README.md) | [EVIDENCE_AND_OPEN_QUESTIONS.md](EVIDENCE_AND_OPEN_QUESTIONS.md) | [RECOVERY-TRUTH-SYNC-2026-08-24.md](RECOVERY-TRUTH-SYNC-2026-08-24.md)
 
@@ -278,6 +278,17 @@ This section overlays the live Kanban release-candidate state onto the canonical
 ## 15b. DAG / Projection Soft-Retire Release Blocker (2026-08-25)
 
 The `task_links.edge_state` soft-retire contract (`active|retired|rebound`; retired/rebound carry zero gating power; provenance fields are historical evidence only) and its deployment invariant are canonical at [DAG-SOFT-RETIRE-CONTRACT.md](DAG-SOFT-RETIRE-CONTRACT.md). Current release blocker: runtime `165d1849e25c` is edge_state-blind (PROJECTION_RUNTIME_P0). Release path (fail-closed): deploy edge-aware runtime under fresh Human Gate + live readback → fresh upstream acceptance replacing historical `t_47fcecec` if required → open `barrier` → V4-CUT3. Do NOT delete retired edges or complete `barrier` for throughput. Current lanes: `t_31d1c67f` implementation, `t_20dd938c` review, `t_ef3ae8d4` activation-gate-prep; `barrier`/V4 remain closed.
+
+## 15c. Rolling / Bootstrap Delivery Strategy (2026-08-25)
+
+V4 delivery is now governed by the **rolling, self-hosting bootstrap** strategy (canonical at [ROLLING-BOOTSTRAP-DELIVERY-STRATEGY.md](ROLLING-BOOTSTRAP-DELIVERY-STRATEGY.md)). This is a *delivery-cadence* decision; it does not alter the architecture/scope in this document or the final integrated gates.
+
+- `stable-current` remains **protected**: no tranche commits directly to stable; promotion only via integrated candidate → canary → E2E → Human Gate → stable ACCEPT.
+- Tranche ordering by self-acceleration value: **B0** task/DAG/runtime contract + generation rollover + scheduler/wake/authority/isolation/recovery → **B1** runs/workers/observability/telemetry → **B2** profiles/skills/model/capability routing → **B3** control-plane/notifications → **B4** attachments/remote/polish.
+- **No big-bang wait:** a reviewed tranche may be dogfooded after its own implement + tests + independent review + bounded activation — without waiting for all W0–W4.
+- **Every tranche pins exact candidate / rollback / acceptance** before dogfood.
+- Schedule/fan-out→join authority: `t_4b49ff1e` (`V4-RELEASE-CRITICAL-PATH-MAP.md`).
+- This strategy lands in the canonical docs via a **review-gated PR** against `docs/v4-control-plane-source-of-truth-final` (no direct doc mutation) — mirroring the rolling promotion discipline.
 
 ## 16. Cross-References
 

@@ -1,9 +1,9 @@
 # Hermes ChatGPT MCP V4 Roadmap
 
 **Status:** CANONICAL V4 DESIGN / CURRENT EVIDENCE
-**Last reconciled:** 2026-08-19 (canonical design) + **2026-08-21 release-candidate truth-sync** (see [CHECKPOINT-2026-08-21.md](CHECKPOINT-2026-08-21.md)) + **2026-08-25 DAG soft-retire contract** (see [DAG-SOFT-RETIRE-CONTRACT.md](DAG-SOFT-RETIRE-CONTRACT.md))
+**Last reconciled:** 2026-08-19 (canonical design) + **2026-08-21 release-candidate truth-sync** (see [CHECKPOINT-2026-08-21.md](CHECKPOINT-2026-08-21.md)) + **2026-08-25 DAG soft-retire contract** (see [DAG-SOFT-RETIRE-CONTRACT.md](DAG-SOFT-RETIRE-CONTRACT.md)) + **2026-08-25 rolling/bootstrap delivery strategy adopted** (see [ROLLING-BOOTSTRAP-DELIVERY-STRATEGY.md](ROLLING-BOOTSTRAP-DELIVERY-STRATEGY.md))
 **Documentation base:** 9900c10 (local ref only; deployed SHA NOT_PROVEN)
-**See also:** [README.md](README.md) | [CURRENT_STATE.md](CURRENT_STATE.md) | [EVIDENCE_AND_OPEN_QUESTIONS.md](EVIDENCE_AND_OPEN_QUESTIONS.md)
+**See also:** [README.md](README.md) | [CURRENT_STATE.md](CURRENT_STATE.md) | [EVIDENCE_AND_OPEN_QUESTIONS.md](EVIDENCE_AND_OPEN_QUESTIONS.md) | [ROLLING-BOOTSTRAP-DELIVERY-STRATEGY.md](ROLLING-BOOTSTRAP-DELIVERY-STRATEGY.md)
 **Derived from:** t_8a7b081c (`V4-ROADMAP-DRAFT.md`)
 
 ---
@@ -152,6 +152,18 @@ The following five synthesis items are RELEASE BLOCKERS for V4:
 - Documentation updated to reflect current runtime (not outdated baseline)
 - Dogfood/QA plan executed using this Kanban connector as subject
 - Release gate criteria met (see Release Gates section)
+
+## Delivery Strategy — Rolling / Self-Hosting Bootstrap (2026-08-25)
+
+V4 is now delivered by a **rolling, self-hosting bootstrap** strategy rather than a single big-bang cut. This is a *delivery-cadence* decision only; it does not change the V4 architecture, P0–P3 scope, or the final integrated gates.
+
+- **Canonical policy:** [ROLLING-BOOTSTRAP-DELIVERY-STRATEGY.md](ROLLING-BOOTSTRAP-DELIVERY-STRATEGY.md).
+- **Tranche ordering (self-acceleration value):** B0 task/DAG/runtime contract + generation rollover + scheduler/wake/authority/isolation/recovery → B1 runs/workers/observability/telemetry → B2 profiles/skills/model/capability routing → B3 control-plane/notifications → B4 attachments/remote/polish.
+- **`stable-current` stays protected.** No tranche commits directly to stable; promotion occurs only via the integrated candidate → canary → E2E → Human Gate → stable ACCEPT sequence.
+- **No big-bang wait.** A reviewed tranche may be dogfooded after its own implement + tests + independent review + bounded activation — without waiting for all W0–W4.
+- **Every tranche has exact candidate / rollback / acceptance** (see §2.3 of the strategy doc).
+- **Schedule / fan-out→join:** companion preflight `t_4b49ff1e` (`V4-RELEASE-CRITICAL-PATH-MAP.md`).
+- **Migration note:** see §9 of [ROLLING-BOOTSTRAP-DELIVERY-STRATEGY.md](ROLLING-BOOTSTRAP-DELIVERY-STRATEGY.md) — old big-bang vs new rolling posture.
 
 ## Dependency Graph
 ```mermaid
