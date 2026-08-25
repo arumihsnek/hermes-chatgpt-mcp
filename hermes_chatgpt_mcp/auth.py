@@ -769,6 +769,44 @@ class AuthService:
                 self._revoked_grants.add(grant_id)
                 self._persist_locked()
 
+
+    def client_revoke(self, client_id: str, *, reason: str) -> dict:
+        """Remove a registered client and all its associated state.
+
+        Returns a summary dict with the revoked client's metadata and the
+        number of refresh tokens that were removed.  Raises ``OAuthError``
+        with code ``invalid_client`` if the client_id is unknown.
+
+        The *reason* is logged for audit but not persisted to the state file.
+        """
+        with self._lock:
+            client = self._clients.pop(client_id, None)
+            if client is None:
+                raise OAuthError("unknown client", code="invalid_client")
+            removed_refresh = sum(
+                1 for rt in self._refresh_tokens.values()
+                if rt.client_id == client_id
+            )
+            self._refresh_tokens = {
+                key: value for key, value in self._refresh_tokens.items()
+                if value.client_id != client_id
+            }
+            self._persist_locked()
+        emit(
+            self.settings,
+            "client.revoke",
+            client_fp=fingerprint(client_id),
+            reason=reason,
+            removed_refresh_tokens=removed_refresh,
+            outcome="success",
+        )
+        return {
+            "client_id": client_id,
+            "client_name": client.client_name,
+            "removed_refresh_tokens": removed_refresh,
+            "reason": reason,
+        }
+
     def verify_token(self, token: str) -> AccessToken | None:
         try:
             header_b64, payload_b64, signature_b64 = token.split(".")

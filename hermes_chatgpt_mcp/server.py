@@ -68,6 +68,8 @@ from .schemas import (
     ReassignInput,
     CompleteInput,
     EditTaskInput,
+    UpdateTaskInput,
+    SoftRetireEdgeInput,
     BlockInput,
     ScheduleInput,
     UnblockInput,
@@ -83,6 +85,8 @@ from .schemas import (
     ReassignResult,
     CompleteResult,
     EditTaskResult,
+    UpdateTaskResult,
+    SoftRetireEdgeResult,
     BlockResult,
     ScheduleResult,
     UnblockResult,
@@ -731,6 +735,15 @@ def create_app(
         @mcp.tool(name="edit_task", description="Edit a completed task result.", annotations=manage_annotations, structured_output=True)
         async def edit_task(request: EditTaskInput) -> EditTaskResult:
             return await _manage(request, "edit", request.task_id, result=request.result, summary=request.summary, metadata=request.metadata)
+
+
+        @mcp.tool(name="update_task", description="Edit safe metadata (title/body/priority) of a non-triage task.", annotations=manage_annotations, structured_output=True)
+        async def update_task(request: UpdateTaskInput) -> UpdateTaskResult:
+            return await _manage(request, "update_task", request.task_id, title=request.title, body=request.body, priority=request.priority)
+
+        @mcp.tool(name="soft_retire_edge", description="Idempotently soft-retire one ACTIVE edge with replacement provenance.", annotations=manage_annotations, structured_output=True)
+        async def soft_retire_edge(request: SoftRetireEdgeInput) -> SoftRetireEdgeResult:
+            return await _manage(request, "soft_retire_edge", request.parent_id, request.child_id, replaced_by_parent_id=request.replaced_by_parent_id, recovery_relation_id=request.recovery_relation_id, retired_by=request.retired_by, edge_state=request.edge_state)
 
         @mcp.tool(name="block_tasks", description="Block tasks with a typed reason.", annotations=manage_annotations, structured_output=True)
         async def block_tasks(request: BlockInput) -> BlockResult:

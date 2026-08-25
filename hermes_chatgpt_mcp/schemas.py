@@ -426,6 +426,39 @@ class EditTaskResult(StrictModel):
     updated_fields: list[str]
 
 
+class UpdateTaskInput(BoardQuery):
+    task_id: TaskId
+    title: str | None = Field(default=None, max_length=512)
+    body: str | None = Field(default=None, max_length=64_000)
+    priority: int | None = Field(default=None, ge=-1_000, le=1_000)
+
+
+class UpdateTaskResult(StrictModel):
+    board: BoardSlug
+    task_id: TaskId
+    updated_fields: list[str]
+
+
+class SoftRetireEdgeInput(BoardQuery):
+    parent_id: TaskId
+    child_id: TaskId
+    replaced_by_parent_id: TaskId
+    recovery_relation_id: str = Field(min_length=1, max_length=128)
+    retired_by: str | None = Field(default=None, max_length=128)
+    edge_state: Literal["retired", "rebound"] = Field(default="retired")
+
+
+class SoftRetireEdgeResult(StrictModel):
+    board: BoardSlug
+    parent_id: TaskId
+    child_id: TaskId
+    replaced_by_parent_id: TaskId
+    recovery_relation_id: str
+    retired_by: str | None
+    edge_state: Literal["retired", "rebound"]
+    already_retired: bool
+
+
 class BlockInput(BoardQuery):
     task_ids: list[TaskId] = Field(min_length=1, max_length=32)
     kind: str | None = Field(default=None, max_length=32)

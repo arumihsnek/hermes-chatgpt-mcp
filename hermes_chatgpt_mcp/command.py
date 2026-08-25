@@ -24,6 +24,8 @@ from .schemas import (
     ReassignResult,
     CompleteResult,
     EditTaskResult,
+    UpdateTaskResult,
+    SoftRetireEdgeResult,
     BlockResult,
     ScheduleResult,
     UnblockResult,
@@ -604,6 +606,60 @@ class HermesCardManagementAdapter:
         if not ok:
             raise ValueError(f"cannot specify task {task_id}")
         return {"task_id": task_id, "updated": True}
+
+    def update_task(
+        self,
+        task_id: str,
+        *,
+        title: str | None = None,
+        body: str | None = None,
+        priority: int | None = None,
+    ) -> UpdateTaskResult:
+        def op(conn):
+            if not self.hermes.edit_task_fields(
+                conn,
+                task_id,
+                title=title,
+                body=body,
+                priority=priority,
+                author=self.provenance,
+            ):
+                raise ValueError(f"unknown task {task_id} or task is not editable")
+            updated = [name for name, value in (("title", title), ("body", body), ("priority", priority)) if value is not None]
+            return UpdateTaskResult(board=self.handle.slug, task_id=task_id, updated_fields=updated)
+        return self._with_conn(op)
+
+    def soft_retire_edge(
+        self,
+        parent_id: str,
+        child_id: str,
+        *,
+        replaced_by_parent_id: str,
+        recovery_relation_id: str,
+        retired_by: str | None = None,
+        edge_state: str = "retired",
+    ) -> SoftRetireEdgeResult:
+        def op(conn):
+            resp = self.hermes.soft_retire_edge(
+                conn,
+                parent_id,
+                child_id,
+                replaced_by_parent_id=replaced_by_parent_id,
+                recovery_relation_id=recovery_relation_id,
+                retired_by=retired_by,
+                edge_state=edge_state,
+            )
+            return SoftRetireEdgeResult(
+                board=self.handle.slug,
+                parent_id=parent_id,
+                child_id=child_id,
+                replaced_by_parent_id=replaced_by_parent_id,
+                recovery_relation_id=resp["recovery_relation_id"],
+                retired_by=resp.get("retired_by"),
+                edge_state=resp["edge_state"],
+                already_retired=resp["already_retired"],
+            )
+        return self._with_conn(op)
 
     def context(self, task_id: str) -> dict[str, Any]:
         task = self._with_conn(lambda conn: self.hermes.get_task(conn, task_id))
