@@ -680,7 +680,7 @@ def create_app(
         )
         async def bounded_log(request: BoundedLogInput) -> TaskLogResult:
             handle = resolve_board(request.board, operation="read")
-            return await run_query(board_resolver.query_adapter(handle).read_bounded_log, request.task_id, tail_bytes=request.tail_bytes)
+            return await run_query(board_resolver.query_adapter(handle).read_bounded_log, request.task_id, tail_bytes=request.tail_bytes, cursor=request.cursor)
 
         @mcp.tool(
             name="runtime_status",

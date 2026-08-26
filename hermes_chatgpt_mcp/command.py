@@ -609,7 +609,7 @@ class HermesCardManagementAdapter:
 
         def op(conn):
             attachment_id = self.hermes.store_attachment_bytes(
-                conn, task_id, stored_name, data, content_type=detected, uploaded_by=self.provenance
+                conn, task_id, stored_name, data, content_type=detected, uploaded_by=self.provenance, board=self.handle.slug
             )
             return {"task_id": task_id, "attachment_id": int(attachment_id), "filename": stored_name, "size": len(data)}
         return self._with_conn(op)

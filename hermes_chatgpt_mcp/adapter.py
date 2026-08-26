@@ -374,9 +374,11 @@ class HermesReadOnlyAdapter:
         oldest = max(0, now - min(started)) if started and now else None
         return ActiveWorkersResult(board=self.store.board, workers=workers, count_running=running_here, count_other_boards=running_other, oldest_running_age_seconds=oldest, generated_at=now, truncated=len(tasks) > limit)
 
-    def read_bounded_log(self, task_id: str, *, tail_bytes: int = 16_000) -> TaskLogResult:
+    def read_bounded_log(self, task_id: str, *, tail_bytes: int = 16_000, cursor: int | None = None) -> TaskLogResult:
         if tail_bytes < 0 or tail_bytes > self.max_log_bytes:
             raise ValueError("tail_bytes exceeds the configured ceiling")
+        if cursor is not None and cursor < 0:
+            raise ValueError("cursor must be non-negative")
         with self.store.connect() as conn:
             self._get_task(conn, task_id)
         if tail_bytes == 0:
@@ -388,11 +390,22 @@ class HermesReadOnlyAdapter:
             with path.open("rb") as handle:
                 handle.seek(0, 2)
                 size = handle.tell()
+                if cursor is not None:
+                    if cursor >= size:
+                        return TaskLogResult(task_id=task_id, content="", truncated=False, next_cursor=None)
+                    take = min(size - cursor, tail_bytes)
+                    handle.seek(cursor)
+                    content = handle.read(take).decode("utf-8", errors="replace")
+                    next_cursor = cursor + take if (cursor + take) < size else None
+                    return TaskLogResult(task_id=task_id, content=content, truncated=next_cursor is not None, next_cursor=next_cursor)
                 take = min(size, tail_bytes)
                 handle.seek(size - take)
                 content = handle.read(take).decode("utf-8", errors="replace")
             return TaskLogResult(task_id=task_id, content=content, truncated=size > tail_bytes, next_cursor=(size - take if size > take else None))
         reader = getattr(self.hermes, "read_worker_log", None)
+        # Fallback reader does not support cursor — cursor requires direct file tail with unified semantics.
+        if cursor is not None:
+            raise ValueError("cursor pagination requires direct log file access")
         content = reader(task_id, tail_bytes=tail_bytes, board=self.store.board) if reader else None
         return TaskLogResult(task_id=task_id, content=content or "", truncated=bool(content and len(content.encode("utf-8")) >= tail_bytes))
 
