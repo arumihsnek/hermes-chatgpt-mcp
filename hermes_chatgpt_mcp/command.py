@@ -616,17 +616,46 @@ class HermesCardManagementAdapter:
         priority: int | None = None,
     ) -> UpdateTaskResult:
         def op(conn):
-            if not self.hermes.edit_task_fields(
+            # Read the persisted values through the canonical API before the
+            # primitive runs so the result can report the fields it actually
+            # changed (accurate provenance), not merely those requested.
+            before = self.hermes.get_task(conn, task_id)
+            changed = self.hermes.edit_task_fields(
                 conn,
                 task_id,
                 title=title,
                 body=body,
                 priority=priority,
                 author=self.provenance,
-            ):
-                raise ValueError(f"unknown task {task_id} or task is not editable")
-            updated = [name for name, value in (("title", title), ("body", body), ("priority", priority)) if value is not None]
-            return UpdateTaskResult(board=self.handle.slug, task_id=task_id, updated_fields=updated)
+            )
+            if not changed:
+                # Distinguish a true idempotent replay (task exists, is
+                # non-triage, and every provided value already matches) from
+                # missing/uneditable tasks, which stay hard errors.
+                task = self.hermes.get_task(conn, task_id)
+                if task is None or str(getattr(task, "status", "")) == "triage":
+                    raise ValueError(f"unknown task {task_id} or task is not editable")
+                # Idempotent replay: the primitive applied nothing because
+                # every provided value already matches persisted state.
+                # Report idempotent success with empty/already-applied
+                # provenance instead of raising a conflict.
+                return UpdateTaskResult(board=self.handle.slug, task_id=task_id, updated_fields=[])
+            if before is None:
+                # Unreachable via this adapter: edit_task_fields returns True
+                # only for an existing, non-triage row, which the pre-read
+                # above would have captured. Fail closed rather than guess.
+                raise RuntimeError(f"update_task lost pre-state for existing task {task_id}")
+            after = self.hermes.get_task(conn, task_id)
+            actual_changed_fields = [
+                name
+                for name in ("title", "body", "priority")
+                if getattr(after, name) != getattr(before, name)
+            ]
+            return UpdateTaskResult(
+                board=self.handle.slug,
+                task_id=task_id,
+                updated_fields=actual_changed_fields,
+            )
         return self._with_conn(op)
 
     def soft_retire_edge(

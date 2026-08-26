@@ -828,6 +828,88 @@ async def _test_management_commands_are_global_on_beta_and_return_safe_errors(tm
     }
 
 
+def test_update_task_is_idempotent_with_accurate_provenance(tmp_path, monkeypatch):
+    asyncio.run(_test_update_task_is_idempotent_with_accurate_provenance(tmp_path, monkeypatch))
+
+
+async def _test_update_task_is_idempotent_with_accurate_provenance(tmp_path, monkeypatch):
+    """Retrying the same update_task call succeeds without new writes.
+
+    The first call reports only the fields the canonical primitive actually
+    changed (a before/after state diff, not merely the requested ones); the
+    exact replay is an idempotent success reported with empty updated_fields,
+    and a partial-field replay reports only the field that still differed.
+    Neither replay persists anything new. Missing tasks still surface as
+    TASK_NOT_FOUND.
+    """
+    fixture, settings, auth, _, app = _beta_app(tmp_path, monkeypatch)
+    manager = _token(auth, "updater", ["hermes:read", "hermes:manage"], board=fixture.board)
+    arguments = {
+        "request": {
+            "board": fixture.board,
+            "task_id": "review-task",
+            "title": "Renamed review",
+            "priority": 9,
+        }
+    }
+    transport = httpx.ASGITransport(app=app)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=transport, base_url=settings.public_base_url) as client:
+            first = await _rpc(client, manager, "tools/call", {"name": "update_task", "arguments": dict(arguments)}, 1)
+            second = await _rpc(client, manager, "tools/call", {"name": "update_task", "arguments": dict(arguments)}, 2)
+            partial = await _rpc(
+                client,
+                manager,
+                "tools/call",
+                {"name": "update_task", "arguments": {"request": {"board": fixture.board, "task_id": "review-task", "title": "Renamed review", "priority": 2}}},
+                3,
+            )
+            missing = await _rpc(
+                client,
+                manager,
+                "tools/call",
+                {"name": "update_task", "arguments": {"request": {"board": fixture.board, "task_id": "missing-task", "title": "x"}}},
+                4,
+            )
+
+    assert first["result"]["isError"] is False
+    assert first["result"]["structuredContent"] == {
+        "board": fixture.board,
+        "task_id": "review-task",
+        "updated_fields": ["title", "priority"],
+    }
+    assert second["result"]["isError"] is False
+    assert second["result"]["structuredContent"] == {
+        "board": fixture.board,
+        "task_id": "review-task",
+        "updated_fields": [],
+    }
+    # A partial-field replay (one value already applied, one differing) is
+    # still idempotent success and reports only the field that changed.
+    assert partial["result"]["isError"] is False
+    assert partial["result"]["structuredContent"] == {
+        "board": fixture.board,
+        "task_id": "review-task",
+        "updated_fields": ["priority"],
+    }
+
+    with kanban_db.connect_closing(db_path=fixture.db_path, board=fixture.board) as conn:
+        task = kanban_db.get_task(conn, "review-task")
+        assert task.title == "Renamed review"
+        assert task.priority == 2
+        comments = [item.body for item in kanban_db.list_comments(conn, "review-task")]
+        # one provenance comment per real write — neither replay wrote one
+        assert sum("Edited — updated" in body for body in comments) == 2
+        edits = [event for event in kanban_db.list_events(conn, "review-task") if event.kind == "edited_fields"]
+        assert len(edits) == 2
+        assert edits[0].payload["changed_fields"] == ["title", "priority"]
+        assert edits[1].payload["changed_fields"] == ["priority"]
+        for edit in edits:
+            assert edit.payload["by"] == "chatgpt_mcp"
+
+    _assert_tool_error(missing, "TASK_NOT_FOUND", forbidden_path=fixture.root)
+
+
 def test_notify_subscribe_rejects_unknown_delivery_mode(tmp_path, monkeypatch):
     asyncio.run(_test_notify_subscribe_rejects_unknown_delivery_mode(tmp_path, monkeypatch))
 
