@@ -396,9 +396,24 @@ def create_app(
         except TaskNotFoundError as exc:
             raise tool_error("TASK_NOT_FOUND", "task was not found on the selected board") from exc
         except ValueError as exc:
-            if task_command and str(exc).startswith("unknown task "):
+            message = str(exc)
+            if task_command and message.startswith("unknown task "):
                 raise tool_error("TASK_NOT_FOUND", "task was not found on the selected board") from exc
-            raise tool_error("CONFLICT", "Hermes rejected the command request") from exc
+            if "base64" in message:
+                code = "INVALID_BASE64"
+            elif "hash mismatch" in message:
+                code = "HASH_MISMATCH"
+            elif "unsupported hash" in message:
+                code = "UNSUPPORTED_TRANSPORT"
+            elif "exceeds" in message:
+                code = "ATTACHMENT_TOO_LARGE"
+            elif "MIME" in message:
+                code = "MIME_MISMATCH"
+            elif "path is outside" in message or "filename" in message:
+                code = "UNSAFE_ATTACHMENT_FILENAME"
+            else:
+                code = "CONFLICT"
+            raise tool_error(code, message) from exc
         except RuntimeError as exc:
             if task_command and "currently running (claimed)" in str(exc):
                 raise tool_error("CONFLICT", "Hermes rejected the command request") from exc
@@ -878,7 +893,15 @@ def create_app(
 
         # Read/write task leaves with canonical adapter calls.
         register_canonical("claim", ClaimInput, lambda h, r: CanonicalActionResult(board=h.slug, action="claim", data=board_resolver.management_adapter(h).claim(r.task_id, ttl_seconds=r.ttl_seconds)), admin=True)
-        register_canonical("attach", AttachInput, lambda h, r: CanonicalActionResult(board=h.slug, action="attach", data=board_resolver.management_adapter(h).attach(r.task_id, r.local_path, filename=r.filename, content_type=r.content_type)), admin=True)
+        register_canonical("attach", AttachInput, lambda h, r: CanonicalActionResult(board=h.slug, action="attach", data=board_resolver.management_adapter(h).attach(
+            r.task_id,
+            local_path=r.local_path,
+            filename=r.filename,
+            content_type=r.content_type,
+            content_base64=r.content_base64,
+            hash_algo=r.hash_algo,
+            hash_expected=r.hash_expected
+        )), admin=True)
         register_canonical("attachments", AttachmentsInput, lambda h, r: CanonicalActionResult(board=h.slug, action="attachments", data={"attachments": board_resolver.management_adapter(h).attachments(r.task_id)}), scope=auth_service.read_scope)
         register_canonical("attach-rm", AttachRemoveInput, lambda h, r: CanonicalActionResult(board=h.slug, action="attach-rm", data=board_resolver.management_adapter(h).attach_rm(r.attachment_id)), admin=True)
         register_canonical("stats", BoardQuery, lambda h, r: CanonicalActionResult(board=h.slug, action="stats", data=board_resolver.management_adapter(h).stats()), scope=auth_service.read_scope)

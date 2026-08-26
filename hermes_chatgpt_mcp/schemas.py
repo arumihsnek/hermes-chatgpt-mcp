@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 BoardSlug = Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")]
@@ -888,9 +888,22 @@ class ClaimInput(TaskInput):
 
 class AttachInput(BoardQuery):
     task_id: TaskId
-    local_path: str = Field(min_length=1, max_length=2_000)
+    local_path: str | None = Field(default=None, min_length=1, max_length=2_000)
+    content_base64: str | None = Field(default=None)
     filename: str | None = Field(default=None, min_length=1, max_length=512)
     content_type: str | None = Field(default=None, max_length=128)
+    hash_algo: Literal["sha256"] | None = None
+    hash_expected: str | None = Field(default=None, min_length=64, max_length=64, pattern=r"^[0-9a-fA-F]{64}$")
+
+    @model_validator(mode='after')
+    def _check_attach_input(self) -> 'AttachInput':
+        if self.local_path is not None and self.content_base64 is not None:
+            raise ValueError("Only one of local_path or content_base64 may be provided")
+        if self.local_path is None and self.content_base64 is None:
+            raise ValueError("Either local_path or content_base64 must be provided")
+        if self.content_base64 is not None and self.filename is None:
+            raise ValueError("filename is required when content_base64 is provided")
+        return self
 
 
 class DispatchInput(BoardQuery):

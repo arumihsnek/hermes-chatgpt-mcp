@@ -535,35 +535,78 @@ class HermesCardManagementAdapter:
 
     def attachments(self, task_id: str) -> list[dict[str, Any]]:
         def op(conn):
-            if self.hermes.get_task(conn, task_id) is None:
+            task = self.hermes.get_task(conn, task_id)
+            if task is None:
                 raise ValueError(f"unknown task {task_id}")
+            run_id = getattr(task, "current_run_id", None)
             return [
-                {"id": int(item.id), "filename": str(item.filename), "content_type": item.content_type,
-                 "size": int(item.size), "uploaded_by": item.uploaded_by, "created_at": int(item.created_at)}
+                {"task_id": str(item.task_id), "id": int(item.id), "filename": str(item.filename), "content_type": item.content_type,
+                 "size": int(item.size), "uploaded_by": item.uploaded_by, "created_at": int(item.created_at), "run_id": run_id}
                 for item in self.hermes.list_attachments(conn, task_id)
             ]
         return self._with_conn(op)
 
-    def attach(self, task_id: str, local_path: str, *, filename: str | None = None, content_type: str | None = None) -> dict[str, Any]:
-        source = Path(local_path).expanduser().resolve()
-        configured_root = os.environ.get("MCP_ATTACHMENT_STAGING_ROOT")
-        safe_root = Path(configured_root).expanduser().resolve() if configured_root else (self.handle.db_path.parent / "attachments-staging").resolve()
-        try:
-            source.relative_to(safe_root)
-        except ValueError as exc:
-            raise ValueError("attachment path is outside the configured board staging root") from exc
-        if not source.is_file():
-            raise FileNotFoundError("attachment source is unavailable")
-        max_bytes = int(os.environ.get("MCP_MAX_ATTACHMENT_BYTES", str(10 * 1024 * 1024)))
-        if source.stat().st_size > max_bytes:
-            raise ValueError("attachment exceeds the configured size limit")
-        with source.open("rb") as stream:
-            data = stream.read(max_bytes + 1)
+    def attach(self, task_id: str, local_path: str | None = None, *, filename: str | None = None, content_type: str | None = None, content_base64: str | None = None, hash_algo: str | None = None, hash_expected: str | None = None) -> dict[str, Any]:
+        # Reject path-like names at the remote boundary; canonical storage also
+        # sanitizes names, but silently rewriting a remote name loses provenance.
+        if filename is not None and ("/" in filename or "\\" in filename or filename.startswith(".")):
+            raise ValueError("unsafe attachment filename")
+
+        # Determine data and filename
+        if content_base64 is not None:
+            import base64
+            max_bytes = int(getattr(self.hermes, "KANBAN_ATTACHMENT_MAX_BYTES", 25 * 1024 * 1024))
+            # Reject oversized encoded payloads before allocating decoded bytes.
+            if len(content_base64) > ((max_bytes + 2) // 3) * 4:
+                raise ValueError("attachment exceeds the configured size limit")
+            try:
+                data = base64.b64decode(content_base64, validate=True)
+            except Exception:
+                raise ValueError("invalid base64")
+            if filename is None:
+                raise ValueError("filename is required when content_base64 is provided")
+            stored_name = filename
+        else:
+            # local_path must be provided (validated by schema)
+            source = Path(local_path).expanduser().resolve()
+            configured_root = os.environ.get("MCP_ATTACHMENT_STAGING_ROOT")
+            safe_root = Path(configured_root).expanduser().resolve() if configured_root else (self.handle.db_path.parent / "attachments-staging").resolve()
+            try:
+                source.relative_to(safe_root)
+            except ValueError as exc:
+                raise ValueError("attachment path is outside the configured board staging root") from exc
+            if not source.is_file():
+                raise FileNotFoundError("attachment source is unavailable")
+            max_bytes = int(getattr(self.hermes, "KANBAN_ATTACHMENT_MAX_BYTES", 25 * 1024 * 1024))
+            if source.stat().st_size > max_bytes:
+                raise ValueError("attachment exceeds the configured size limit")
+            with source.open("rb") as stream:
+                data = stream.read(max_bytes + 1)
+            if len(data) > max_bytes:
+                raise ValueError("attachment exceeds the configured size limit")
+            stored_name = filename or source.name
+            # If filename was not provided, we use the source name, but we must still sanitize via Hermes' store_attachment_bytes
+
+        # Hash validation
+        if hash_algo is not None:
+            if hash_algo != "sha256":
+                raise ValueError("unsupported hash algorithm")
+            import hashlib
+            digest = hashlib.sha256(data).hexdigest()
+            if hash_expected is None or digest != hash_expected.lower():
+                raise ValueError("hash mismatch")
+
+        max_bytes = int(getattr(self.hermes, "KANBAN_ATTACHMENT_MAX_BYTES", 25 * 1024 * 1024))
         if len(data) > max_bytes:
             raise ValueError("attachment exceeds the configured size limit")
+
         import mimetypes
-        stored_name = filename or source.name
         detected = content_type or mimetypes.guess_type(stored_name)[0]
+        if content_type is not None:
+            guessed = mimetypes.guess_type(stored_name)[0]
+            if guessed is not None and guessed != content_type:
+                raise ValueError("MIME type mismatch")
+
         def op(conn):
             attachment_id = self.hermes.store_attachment_bytes(
                 conn, task_id, stored_name, data, content_type=detected, uploaded_by=self.provenance
