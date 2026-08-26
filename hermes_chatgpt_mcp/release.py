@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .provenance import API_VERSION, get_baseline
+
 
 class BuildMetadataError(ValueError):
     """Raised when a configured release manifest is not safe to consume."""
@@ -59,3 +61,21 @@ def load_build_metadata(path: Path | None) -> BuildMetadata:
         raise BuildMetadataError("invalid release metadata field: surface")
     deployed_at = _required_text(payload, "deployed_at")
     return BuildMetadata(build_commit=commit, surface=surface, deployed_at=deployed_at)
+
+
+def canary_manifest(*, build_commit: str, surface: str, deployed_at: str) -> dict[str, str]:
+    """Build a detached canary manifest payload validated against the frozen baseline contract."""
+
+    if not _COMMIT_RE.fullmatch(build_commit):
+        raise BuildMetadataError("invalid release metadata field: build_commit")
+    if surface not in _SURFACES:
+        raise BuildMetadataError("invalid release metadata field: surface")
+    baseline = get_baseline()
+    return {
+        "build_commit": build_commit,
+        "surface": surface,
+        "deployed_at": deployed_at,
+        "api_version": baseline.api_version,
+        "baseline_branch": baseline.branch,
+        "baseline_mcp_sha": baseline.mcp_sha,
+    }

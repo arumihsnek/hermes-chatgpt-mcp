@@ -1001,3 +1001,62 @@ class RuntimeStatusResult(StrictModel):
     running_other_boards: int
     running_host_total: int
     daemon: dict[str, Any] | None = None
+class HumanGateInput(BoardQuery):
+    task_id: TaskId
+    residual_risk: list[str] | None = Field(default=None, max_length=10)
+
+
+class HumanGateView(StrictModel):
+    task_id: TaskId
+    board: BoardSlug
+    provenance: dict[str, Any]
+    evidence: dict[str, Any]
+    residual_risk: list[str]
+    rollback: str
+    decision_options: list[str]
+    markdown: str
+    generated_at: int
+
+
+class HumanGateDecisionInput(BoardQuery):
+    task_id: TaskId
+    decision: Literal["YES", "NO"]
+    reason: str | None = Field(default=None, max_length=8_000)
+    requester: str | None = Field(default=None, max_length=256)
+
+
+class HumanGateDecisionResult(StrictModel):
+    board: BoardSlug
+    task_id: TaskId
+    decision: str
+    recorded: bool
+    comment_id: int | None = None
+
+
+class CanaryInput(BoardQuery):
+    build_commit: str = Field(min_length=7, max_length=64, pattern=r"^[0-9a-f]{7,64}$")
+    surface: Literal["stable", "beta"]
+    deployed_at: str = Field(min_length=1, max_length=128)
+
+
+class CanaryResult(StrictModel):
+    board: BoardSlug
+    manifest: dict[str, str]
+    verified: bool
+    errors: list[str] = Field(default_factory=list)
+
+
+class ControlStatusInput(BoardQuery):
+    include_dispatch_dry_run: bool = True
+
+
+class ControlStatusResult(StrictModel):
+    board: BoardSlug
+    generated_at: int
+    daemon: dict[str, Any]
+    stats: dict[str, Any]
+    dispatch_dry_run: dict[str, Any] | None = None
+    notify_count: int | None = None
+    control_plane: dict[str, str]
+    pause: dict[str, Any] | None = None
+    drain_preview: dict[str, Any] | None = None

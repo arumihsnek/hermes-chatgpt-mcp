@@ -31,6 +31,7 @@ from .boards import (
 from .command import HermesCreateAdapter
 from .config import Settings
 from .diagnostics import emit, fingerprint, redirect_identity, request_fingerprint, scope_summary
+from .provenance import API_VERSION, get_candidate_provenance
 from .release import load_build_metadata
 from .schemas import (
     AddCommentInput,
@@ -142,6 +143,14 @@ from .schemas import (
     StreamInput,
     BoardAdminInput,
     AttachRemoveInput,
+    HumanGateInput,
+    HumanGateView,
+    HumanGateDecisionInput,
+    HumanGateDecisionResult,
+    CanaryInput,
+    CanaryResult,
+    ControlStatusInput,
+    ControlStatusResult,
     InitResult,
     SwarmResult,
     DaemonResult,
@@ -941,12 +950,133 @@ def create_app(
         register_canonical("boards-rename", RenameBoardInput, lambda h, r: CanonicalActionResult(board=h.slug, action="boards rename", data=board_resolver.board_admin_adapter().rename_board(r.slug, name=r.name, description=r.description)), admin=True)
         register_canonical("boards-set-default-workdir", SetDefaultWorkdirInput, lambda h, r: CanonicalActionResult(board=h.slug, action="boards set-default-workdir", data=board_resolver.board_admin_adapter().set_default_workdir(r.slug, r.workdir)), admin=True)
 
+        # Wave 4: human gates + canary/status are bounded, auditable leaves that
+        # delegate to hermes_chatgpt_mcp.control_plane — no new daemon loops.
+        def _human_gate(handle, request):
+            from .control_plane import build_gate_context, format_gate_markdown
+
+            ctx = build_gate_context(  # type: ignore[arg-type]
+                read_adapter=board_resolver.query_adapter(handle),
+                board=handle.slug,
+                task_id=request.task_id,
+                surface="beta" if beta else "stable",
+                residual_risk=request.residual_risk,
+            )
+            p = ctx.provenance
+            e = ctx.evidence
+            return HumanGateView(
+                task_id=ctx.task_id,
+                board=ctx.board,
+                provenance={
+                    "candidate_sha": p.candidate_sha,
+                    "candidate_branch": p.candidate_branch,
+                    "baseline_branch": p.baseline_branch,
+                    "baseline_mcp_sha": p.baseline_mcp_sha,
+                    "baseline_hermes_sha": p.baseline_hermes_sha,
+                    "baseline_phase_s_sha": p.baseline_phase_s_sha,
+                    "api_version": p.api_version,
+                    "surface": p.surface,
+                    "provenance_header": p.provenance_header,
+                },
+                evidence={
+                    "task_title": e.task_title,
+                    "task_status": e.task_status,
+                    "latest_summary": e.latest_summary,
+                    "result_excerpt": e.result_excerpt,
+                    "parent_ids": e.parent_ids,
+                    "child_ids": e.child_ids,
+                    "dispatch_state": e.dispatch_state,
+                    "dispatch_reasons": e.dispatch_reasons,
+                    "truncated": e.truncated,
+                },
+                residual_risk=list(ctx.residual_risk),
+                rollback=ctx.rollback,
+                decision_options=list(ctx.decision_options),
+                markdown=format_gate_markdown(ctx),
+                generated_at=ctx.generated_at,
+            )
+
+        register_canonical("human-gate", HumanGateInput, _human_gate, scope=auth_service.read_scope, result_model=HumanGateView)
+
+        def _human_gate_decide(handle, request):
+            from .control_plane import validate_gate_actor
+
+            # The deciding actor is the authenticated OAuth subject of the
+            # caller; self-approval (requester == actor) fails closed.
+            token = get_access_token()
+            claims = auth_service.verified_claims(token.token) if token is not None else None
+            raw_subject = claims.get("sub") if isinstance(claims, dict) else None
+            actor = raw_subject if isinstance(raw_subject, str) else None
+            validate_gate_actor(requester=request.requester, actor=actor)
+            # Auditable: the decision is a canonical task comment on the gate task,
+            # not an implicit FK flip.  The human's YES/NO stays in task_events.
+            body = f"HUMAN_GATE {request.decision}: {request.task_id} on {handle.slug}"
+            if request.reason:
+                body += f"\nReason: {request.reason[:2000]}"
+            if request.requester:
+                body += f"\nRequester: {request.requester[:200]}"
+            row = board_resolver.management_adapter(handle).add_comment(
+                request.task_id, body
+            )
+            return HumanGateDecisionResult(
+                board=handle.slug,
+                task_id=request.task_id,
+                decision=request.decision,
+                recorded=True,
+                comment_id=int(getattr(row, "comment_id", 0) or 0) or None,
+            )
+
+        register_canonical("human-gate-decide", HumanGateDecisionInput, _human_gate_decide, result_model=HumanGateDecisionResult)
+
+        def _canary(handle, request):
+            from .control_plane import build_canary_bundle
+
+            bundle = build_canary_bundle(
+                build_commit=request.build_commit, surface=request.surface, deployed_at=request.deployed_at
+            )
+            if not bundle.verified:
+                raise ToolError("; ".join(bundle.errors))
+            return CanaryResult(board=handle.slug, manifest=bundle.manifest, verified=True)
+
+        register_canonical("canary", CanaryInput, _canary, scope=auth_service.read_scope, result_model=CanaryResult)
+
+        def _control_status(handle, request):
+            from .control_plane import drain_preview, pause_status, status_snapshot
+
+            snap = status_snapshot(  # type: ignore[arg-type]
+                read_adapter=board_resolver.query_adapter(handle),
+                manage_adapter=board_resolver.management_adapter(handle),
+                board=handle.slug,
+                include_dispatch_dry_run=request.include_dispatch_dry_run,
+            )
+            return ControlStatusResult(
+                board=snap.board,
+                generated_at=snap.generated_at,
+                daemon=snap.daemon,
+                stats=snap.stats,
+                dispatch_dry_run=snap.dispatch_dry_run,
+                notify_count=snap.notify_count,
+                control_plane=snap.control_plane,
+                pause=pause_status(),
+                drain_preview=drain_preview(manage_adapter=board_resolver.management_adapter(handle)),
+            )
+
+        register_canonical("control-status", ControlStatusInput, _control_status, scope=auth_service.read_scope, result_model=ControlStatusResult)
+
+    prov = get_candidate_provenance(surface="beta" if beta else "stable")
+
     @mcp.custom_route("/healthz", methods=["GET"], include_in_schema=False)
     async def healthz(request: Request) -> Response:
         payload: dict[str, object] = {"status": "ok"}
         if beta:
             payload["build"] = build_metadata.public_dict()
-        return JSONResponse(payload)
+        headers = {
+            "X-V4-Provenance": prov.provenance_header("beta" if beta else "stable"),
+            "X-API-Version": API_VERSION,
+            "X-Baseline-Branch": prov.baseline.branch,
+            "X-Baseline-MCP": prov.baseline.mcp_sha[:12],
+        }
+        return JSONResponse(payload, headers=headers)
 
     @mcp.custom_route("/.well-known/oauth-authorization-server", methods=["GET"], include_in_schema=False)
     async def oauth_metadata(request: Request) -> Response:
