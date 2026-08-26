@@ -42,7 +42,7 @@ change the stable hostname's locations.
 | Surface | Exact public tool set | Supported scopes | Command grant |
 | --- | --- | --- | --- |
 | Stable | eight tools: the seven read tools above plus `create_task` | `hermes:read`, `hermes:create`, `offline_access` | `create_task` needs `hermes:create` and one selected board with `board_access=write` |
-| Beta | 51 canonical leaves (the `boards` routing container and aliases are excluded) | `hermes:read`, `hermes:create`, `hermes:manage`, `hermes:board:create`, `hermes:admin`, `offline_access` | normal task mutations use `hermes:manage`; destructive, runtime, and filesystem-sensitive actions require explicitly consented `hermes:admin` |
+| Beta | canonical leaves (the `boards` routing container and aliases are excluded) | `hermes:read`, `hermes:create`, `hermes:manage`, `hermes:board:create`, `hermes:admin`, `offline_access` | normal task mutations use `hermes:manage`; destructive, runtime, and filesystem-sensitive actions require explicitly consented `hermes:admin` |
 
 The stable default remains unchanged: it registers no beta tools and does not
 advertise `hermes:manage` or `hermes:board:create`. Beta is selected explicitly
@@ -214,11 +214,12 @@ unsupported values are rejected before or during the canonical transaction.
 
 ### Beta board-management tools
 
-The beta surface exposes the complete 51-leaf canonical Kanban action surface
+The beta surface exposes the complete canonical Kanban action surface
 (aliases and the `boards` routing container are not separate tools). The
 original 11 tools remain unchanged; typed additions cover lifecycle,
 dependency, attachment, dispatch, diagnostics, notification, worker-context,
-recovery, and board-administration actions. `hermes:admin` is an explicit
+board-administration, and Wave-4 control-plane actions (`human-gate`,
+`human-gate-decide`, `canary`, `control-status`). `hermes:admin` is an explicit
 elevated scope for runtime, destructive, and filesystem-sensitive leaves.
 
 | Tool | Required scope | Board binding | Canonical operation |
