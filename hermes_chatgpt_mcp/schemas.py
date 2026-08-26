@@ -155,6 +155,17 @@ class CreateTaskInput(BoardQuery):
     session_id: SessionId | None = None
     triage: bool = False
     idempotency_key: IdempotencyKey
+    # Wave-1 fields — forwarded to Hermes' canonical create_task.
+    skills: list[str] | None = Field(default=None, max_length=32)
+    model_override: str | None = Field(default=None, max_length=512)
+    provider_override: str | None = Field(default=None, max_length=512)
+    workspace_kind: str = Field(default="scratch")
+    workspace_path: str | None = Field(default=None, max_length=1024)
+    branch_name: str | None = Field(default=None, max_length=256)
+    max_runtime_seconds: int | None = Field(default=None, ge=1)
+    max_retries: int | None = Field(default=None, ge=0)
+    goal_mode: bool | None = Field(default=None)
+    goal_max_turns: int | None = Field(default=None, ge=1)
 
 
 class ListTasksInput(BoardQuery):

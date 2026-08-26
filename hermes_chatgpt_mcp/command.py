@@ -65,6 +65,16 @@ class HermesCreateAdapter:
         session_id: str | None = None,
         triage: bool = False,
         idempotency_key: str | None = None,
+        skills: list[str] | None = None,
+        model_override: str | None = None,
+        provider_override: str | None = None,
+        workspace_kind: str | None = None,
+        workspace_path: str | None = None,
+        branch_name: str | None = None,
+        max_runtime_seconds: int | None = None,
+        max_retries: int | None = None,
+        goal_mode: bool | None = None,
+        goal_max_turns: int | None = None,
     ) -> CreateTaskResult:
         if not self.store.db_path.is_file():
             raise FileNotFoundError(f"Hermes board database does not exist: {self.store.board}")
@@ -72,19 +82,21 @@ class HermesCreateAdapter:
         # ``connect_closing`` is Hermes' normal command connection. Passing the
         # resolved path and board keeps board selection explicit and avoids
         # mutating Hermes' active-board marker from an external request.
+        # Capture whether an active task already owns the idempotency key
+        # before invoking Hermes' canonical create. The canonical gate remains
+        # the authority; this observation only labels its returned decision.
+        # Archived matches deliberately do not count, so a retry after archive
+        # is classified as a fresh creation.
         with self.hermes.connect_closing(
             db_path=self.store.db_path,
             board=self.store.board,
         ) as conn:
-            replay = False
+            active_idempotency_before = 0
             if idempotency_key:
-                # Detect an idempotent replay before Hermes' canonical create
-                # so the result can distinguish "new row" from "reused row".
-                existing = conn.execute(
-                    "SELECT id FROM tasks WHERE idempotency_key = ? AND status != 'archived' ORDER BY created_at ASC LIMIT 1",
+                active_idempotency_before = conn.execute(
+                    "SELECT COUNT(*) FROM tasks WHERE idempotency_key = ? AND status != 'archived'",
                     (idempotency_key,),
-                ).fetchone()
-                replay = existing is not None
+                ).fetchone()[0]
             task_id = self.hermes.create_task(
                 conn,
                 title=title,
@@ -99,6 +111,20 @@ class HermesCreateAdapter:
                 session_id=session_id,
                 initial_status="running",
                 board=self.store.board,
+                skills=skills,
+                model_override=model_override,
+                provider_override=provider_override,
+                **(
+                    {}
+                    if workspace_kind is None
+                    else {"workspace_kind": workspace_kind}
+                ),
+                workspace_path=workspace_path,
+                branch_name=branch_name,
+                max_runtime_seconds=max_runtime_seconds,
+                max_retries=max_retries,
+                goal_mode=bool(goal_mode) if goal_mode is not None else False,
+                goal_max_turns=goal_max_turns,
             )
             task = self.hermes.get_task(conn, task_id)
             if task is None:  # pragma: no cover - canonical function contract
@@ -107,11 +133,14 @@ class HermesCreateAdapter:
             canonical_children = [str(value) for value in self.hermes.child_ids(conn, task_id)]
 
         return CreateTaskResult(
-            # Hermes' idempotency contract may return an existing non-archived
-            # task. The task ID is authoritative; ``created`` distinguishes a
-            # fresh row from an idempotent replay.
-            created=not replay,
-            idempotent_replay=replay,
+            # Hermes' canonical create_task is the single idempotency
+            # authority: it returns the existing non-archived task's id on a
+            # key replay and inserts a fresh row when prior matches are all
+            # archived. Comparing row counts around that single call keeps
+            # ``created`` aligned with what the canonical gate actually
+            # decided, fail-closed for lifecycle/provenance semantics.
+            created=active_idempotency_before == 0,
+            idempotent_replay=active_idempotency_before > 0,
             task_id=str(task.id),
             board=self.store.board,
             title=str(task.title),

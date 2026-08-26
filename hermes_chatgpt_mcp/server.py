@@ -371,7 +371,7 @@ def create_app(
         try:
             return callback(*args, **kwargs)
         except (ValueError, FileNotFoundError, LookupError) as exc:
-            raise tool_error("CONFLICT", "Hermes rejected the task creation request") from exc
+            raise tool_error("CONFLICT", str(exc)) from exc
         except Exception as exc:  # pragma: no cover - exercised by integration failures
             logger.error("Hermes create command failed: %s", type(exc).__name__)
             raise tool_error("BACKEND_ERROR", "Hermes task creation failed") from exc
@@ -634,6 +634,16 @@ def create_app(
                 session_id=request.session_id,
                 triage=request.triage,
                 idempotency_key=request.idempotency_key,
+                skills=request.skills,
+                model_override=request.model_override,
+                provider_override=request.provider_override,
+                workspace_kind=request.workspace_kind,
+                workspace_path=request.workspace_path,
+                branch_name=request.branch_name,
+                max_runtime_seconds=request.max_runtime_seconds,
+                max_retries=request.max_retries,
+                goal_mode=request.goal_mode,
+                goal_max_turns=request.goal_max_turns,
             )
 
     if beta:
@@ -775,6 +785,12 @@ def create_app(
 
         @mcp.tool(name="archive_tasks", description="Archive tasks.", annotations=manage_annotations, structured_output=True)
         async def archive_tasks(request: ArchiveInput) -> ArchiveResult:
+            if request.rm:
+                require_scope(auth_service.admin_scope)
+            return await _manage(request, "archive", request.task_ids, rm=request.rm)
+
+        @mcp.tool(name="archive_task", description="Archive tasks (singular alias).", annotations=manage_annotations, structured_output=True)
+        async def archive_task(request: ArchiveInput) -> ArchiveResult:
             if request.rm:
                 require_scope(auth_service.admin_scope)
             return await _manage(request, "archive", request.task_ids, rm=request.rm)
