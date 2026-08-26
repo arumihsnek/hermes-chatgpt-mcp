@@ -999,8 +999,12 @@ def create_app(
         register_canonical("human-gate", HumanGateInput, _human_gate, scope=auth_service.read_scope, result_model=HumanGateView)
 
         def _human_gate_decide(handle, request):
-            from .control_plane import validate_gate_actor
+            from .control_plane import validate_gate_actor, validate_gate_requester
 
+            # Stale-candidate policy: a decision naming a superseded/retired
+            # requester would approve evidence from a dead candidate — reject
+            # before any write happens.
+            validate_gate_requester(request.requester)
             # The deciding actor is the authenticated OAuth subject of the
             # caller; self-approval (requester == actor) fails closed.
             token = get_access_token()

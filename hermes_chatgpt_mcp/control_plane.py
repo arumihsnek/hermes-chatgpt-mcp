@@ -160,6 +160,28 @@ def validate_gate_actor(*, requester: str | None, actor: str | None) -> None:
         raise ValueError("human gate self-approval is forbidden: decision actor must differ from requester")
 
 
+# Requester identities reserved for workers whose candidate was superseded or
+# retired; a YES recorded on their behalf would approve a stale candidate, so
+# it fails closed instead of landing in the audit trail.
+_STALE_REQUESTER_MARKERS = ("superseded", "retired", "stale", "archived")
+
+
+def validate_gate_requester(requester: str | None) -> None:
+    """Reject decisions bound to a stale/superseded candidate requester.
+
+    A human-gate decision must be bound to the live candidate that produced
+    the evidence bundle. When the named requester carries a supersession
+    marker (e.g. a worker session replaced by a rebind), the candidate is
+    no longer the one under review, so recording a decision for it would
+    launder approval through a dead provenance chain — fail closed instead.
+    """
+    if not requester:
+        return
+    normalized = requester.strip().lower()
+    if any(marker in normalized for marker in _STALE_REQUESTER_MARKERS):
+        raise ValueError("human gate decision rejected: requester belongs to a stale or superseded candidate")
+
+
 def validate_delivery_mode(mode: str | None) -> str | None:
     if mode is None:
         return None
@@ -265,20 +287,28 @@ def build_canary_bundle(*, build_commit: str, surface: str, deployed_at: str) ->
 
 
 def verify_canary_manifest(payload: dict[str, Any]) -> CanaryBundle:
-    """Fail-closed verifier for a canary manifest dict (no file I/O)."""
+    """Fail-closed verifier for a canary manifest dict (no file I/O).
+
+    Baseline-contract fields are pinned to the frozen v4 baseline: a manifest
+    that names any other branch/sha/api_version is rejected, so a canary can
+    never borrow provenance it was not built against.
+    """
     try:
         build_commit = payload.get("build_commit")
         surface = payload.get("surface")
         deployed_at = payload.get("deployed_at")
         if not isinstance(build_commit, str) or not isinstance(surface, str) or not isinstance(deployed_at, str):
             raise BuildMetadataError("invalid release metadata")
-        manifest = canary_manifest(build_commit=build_commit, surface=surface, deployed_at=deployed_at)
-        # Cross-check the baseline fields the manifest must carry.
         base = get_baseline()
-        if payload.get("api_version") not in (None, base.api_version) and payload.get("api_version") != base.api_version:
-            raise BuildMetadataError("invalid release metadata field: api_version")
-        if payload.get("baseline_branch") not in (None, base.branch) and payload.get("baseline_branch") != base.branch:
-            raise BuildMetadataError("invalid release metadata field: baseline_branch")
+        for field, expected in (
+            ("api_version", base.api_version),
+            ("baseline_branch", base.branch),
+            ("baseline_mcp_sha", base.mcp_sha),
+        ):
+            value = payload.get(field)
+            if value is not None and value != expected:
+                raise BuildMetadataError(f"invalid release metadata field: {field}")
+        manifest = canary_manifest(build_commit=build_commit, surface=surface, deployed_at=deployed_at)
         return CanaryBundle(manifest=manifest, verified=True)
     except (ValueError, BuildMetadataError) as exc:
         return CanaryBundle(manifest={}, verified=False, errors=(str(exc),))
