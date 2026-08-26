@@ -19,7 +19,7 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.routing import Route, request_response
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
-from .adapter import HermesReadOnlyAdapter, TaskNotFoundError
+from .adapter import HermesReadOnlyAdapter, RunNotFoundError, TaskNotFoundError
 from .auth import BETA_AUTH_POLICY, STABLE_AUTH_POLICY, AuthService, BearerTokenVerifier, OAuthError
 from .boards import (
     BoardHandle,
@@ -147,6 +147,16 @@ from .schemas import (
     DaemonResult,
     DaemonInput,
     WatchResult,
+    GetRunInput,
+    ListRunsInput,
+    ActiveWorkersInput,
+    BoundedLogInput,
+    RuntimeStatusInput,
+    TaskRunsResult,
+    ActiveWorkersResult,
+    TaskLogResult,
+    RuntimeStatusResult,
+    TaskRunRecord,
 )
 
 
@@ -361,6 +371,8 @@ def create_app(
             return callback(*args, **kwargs)
         except TaskNotFoundError as exc:
             raise tool_error("TASK_NOT_FOUND", "task was not found on the selected board") from exc
+        except RunNotFoundError as exc:
+            raise tool_error("RUN_NOT_FOUND", "run was not found on the selected board") from exc
         except (ValueError, FileNotFoundError, LookupError) as exc:
             raise tool_error("BACKEND_ERROR", "invalid or unavailable Hermes query") from exc
         except Exception as exc:  # pragma: no cover - exercised by integration failures
@@ -604,6 +616,57 @@ def create_app(
             max_items=request.max_items,
             log_bytes=request.log_bytes,
         )
+
+    @mcp.tool(
+        name="get_run",
+        description="Read one bounded canonical Hermes run by Run.id.",
+        annotations=readonly,
+        structured_output=True,
+    )
+    async def get_run(request: GetRunInput) -> TaskRunRecord:
+        handle = resolve_board(request.board, operation="read")
+        return await run_query(board_resolver.query_adapter(handle).get_run, request.run_id)
+
+    @mcp.tool(
+        name="list_runs",
+        description="Read bounded chronological run history for one task.",
+        annotations=readonly,
+        structured_output=True,
+    )
+    async def list_runs(request: ListRunsInput) -> TaskRunsResult:
+        handle = resolve_board(request.board, operation="read")
+        return await run_query(board_resolver.query_adapter(handle).list_runs, request.task_id, limit=request.limit, include_active=request.include_active)
+
+    if beta:
+        @mcp.tool(
+            name="active_workers",
+            description="Read a bounded snapshot of currently running workers and run linkage.",
+            annotations=readonly,
+            structured_output=True,
+        )
+        async def active_workers(request: ActiveWorkersInput) -> ActiveWorkersResult:
+            handle = resolve_board(request.board, operation="read")
+            return await run_query(board_resolver.query_adapter(handle).active_workers, limit=request.limit)
+
+        @mcp.tool(
+            name="bounded_log",
+            description="Read a bounded worker-log tail; never streams or exposes unbounded logs.",
+            annotations=readonly,
+            structured_output=True,
+        )
+        async def bounded_log(request: BoundedLogInput) -> TaskLogResult:
+            handle = resolve_board(request.board, operation="read")
+            return await run_query(board_resolver.query_adapter(handle).read_bounded_log, request.task_id, tail_bytes=request.tail_bytes)
+
+        @mcp.tool(
+            name="runtime_status",
+            description="Read bounded board and host runtime status with configuration-safe daemon snapshot.",
+            annotations=readonly,
+            structured_output=True,
+        )
+        async def runtime_status(request: RuntimeStatusInput) -> RuntimeStatusResult:
+            handle = resolve_board(request.board, operation="read")
+            return await run_query(board_resolver.query_adapter(handle).runtime_status)
 
     @mcp.tool(
         name="create_task",
@@ -1177,6 +1240,13 @@ def create_app(
             name: tool
             for name, tool in mcp._tool_manager._tools.items()  # type: ignore[attr-defined]
             if name in allowed_tools
+        }
+    if not beta:
+        # Wave-2 observability is beta-only; preserve the frozen stable 8-tool surface.
+        mcp._tool_manager._tools = {  # type: ignore[attr-defined]
+            name: tool
+            for name, tool in mcp._tool_manager._tools.items()  # type: ignore[attr-defined]
+            if name not in {"get_run", "list_runs", "active_workers", "bounded_log", "runtime_status"}
         }
     _strictify_tools(mcp)
     app = mcp.streamable_http_app()

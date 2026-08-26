@@ -20,12 +20,21 @@ from .schemas import (
     TaskGraphView,
     TaskListView,
     TaskRunRecord,
+    WorkerSnapshot,
+    ActiveWorkersResult,
+    RuntimeStatusResult,
+    TaskLogResult,
+    TaskRunsResult,
     TaskSummary,
 )
 
 
 class TaskNotFoundError(LookupError):
     """Raised when Hermes has no task with the requested ID."""
+
+
+class RunNotFoundError(LookupError):
+    """Raised when Hermes has no run with the requested ID."""
 
 
 class BoardNotFoundError(LookupError):
@@ -310,6 +319,91 @@ class HermesReadOnlyAdapter:
         )
 
 
+    def _worker_snapshot(self, task: Any, run: Any | None) -> WorkerSnapshot:
+        return WorkerSnapshot(
+            task_id=str(task.id),
+            title=str(task.title),
+            assignee=getattr(task, "assignee", None),
+            profile=getattr(run, "profile", None),
+            current_run_id=getattr(task, "current_run_id", None),
+            worker_pid=getattr(run, "worker_pid", None),
+            claim_lock=getattr(run, "claim_lock", None) or getattr(task, "claim_lock", None),
+            claim_expires=getattr(run, "claim_expires", None),
+            last_heartbeat_at=getattr(run, "last_heartbeat_at", None),
+            started_at=getattr(run, "started_at", None),
+            session_id=getattr(task, "session_id", None),
+            tenant=getattr(task, "tenant", None),
+            branch_name=getattr(task, "branch_name", None),
+        )
+
+    def get_run(self, run_id: int) -> TaskRunRecord:
+        if run_id < 1:
+            raise ValueError("run_id must be positive")
+        with self.store.connect() as conn:
+            run = self.hermes.get_run(conn, int(run_id))
+        if run is None:
+            raise RunNotFoundError(run_id)
+        return self._run_record(run)
+
+    def list_runs(self, task_id: str, *, limit: int = 100, include_active: bool = True) -> TaskRunsResult:
+        if limit < 1 or limit > 200:
+            raise ValueError("run limit must be between 1 and 200")
+        with self.store.connect() as conn:
+            self._get_task(conn, task_id)
+            runs = self.hermes.list_runs(conn, task_id, include_active=include_active)
+        return TaskRunsResult(task_id=task_id, runs=[self._run_record(run) for run in runs[:limit]], truncated=len(runs) > limit)
+
+    def active_workers(self, *, limit: int = 50) -> ActiveWorkersResult:
+        if limit < 1 or limit > 100:
+            raise ValueError("worker limit must be between 1 and 100")
+        with self.store.connect() as conn:
+            tasks = self.hermes.list_tasks(conn, status="running", include_archived=False, limit=limit + 1, order_by="created")
+            stats = self.hermes.board_stats(conn)
+            running_here = int(self.hermes.count_running_tasks(conn))
+        running_other = int(self.hermes.count_running_tasks_other_boards(self.store.board))
+        workers = []
+        for task in tasks[:limit]:
+            run = None
+            current_run_id = getattr(task, "current_run_id", None)
+            if current_run_id is not None:
+                with self.store.connect() as conn:
+                    run = self.hermes.get_run(conn, int(current_run_id))
+            workers.append(self._worker_snapshot(task, run))
+        now = int(stats.get("now", 0) or 0)
+        started = [int(w.started_at) for w in workers if w.started_at is not None]
+        oldest = max(0, now - min(started)) if started and now else None
+        return ActiveWorkersResult(board=self.store.board, workers=workers, count_running=running_here, count_other_boards=running_other, oldest_running_age_seconds=oldest, generated_at=now, truncated=len(tasks) > limit)
+
+    def read_bounded_log(self, task_id: str, *, tail_bytes: int = 16_000) -> TaskLogResult:
+        if tail_bytes < 0 or tail_bytes > self.max_log_bytes:
+            raise ValueError("tail_bytes exceeds the configured ceiling")
+        with self.store.connect() as conn:
+            self._get_task(conn, task_id)
+        if tail_bytes == 0:
+            return TaskLogResult(task_id=task_id, content="", truncated=False)
+        path = self.store.log_path(task_id)
+        if path is not None:
+            if not path.is_file():
+                return TaskLogResult(task_id=task_id, content="", truncated=False)
+            with path.open("rb") as handle:
+                handle.seek(0, 2)
+                size = handle.tell()
+                take = min(size, tail_bytes)
+                handle.seek(size - take)
+                content = handle.read(take).decode("utf-8", errors="replace")
+            return TaskLogResult(task_id=task_id, content=content, truncated=size > tail_bytes, next_cursor=(size - take if size > take else None))
+        reader = getattr(self.hermes, "read_worker_log", None)
+        content = reader(task_id, tail_bytes=tail_bytes, board=self.store.board) if reader else None
+        return TaskLogResult(task_id=task_id, content=content or "", truncated=bool(content and len(content.encode("utf-8")) >= tail_bytes))
+
+    def runtime_status(self) -> RuntimeStatusResult:
+        with self.store.connect() as conn:
+            stats = dict(self.hermes.board_stats(conn))
+            running_here = int(self.hermes.count_running_tasks(conn))
+        running_other = int(self.hermes.count_running_tasks_other_boards(self.store.board))
+        return RuntimeStatusResult(board=self.store.board, stats=_safe_data(stats), running_here=running_here, running_other_boards=running_other, running_host_total=running_here + running_other, daemon={"status": "available", "bounded": True, "running": False})
+
+
     def _read_log(self, task_id: str, log_bytes: int) -> str | None:
         if log_bytes <= 0:
             return None
@@ -320,8 +414,9 @@ class HermesReadOnlyAdapter:
             with path.open("rb") as handle:
                 handle.seek(0, 2)
                 size = handle.tell()
-                handle.seek(max(0, size - min(log_bytes, self.max_log_bytes)))
-                return handle.read(min(log_bytes, self.max_log_bytes)).decode("utf-8", errors="replace")
+                take = min(log_bytes, self.max_log_bytes, size)
+                handle.seek(size - take)
+                return handle.read(take).decode("utf-8", errors="replace")
         reader = getattr(self.hermes, "read_worker_log", None)
         if reader is None:
             return None

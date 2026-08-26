@@ -910,3 +910,81 @@ class BoardAdminInput(StrictModel):
     name: str | None = Field(default=None, min_length=1, max_length=512)
     description: str | None = Field(default=None, max_length=2_000)
     workdir: str | None = Field(default=None, max_length=2_000)
+
+
+# --- Wave-2 Runs/Workers/Observability (exact §3.2 shapes) ---
+class GetRunInput(StrictModel):
+    board: BoardSlug | None = None
+    run_id: int = Field(ge=1)
+
+
+class ListRunsInput(StrictModel):
+    board: BoardSlug | None = None
+    task_id: TaskId
+    limit: int = Field(default=100, ge=1, le=200)
+    include_active: bool = True
+
+
+class ActiveWorkersInput(StrictModel):
+    board: BoardSlug | None = None
+    limit: int = Field(default=50, ge=1, le=100)
+
+
+class BoundedLogInput(StrictModel):
+    board: BoardSlug | None = None
+    task_id: TaskId
+    tail_bytes: int = Field(default=16_000, ge=0, le=32_000)
+    cursor: int | None = Field(default=None, ge=0)
+
+
+class RuntimeStatusInput(StrictModel):
+    board: BoardSlug | None = None
+
+
+class WorkerSnapshot(StrictModel):
+    task_id: TaskId
+    title: str
+    status: Literal["running"] = "running"
+    assignee: str | None = None
+    profile: str | None = None
+    current_run_id: int | None = None
+    worker_pid: int | None = None
+    claim_lock: str | None = None
+    claim_expires: int | None = None
+    last_heartbeat_at: int | None = None
+    started_at: int | None = None
+    session_id: str | None = None
+    tenant: str | None = None
+    branch_name: str | None = None
+
+
+class ActiveWorkersResult(StrictModel):
+    board: BoardSlug
+    workers: list[WorkerSnapshot]
+    count_running: int
+    count_other_boards: int
+    oldest_running_age_seconds: int | None = None
+    generated_at: int
+    truncated: bool = False
+
+
+class TaskLogResult(StrictModel):
+    task_id: TaskId
+    content: str
+    next_cursor: int | None = None
+    truncated: bool = False
+
+
+class TaskRunsResult(StrictModel):
+    task_id: TaskId
+    runs: list[TaskRunRecord]
+    truncated: bool = False
+
+
+class RuntimeStatusResult(StrictModel):
+    board: BoardSlug
+    stats: dict[str, Any]
+    running_here: int
+    running_other_boards: int
+    running_host_total: int
+    daemon: dict[str, Any] | None = None
