@@ -1,9 +1,10 @@
 # V4 Current State — Canonical Source of Truth
 
-**Status:** CANONICAL V4 DESIGN / CURRENT EVIDENCE
-**Last reconciled:** 2026-08-19 (canonical design) + **2026-08-21 release-candidate truth-sync** (see [CHECKPOINT-2026-08-21.md](CHECKPOINT-2026-08-21.md)) + **2026-08-25 current-truth freshness** (see [CHECKPOINT-2026-08-25-CURRENT-TRUTH-FRESHNESS.md](CHECKPOINT-2026-08-25-CURRENT-TRUTH-FRESHNESS.md)) + **2026-08-25 DAG soft-retire contract** (see [DAG-SOFT-RETIRE-CONTRACT.md](DAG-SOFT-RETIRE-CONTRACT.md))
-**Documentation base:** 9900c10 (local ref only; deployed SHA NOT_PROVEN)
-**See also:** [README.md](README.md) | [EVIDENCE_AND_OPEN_QUESTIONS.md](EVIDENCE_AND_OPEN_QUESTIONS.md) | [RECOVERY-TRUTH-SYNC-2026-08-24.md](RECOVERY-TRUTH-SYNC-2026-08-24.md)
+**Status:** CANONICAL V4 DESIGN / CURRENT EVIDENCE + **V4 STABLE ACCEPTED 2026-08-27**
+**Last reconciled:** 2026-08-19 (canonical design) + **2026-08-21 release-candidate truth-sync** (see [CHECKPOINT-2026-08-21.md](CHECKPOINT-2026-08-21.md)) + **2026-08-25 current-truth freshness** (see [CHECKPOINT-2026-08-25-CURRENT-TRUTH-FRESHNESS.md](CHECKPOINT-2026-08-25-CURRENT-TRUTH-FRESHNESS.md)) + **2026-08-25 DAG soft-retire contract** (see [DAG-SOFT-RETIRE-CONTRACT.md](DAG-SOFT-RETIRE-CONTRACT.md)) + **2026-08-27 V4 stable truth-sync** (see [CHECKPOINT-2026-08-27-V4-STABLE.md](CHECKPOINT-2026-08-27-V4-STABLE.md) + [RELEASE-STABLE-V4.md](../../RELEASE-STABLE-V4.md))
+**Documentation base (pre-V4-stable design docs):** 9900c10 (local ref only; pre-V4 beta worktree — **NOT** the V4 stable commit)
+**V4 stable connector (durable binding):** `4ae5060931a64741185c5c8deb3886a5901f21cc` (short `4ae5060`, branch `v4-candidate-integration`, surface `beta`, API `v4.wave0`, Hermes Core MCP baseline `d7eba25ea8f6`)
+**See also:** [README.md](README.md) | [EVIDENCE_AND_OPEN_QUESTIONS.md](EVIDENCE_AND_OPEN_QUESTIONS.md) | [RECOVERY-TRUTH-SYNC-2026-08-24.md](RECOVERY-TRUTH-SYNC-2026-08-24.md) | [CHECKPOINT-2026-08-27-V4-STABLE.md](CHECKPOINT-2026-08-27-V4-STABLE.md) | [RELEASE-STABLE-V4.md](../../RELEASE-STABLE-V4.md)
 
 ---
 
@@ -47,11 +48,18 @@ This document derives exclusively from **local read-only investigations** comple
 | Property | Value |
 |----------|-------|
 | Hermes Version | v0.20.2 (2026.8.16) |
-| Source HEAD | 39cfd1ab41 (+2 carried commits, upstream b7bed241) |
+| Source HEAD | 39cfd1ab41 (+2 carried commits, upstream b7bed241) — **pre-V4-stable design-docs base** |
 | Install Path | /home/ubuntu/hermes-agent (git install) |
 | Board | hermes-chatgpt-mcp |
-| Deployment label | `Kanban_Beta` (stale metadata; controller classifies deployment as STABLE) |
-| Deployed connector SHA | **STILL_NOT_PROVEN** |
+| **V4 stable connector (durable binding, 2026-08-27)** | `4ae5060931a64741185c5c8deb3886a5901f21cc` (branch `v4-candidate-integration`) — **RESOLVED** from prior `STILL_NOT_PROVEN` |
+| **V4 stable surface** | `beta` (controller classifies the deployment as STABLE; `Kanban_Beta` discovery label is stale naming metadata) |
+| **V4 stable API surface** | `v4.wave0` (response header `x-api-version`; durable contract identifier) |
+| **Hermes Core MCP baseline** | `d7eba25ea8f692d2d0b65d7e5044df79e94c8a92` (header short `d7eba25ea8f6`; branch `v4/baseline-post-update-885e9ef`) |
+| **Live MCP `tools/list` tool count** | **71** (vs the 2026-08-19 54-tool discovery; updated by `4ae5060` Wave-0-to-4 integration) |
+| **v4.wave0 required tools (all 6 present)** | `list_boards`, `get_board`, `list_tasks`, `get_task`, `create_task`, `add_comment` |
+| **Stable runtime** | `/opt/venvs/hermes-chatgpt-mcp` (venv) + `/opt/hermes-chatgpt-mcp-canary` (override-redirected 8789 working dir; same `4ae5060` image) |
+| **Public MCP origin** | `https://kanban.hermesinthenight.duckdns.org/mcp` (OpenResty forwards to `127.0.0.1:8789`) |
+| **Deployed-at (build.json)** | `2026-08-26T14:34:00Z` — canary's original deploy time, **not** the 2026-08-27 R2 cutover time (residual; see [CHECKPOINT-2026-08-27-V4-STABLE.md §6](CHECKPOINT-2026-08-27-V4-STABLE.md)) |
 
 ---
 
@@ -214,8 +222,8 @@ This document derives exclusively from **local read-only investigations** comple
 | Historical C-IMPL-5 crash cause | NOT_PROVEN | Historical; not safety-relevant for current contract |
 | Managed overlay / effective controller config | NOT_PROVEN | Runtime config composition not fully mapped |
 | Live SQLite schema dump | NOT_PROVEN | Schema known from source; live instance not dumped |
-| Deployed connector SHA | STILL_NOT_PROVEN | Integration concern |
-| Live HTTP/API auth and reachability | STILL_NOT_PROVEN | Dashboard/native API endpoints |
+| **Deployed connector SHA** | **RESOLVED 2026-08-27** — was `STILL_NOT_PROVEN`; now `4ae5060931a64741185c5c8deb3886a5901f21cc` (V4 stable, branch `v4-candidate-integration`, surface `beta`, API `v4.wave0`) | See [CHECKPOINT-2026-08-27-V4-STABLE.md §0](CHECKPOINT-2026-08-27-V4-STABLE.md) and [EVIDENCE_AND_OPEN_QUESTIONS.md §2](EVIDENCE_AND_OPEN_QUESTIONS.md) (removed from `STILL_NOT_PROVEN` table) |
+| **Live HTTP/API auth and reachability** | **PARTIALLY RESOLVED 2026-08-27** — public origin `https://kanban.hermesinthenight.duckdns.org` reachability proven for `/healthz`, `/mcp` (401 with bearer challenge), and OAuth discovery; full native API surface (dashboard plugin mount, native Hermes REST, etc.) remains `STILL_NOT_PROVEN` | See [CHECKPOINT-2026-08-27-V4-STABLE.md §1a](CHECKPOINT-2026-08-27-V4-STABLE.md) for the live readback evidence |
 | Provider/model validity | NOT_PROVEN | Runtime resolution not verified |
 | Native MCP/plugin/dynamic tool registration | NOT_PROVEN | Tool registration surface not fully mapped |
 | Live slash/terminate/heartbeat-retry behavior | UNSAFE_TO_TEST | Would mutate production state |
@@ -287,3 +295,101 @@ The `task_links.edge_state` soft-retire contract (`active|retired|rebound`; reti
 - **Planning:** [ROADMAP.md](ROADMAP.md) | [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) | [DOGFOOD_QA_PLAN.md](DOGFOOD_QA_PLAN.md)
 - **Evidence:** [EVIDENCE_AND_OPEN_QUESTIONS.md](EVIDENCE_AND_OPEN_QUESTIONS.md) | [STALE_DOCS.md](STALE_DOCS.md) | [DAG-SOFT-RETIRE-CONTRACT.md](DAG-SOFT-RETIRE-CONTRACT.md)
 - **Current-truth freshness (2026-08-25):** [CHECKPOINT-2026-08-25-CURRENT-TRUTH-FRESHNESS.md](CHECKPOINT-2026-08-25-CURRENT-TRUTH-FRESHNESS.md) — Source Precedence Ladder, cold-start protocol, Project Model vs Current State Vector, dogfood finding
+- **V4 stable release provenance (2026-08-27):** [RELEASE-STABLE-V4.md](../../RELEASE-STABLE-V4.md) — durable release anchor (SHAs, header values, topology, rollback, residuals). **The canonical current-state answer for "what is the V4 stable?" lives here.**
+- **V4 stable truth-sync checkpoint (2026-08-27):** [CHECKPOINT-2026-08-27-V4-STABLE.md](CHECKPOINT-2026-08-27-V4-STABLE.md) — full reconciliation: live readback, topology narrative, rollback path, residuals register, dogfood lessons, cross-references.
+
+---
+
+## 17. V4 Stable Reconciliation — 2026-08-27
+
+This section overlays the **V4 stable acceptance** (parent task `t_1e84eb11` ACCEPT 2026-08-27) onto the canonical design above. Sections 1–16 remain authoritative for architecture / scope / design intent. The V4 stable identity is now bound to a durable SHA and **supersedes** the prior `STILL_NOT_PROVEN` claims for the deployed connector. The full evidence chain — live readback, on-disk SHA-256 manifest pins, all 8 prerequisites, the rollback path, and the residuals register — lives in [CHECKPOINT-2026-08-27-V4-STABLE.md](CHECKPOINT-2026-08-27-V4-STABLE.md) and the short anchor [RELEASE-STABLE-V4.md](../../RELEASE-STABLE-V4.md). The current section is the **one-page summary** for readers who already know the canonical design and just need to know the V4 stable truth.
+
+### 17.1 Identity (the V4 stable)
+
+| Identity | Value | Evidence |
+|----------|-------|----------|
+| Connector (V4 stable commit) | `4ae5060931a64741185c5c8deb3886a5901f21cc` (short `4ae5060`) | `v4-candidate-integration` branch head, 2026-08-26T14:01:53Z |
+| Phase-S source bundle | `9a8410b4e883e27a4e0572951ee00f9faf4f3d19` (short `9a8410b4`) | `release/source-bundle-phase-s` branch head |
+| Hermes Core MCP baseline | `d7eba25ea8f692d2d0b65d7e5044df79e94c8a92` (header short `d7eba25ea8f6`) | response header `x-baseline-mcp` |
+| Hermes Core baseline branch | `v4/baseline-post-update-885e9ef` (short `885e9ef73829`) | response header `x-baseline-branch` |
+| Phase-S short SHA | `ef22b89e8b49` | parent `t_1e84eb11` handoff |
+| Surface (build.json) | `beta` (controller classifies the deployment as STABLE; `Kanban_Beta` discovery label is stale naming metadata) | build.json `surface` + response header `x-v4-provenance` |
+| API surface version | `v4.wave0` | response header `x-api-version` |
+| Live V4 provenance header | `4ae5060931a6/d7eba25/beta` | response header `x-v4-provenance` |
+| Live MCP `tools/list` tool count | **71** | post-switch smoke `t_a47fd88f` contract check #10 |
+| v4.wave0 required tools (all 6 present) | `list_boards`, `get_board`, `list_tasks`, `get_task`, `create_task`, `add_comment` | `t_a47fd88f` contract check #10 |
+
+### 17.2 Live readback (captured 2026-08-27 21:31 UTC)
+
+All three live surfaces — stable loopback `127.0.0.1:8789`, public origin `https://kanban.hermesinthenight.duckdns.org`, and canary loopback `127.0.0.1:8792` — report **identical** identity headers: `4ae5060931a64741185c5c8deb3886a5901f21cc` / `surface=beta` / `deployed_at=2026-08-26T14:34:00Z`, with `x-v4-provenance: 4ae5060931a6/d7eba25/beta`, `x-api-version: v4.wave0`, `x-baseline-branch: v4/baseline-post-update-885e9ef`, `x-baseline-mcp: d7eba25ea8f6`.
+
+The on-disk SHA-256 manifest pins (R2 manifest) match exactly:
+
+- `/var/lib/hermes-chatgpt-mcp/build.json` → `b83efaea3d253074f546661da4f27cfc0b4a579adad3d0f45fc48f2f0e2a231e` (full; R2 short `b83efaea…231e`)
+- `/etc/systemd/system/hermes-chatgpt-mcp.service.d/override.conf` → `d8d87c59817cfce591fd0a9bfcd54898534f84c96d1d461e1fbf8ffed8d1d90a` (full; R2 short `d8d87c59…1d90a`)
+- `/opt/1panel/apps/openresty/openresty/conf/conf.d/hermes-subdomains.conf` → `b9d2daa9b5a420db2142f9ef2644ba4d9e239d5b4b959fca0bd5e0c0f5ae187b` (full; R2 short `b9d2daa9…187b`, **unchanged across the cutover**)
+- `/opt/1panel/apps/openresty/openresty/conf/conf.d/hermes-chatgpt-mcp.locations` → `27caf8746d8eb44b18492c48f041bfd0c90a2f965749bae246e6d824efb0c816` (full; R2 short `27caf874…0816`, **unchanged across the cutover**)
+
+### 17.3 Deployment topology (V4 stable runtime)
+
+| Surface | Loopback | Process | Working dir | Public route | Identity |
+|---------|----------|---------|-------------|---------------|----------|
+| Stable (public) | `127.0.0.1:8789` | `hermes-chatgpt-mcp.service` (MainPID 2505228) | `/opt/hermes-chatgpt-mcp-canary` (override-redirected) | OpenResty `hermes-chatgpt-mcp.locations` (SHA-256 `27caf874…0816`, unchanged) | `4ae5060931a6` / `beta` / `v4.wave0` |
+| Canary (isolated) | `127.0.0.1:8792` | `hermes-chatgpt-mcp-canary.service` (MainPID 2506251) | `/opt/hermes-chatgpt-mcp-canary` | none (systemd disabled; no public route) | `4ae5060931a6` / `beta` / `v4.wave0` |
+| Pre-V4 `8791` beta | **not running** | dormant | n/a | n/a | n/a — superseded by the canary + 8789 override model |
+
+The 8789 stable is running the canary venv+WD via the override drop-in (`d8d87c59…1d90a`); the systemd unit, env file (`/home/ubuntu/.hermes/hermes-chatgpt-mcp.env`, mtime 2026-08-18, pre-promotion, **untouched**), state paths, and port 8789 are preserved. The pre-V4 `8791` beta deployment unit (`hermes-chatgpt-mcp-beta.service`) still exists on disk but is **not part of the V4 stable runtime**; resurrecting it requires fresh authorization.
+
+### 17.4 Rollback path (executable, byte-anchored, no installer run)
+
+The V4 stable rollback is **three reversible mutations only** — the same three items the parent `t_1e84eb11` enumerated:
+
+1. **Delete the override drop-in** at `/etc/systemd/system/hermes-chatgpt-mcp.service.d/override.conf` (`d8d87c59…1d90a`).
+2. **Restore the prior-good `build.json`** from the in-place backup `/var/lib/hermes-chatgpt-mcp/build.json.pre-surface-rectification-20260826T103951Z.bak` (commit `d7eba25ea8f6`, surface `stable`, deployed_at `2026-08-25T15:13:56Z`).
+3. **One bounded `systemctl restart hermes-chatgpt-mcp.service`** (the only restart; no daemon-reload, no OpenResty reload).
+
+No installer run, no wheel re-hash, no OAuth state rewrite, no credential rotation, no OpenResty mutation, no schema migration. The pre-promotion venv `/opt/venvs/hermes-chatgpt-mcp` is on disk (mtime 2026-08-17) and is reused. The pre-promotion env file is on disk and is reused. OAuth state is **not** touched by the V4 stable cutover, so all DCR clients and refresh-grant records remain valid in both directions. The rollback is **safe to execute** without re-validation; the prior-good identity passed the full MCP E2E + dogfood chain under the v0.4 contract.
+
+### 17.5 Pre-flight invariants (all PASS, re-verified 2026-08-27)
+
+The 8 prerequisites of the parent `t_1e84eb11` ACCEPT chain are all PASS independently:
+
+| # | Prerequisite | Source | Status |
+|---|--------------|--------|--------|
+| 1 | Clean build reproducible | `t_da03fbe7` 221/221 in fresh `/tmp/hermes-v4-build` py3.11.15 | ✅ |
+| 2 | Canary deploy isolated | `t_56187ec4` 8792 systemd disabled, full isolation matrix | ✅ |
+| 3 | Real MCP E2E | `t_5a9c43f7` 77/77 PASS OAuth/DCR PKCE S256 + refresh rotation + board-scoped grants + dispatch realism on `hermes-chatgpt-e2e-04780a62` | ✅ |
+| 4 | Wave 0-4 carry-forward | W0 13/13, W1 13/13, W2 20/20, W3 15/15, W4 15/15, integration 221/221 (`t_068740be` + `t_f96589bf`) | ✅ |
+| 5 | Extended dogfood | `t_45647dc7` 88/1 with F-DOGFOOD-01 LOW non-blocking; full DIAGNOSE→FIX→REVIEW→REGRESSION→RETEST chain closed | ✅ |
+| 6 | Incident attestation | `t_ae8e6c64` NONE — zero release-blocking incidents; full chain `t_7afc509f`→`t_a0d6bae7`→`t_ed301a4c`→`t_aad72b38`→`t_a343fc54` all done | ✅ |
+| 7 | Human gates | G2 `t_5b1757e2` YES (4ae5060, R2 manifest, `9d051d19` nonce) + G3 `t_bae2e48b` YES (`4745f2cd` manifest, `b51d1f91` nonce) + R3B `t_35a9e6b0` YES (continue from applied state, scope-limited) | ✅ |
+| 8 | Traffic switch | `t_5a7cf41c` state verified under R3B; promotion manifest sha256 `e5ffbf2c…94ba1`; immutable public routing preserved | ✅ |
+
+### 17.6 Known residuals (documented, non-blocking)
+
+| # | Residual | Severity | Source |
+|---|----------|----------|--------|
+| 1 | F-DOGFOOD-01 `bounded_log` cursor `BACKEND_ERROR` (additive convenience only) | LOW, fail-closed | `t_45647dc7` extended dogfood |
+| 2 | W0 Low `initialize` 1999-01-01 negotiates 2025-11-25 | LOW | `t_068740be` independent review |
+| 3 | Ephemeral worker venv `hermes_cli` `ModuleNotFoundError` (canary venv only) | LOW | canary-side observation |
+| 4 | `deployed_at` reports canary's original deploy time, not 2026-08-27 cutover time | Informational | `t_a47fd88f` POST_SWITCH_REPORT |
+| 5 | No `/opt/hermes-chatgpt-mcp` (stable checkout dir); rollback uses venv only | Informational | `t_1e84eb11` parent handoff |
+| 6 | Pre-V4 `hermes-chatgpt-mcp-beta.service` (8791) dormant in V4 stable topology | Informational | live readback (no process on 8791) |
+
+### 17.7 Stale claims removed (with evidence)
+
+| Prior claim | Prior evidence | Now | Evidence |
+|-------------|----------------|-----|----------|
+| `Deployed connector SHA: STILL_NOT_PROVEN` | design-doc baseline only (9900c10 is pre-V4 beta worktree) | `4ae5060931a64741185c5c8deb3886a5901f21cc` (V4 stable, branch `v4-candidate-integration`) | live readback (3 surfaces, all 4 headers match); 4 on-disk SHA-256 manifest pins matching R2; 8/8 prerequisites PASS |
+| `Live MCP tool count: 54` (2026-08-19 discovery) | design-doc baseline only | **71** (post-Wave-0-to-4 integration at `4ae5060`) | post-switch smoke `t_a47fd88f` contract check #10 |
+| `Kanban_Beta` discovery label is "stale metadata; controller classifies deployment as STABLE" | design-doc narrative | unchanged in narrative; the **build.json `surface` value is now `beta`** (not `stable`) — controller still classifies as STABLE, but the **on-disk surface label is `beta`** (documented residual, no contract violation) | live readback; `t_a47fd88f` POST_SWITCH_REPORT residual note |
+
+### 17.8 Historical context (preserved, not silently corrected)
+
+- The 2026-08-19 design baseline (`Documentation base: 9900c10`, `Hermes Version: 0.20.2`, `Source HEAD: 39cfd1ab41`, `live_mcp_discovery_tools: 54`) is **not deleted**; it is preserved as the **historical design baseline** that the V4 stable was built on. The 2026-08-25 DAG soft-retire contract, the 2026-08-25 current-truth freshness checkpoint, the 2026-08-24 recovery truth-sync, and the 2026-08-21 release-candidate truth-sync are all preserved unchanged in their original sections.
+- The v0.4 `8791` deployment topology described in `docs/DEPLOYMENT.md` and `docs/SECURITY.md` is **not silently corrected**; it is preserved as **dated v0.4 contract** in [STALE_DOCS.md](STALE_DOCS.md) and re-classified in the v0.4 sections as **RETAIN / LINK; SUPERSEDE for current runtime**. A new `## V4 stable runtime (2026-08-27)` section in those files points readers at this checkpoint.
+- The `STILL_NOT_PROVEN` items unrelated to the V4 stable cutover (live HTTP/API auth for native API, provider/model validity, dynamic tool registration, etc.) are **not silently marked resolved**; they are preserved in §11 with their prior `NOT_PROVEN` classification and explicit cross-references to where the resolved items are now bound.
+
+### 17.9 Authority note
+
+The V4 stable identity above is **authoritative for the V4 stable runtime**. It is **not** a new design, **not** a new architecture, **not** a new product-scope change. It is the durable binding of an already-accepted V4 stable. Any future V4.x cutover (e.g. `4ae5060+x` connector, `d7eba25+y` MCP baseline, `v4.wave1` API surface) must be bound by a new truth-sync checkpoint in this `docs/v4` set, with the same live-readback + SHA-pinned + 8-prereq pattern, before it can be cited as current runtime.

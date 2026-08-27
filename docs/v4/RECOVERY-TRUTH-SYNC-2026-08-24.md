@@ -1,6 +1,6 @@
 # Recovery truth sync — 2026-08-24
 
-Status: **DOWNSTREAM FROZEN / RECOVERY NEEDS_CHANGES**.
+Status: **DOWNSTREAM FROZEN / RECOVERY NEEDS_CHANGES** (this is the 2026-08-24 recovery state; **superseded by the 2026-08-27 V4 stable acceptance** for current runtime authority. The V4 stable binding at `4ae5060931a64741185c5c8deb3886a5901f21cc` lives in [CHECKPOINT-2026-08-27-V4-STABLE.md](CHECKPOINT-2026-08-27-V4-STABLE.md) + [RELEASE-STABLE-V4.md](../../RELEASE-STABLE-V4.md). The `165d1849e25c…` Hermes Core referenced in this recovery doc is the **prior-good** state; the V4 stable uses the post-recovery connector + a different Hermes Core baseline `d7eba25ea8f692d2d0b65d7e5044df79e94c8a92` (header `v4/baseline-post-update-885e9ef`).)
 
 This is a current-state checkpoint. It does not convert an invalid historical
 event into an accepted recovery and does not authorize runtime mutation.

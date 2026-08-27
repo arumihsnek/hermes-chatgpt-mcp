@@ -1,10 +1,13 @@
 # V4 Control-Plane Documentation
 
-**Status:** CANONICAL V4 DESIGN / CURRENT EVIDENCE
+**Status:** CANONICAL V4 DESIGN / CURRENT EVIDENCE + **V4 STABLE ACCEPTED 2026-08-27**
 **Last reconciled:** 2026-08-19 (canonical design) + **2026-08-21 release-candidate truth-sync** (see [CHECKPOINT-2026-08-21.md](CHECKPOINT-2026-08-21.md))
-**Documentation base:** 9900c10 (local ref only; deployed SHA NOT_PROVEN)
+**Documentation base (pre-V4-stable design docs):** 9900c10 (local ref only; pre-V4 beta worktree — **NOT** the V4 stable commit)
+**V4 stable connector (durable binding):** `4ae5060931a64741185c5c8deb3886a5901f21cc` (short `4ae5060`, branch `v4-candidate-integration`, surface `beta`, API `v4.wave0`, Hermes Core MCP baseline `d7eba25ea8f6`)
 
 > **Truth-sync note (2026-08-21):** The canonical 2026-08-19 design docs below remain authoritative for architecture/scope. A supplemental reconciliation checkpoint brings them up to the live Kanban release-candidate state: [CHECKPOINT-2026-08-21.md](CHECKPOINT-2026-08-21.md). Docs are a point-in-time snapshot; current task status always comes from Kanban. A provenance `GO` (e.g. `t_dadd5ebf`) is evidence, not release authorization.
+>
+> **Truth-sync note (2026-08-27, V4 stable accepted):** The V4 stable is now durably bound. The current-state answer for "what is the V4 stable?" lives in [RELEASE-STABLE-V4.md](../../RELEASE-STABLE-V4.md) — short release anchor with SHAs, header values, topology, rollback, residuals. The full reconciliation is in [CHECKPOINT-2026-08-27-V4-STABLE.md](CHECKPOINT-2026-08-27-V4-STABLE.md) — live readback, topology narrative, rollback path, residuals register, dogfood lessons. [CURRENT_STATE.md §17](CURRENT_STATE.md) is the one-page summary in the canonical source-of-truth doc.
 
 ---
 
@@ -12,18 +15,20 @@
 
 | Document | Purpose | Status |
 |----------|---------|--------|
-| [CURRENT_STATE.md](CURRENT_STATE.md) | Canonicalized source of truth — evidence hierarchy, inventories, uncertainty ledger | Canonical |
+| **[RELEASE-STABLE-V4.md](../../RELEASE-STABLE-V4.md)** | **DURABLE V4 STABLE RELEASE ANCHOR** — SHAs, header values, topology, rollback, residuals. The single-page answer for "what is the V4 stable?" | **V4 STABLE (2026-08-27)** |
+| **[CHECKPOINT-2026-08-27-V4-STABLE.md](CHECKPOINT-2026-08-27-V4-STABLE.md)** | **V4 STABLE TRUTH-SYNC CHECKPOINT** — full reconciliation: live readback, topology narrative, rollback path, residuals register, dogfood lessons, cross-references | **V4 STABLE (2026-08-27)** |
+| [CURRENT_STATE.md](CURRENT_STATE.md) | Canonicalized source of truth — evidence hierarchy, inventories, uncertainty ledger (with new §17: 2026-08-27 V4 stable reconciliation) | Canonical |
 | [CONTROL_PLANE_SPEC.md](CONTROL_PLANE_SPEC.md) | Corrected V4 tool contract with exact current OAuth scopes | Canonical |
 | [MCP_TOPOLOGY_ADR.md](MCP_TOPOLOGY_ADR.md) | ADR: Single MCP + privilege-separated internal adapters | Canonical |
-| [TOOL_CATALOG.md](TOOL_CATALOG.md) | Final 79-entry MCP tool catalog with product status vocabulary | Canonical |
-| [v4-tool-catalog.json](v4-tool-catalog.json) | Machine-readable catalog index | Canonical |
+| [TOOL_CATALOG.md](TOOL_CATALOG.md) | Final 79-entry MCP tool catalog with product status vocabulary (metadata updated 2026-08-27: V4 stable binding) | Canonical |
+| [v4-tool-catalog.json](v4-tool-catalog.json) | Machine-readable catalog index (metadata updated 2026-08-27: V4 stable binding, live_discovery_tools=71) | Canonical |
 | [KANBAN_CLI_MATRIX.md](KANBAN_CLI_MATRIX.md) | 47-entry CLI→MCP matrix; registration ≠ behavioral PASS | Canonical |
 | [HERMES_CAPABILITIES_MATRIX.md](HERMES_CAPABILITIES_MATRIX.md) | Native Hermes tool/skill/profile registry matrix | Canonical |
 | [capability-index.json](capability-index.json) | Machine-readable capability index | Canonical |
 | [ROADMAP.md](ROADMAP.md) | Corrected P0-P3/DO_NOT_EXPOSE roadmap | Canonical |
 | [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) | Implementation plan with testing pyramid and release gates | Canonical |
 | [DOGFOOD_QA_PLAN.md](DOGFOOD_QA_PLAN.md) | MCP-as-SUT dogfood plan; disposable fixture boards only | Canonical |
-| [EVIDENCE_AND_OPEN_QUESTIONS.md](EVIDENCE_AND_OPEN_QUESTIONS.md) | Evidence hierarchy, STILL_NOT_PROVEN/UNSAFE_TO_TEST, dogfood incidents | Canonical |
+| [EVIDENCE_AND_OPEN_QUESTIONS.md](EVIDENCE_AND_OPEN_QUESTIONS.md) | Evidence hierarchy, STILL_NOT_PROVEN/UNSAFE_TO_TEST, dogfood incidents (with new §9: 2026-08-27 V4 stable residual register) | Canonical |
 | [STALE_DOCS.md](STALE_DOCS.md) | Canonicalized stale-document inventory | Canonical |
 | [CHECKPOINT-2026-08-21.md](CHECKPOINT-2026-08-21.md) | **2026-08-21 release-candidate truth-sync** — Phase-S critical path, blockers, GO≠authorization, gap→owner | Reconciliation (supplemental) |
 | [RECOVERY-TRUTH-SYNC-2026-08-24.md](RECOVERY-TRUTH-SYNC-2026-08-24.md) | **2026-08-24 recovery truth-sync** — invalid historical restore, 165d current state, pinned baseline, fresh gate, MCP P0 | Reconciliation (supplemental) |

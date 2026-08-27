@@ -1,9 +1,9 @@
 # V4 Current-Truth Freshness Checkpoint — 2026-08-25
 
-**Status:** DOCUMENTATION TRUTH-SYNC (supplemental to the canonical 2026-08-19 V4 design docs + 2026-08-21 and 2026-08-24 reconciliations)
-**Reconciliation date:** 2026-08-25 (UTC)
+**Status:** DOCUMENTATION TRUTH-SYNC (supplemental to the canonical 2026-08-19 V4 design docs + 2026-08-21, 2026-08-24, **2026-08-25 DAG soft-retire contract**, and **2026-08-27 V4 stable truth-sync** reconciliations). This document is the **Source Precedence Ladder + cold-start protocol**; it is unchanged as a methodology document by the 2026-08-27 V4 stable acceptance. The 2026-08-27 V4 stable truth-sync lives in [CHECKPOINT-2026-08-27-V4-STABLE.md](CHECKPOINT-2026-08-27-V4-STABLE.md) + [RELEASE-STABLE-V4.md](../../RELEASE-STABLE-V4.md); the V4 stable is **durable binding** at `4ae5060931a64741185c5c8deb3886a5901f21cc` (branch `v4-candidate-integration`, surface `beta`, API `v4.wave0`).
+**Reconciliation date:** 2026-08-25 (UTC); **V4 stable binding 2026-08-27** (carried)
 **Authored by:** github-steward (task `t_6e482547`); **Augmented by:** github-steward (task `t_ed19e80c`) with DAG soft-retire contract cross-reference.
-**Documentation base:** `9900c10` (local ref only; deployed connector SHA is **NOT_PROVEN** — carried from canonical docs)
+**Documentation base:** `9900c10` (local ref only; pre-V4 beta worktree — **NOT** the V4 stable commit) **+ V4 stable binding 2026-08-27**
 **Companion review card:** `t_d83ac017` (independent truth-sync audit for this checkpoint)
 **Scope of this document:** Fix the documentation defect exposed by the Command Code cold-start test — repo docs and historical cards were allowed to outrank live Kanban/runtime truth. This is a documentation/system-design change only. No Git changes to any live runtime repo, no service/restart/deploy/OAuth/DCR/V4/downstream mutation.
 
@@ -72,17 +72,33 @@ The Project Model answers "what is the system designed to be"; the Current State
 
 > All items below are **evidence as of 2026-08-25, UTC**. Re-derive from the cited source before any decision. SHAs attributed to their **owning repo**; do not conflate `hermes-chatgpt-mcp` with `hermes-agent`.
 
-### 3a. `hermes-chatgpt-mcp` (this repo — V4 control plane / MCP connector)
+### 3a. `hermes-chatgpt-mcp` (this repo — V4 control plane / MCP connector) — 2026-08-25 snapshot
 
 | Item | Value | Evidence / source |
 |------|-------|-------------------|
 | Public MCP E2E runtime fix | `dc25e8bf7a66be87e12da33613d83c874be50038` | commit in this repo; `mcp-public-e2e-postrestart-20260824.md` |
 | Live tool surface | **54 tools** enumerated via `tools/list` | public E2E 2026-08-24 (disposable board `gate-test-2310970`, task `t_fdd65121`) |
 | `create_task` write/readback | **PASS** (OAuth register/authorize/token → MCP init → `tools/list` 54 → `create_task(arguments.request)` → `get_task` readback) | same E2E report |
-| Deployed connector SHA | **STILL_NOT_PROVEN** | carried canonical finding; pin at clean-build identity |
+| Deployed connector SHA | **STILL_NOT_PROVEN** (at this checkpoint's date) | carried canonical finding; pin at clean-build identity |
 | Canonical docs branch | `docs/v4-control-plane-source-of-truth-final` @ `ea72236` (this checkpoint's base) | PR #2 (open, base `beta/board-management`) |
 
 > **Qualification required:** Older repo docs describing the surface as *seven READ + one WRITE*, *eight tools*, or *eleven tools* (see §5 stale markers) are **historical v0.x contracts** and MUST NOT be presented as current runtime truth without explicit qualification. The current live surface is 54 tools.
+
+### 3a'. `hermes-chatgpt-mcp` — 2026-08-27 V4 stable binding (supersedes §3a for current-state authority)
+
+| Item | Value | Evidence / source |
+|------|-------|-------------------|
+| V4 stable connector SHA | `4ae5060931a64741185c5c8deb3886a5901f21cc` (branch `v4-candidate-integration`) | live readback (3 surfaces, all 4 headers match); 4 on-disk SHA-256 manifest pins matching R2; 8/8 prerequisites PASS |
+| Live tool surface | **71 tools** enumerated via `tools/list` | post-switch smoke `t_a47fd88f` contract check #10 (vs the 2026-08-25 54-tool snapshot) |
+| v4.wave0 required tools (all 6 present) | `list_boards`, `get_board`, `list_tasks`, `get_task`, `create_task`, `add_comment` | `t_a47fd88f` contract check #10 |
+| Surface | `beta` (controller classifies as STABLE; `Kanban_Beta` discovery label is stale naming metadata) | build.json `surface` + response header `x-v4-provenance` |
+| API surface version | `v4.wave0` | response header `x-api-version` |
+| Hermes Core MCP baseline | `d7eba25ea8f692d2d0b65d7e5044df79e94c8a92` (header short `d7eba25ea8f6`; branch `v4/baseline-post-update-885e9ef`) | response header `x-baseline-mcp` + `x-baseline-branch` |
+| Phase-S source bundle | `9a8410b4e883e27a4e0572951ee00f9faf4f3d19` (branch `release/source-bundle-phase-s`) | `v4-candidate-integration` branch history |
+| V4 stable canonical docs branch | `docs/v4-control-plane-source-of-truth-final` @ `76cde68cba05` (this truth-sync's base) | PR #2 (open, base `beta/board-management`); truth-sync PR proposed via `docs/v4-post-v4-stable-truth-sync` |
+| Pre-promotion backups (rollback targets) | `build.json.pre-surface-rectification-20260826T103951Z.bak` (`d7eba25ea8f6`, surface=`stable`, deployed_at=`2026-08-25T15:13:56Z`); `build.json.pre-edge-state-20260825T1440Z.bak` (`dc25e8bf7a66…`, surface=`stable`, deployed_at=`2026-08-24T19:35:56Z`) | on-disk in `/var/lib/hermes-chatgpt-mcp/` |
+
+> **Authority:** §3a is the 2026-08-25 snapshot (the date of this checkpoint). §3a' is the 2026-08-27 V4 stable binding. **§3a' is authoritative for the current V4 stable runtime**; §3a remains as the historical 2026-08-25 snapshot for the live-drift / cold-start protocol methodology. The full evidence chain is in [CHECKPOINT-2026-08-27-V4-STABLE.md](CHECKPOINT-2026-08-27-V4-STABLE.md) + [RELEASE-STABLE-V4.md](../../RELEASE-STABLE-V4.md).
 
 ### 3b. `hermes-agent` (sibling repo — governance-port recovery candidate)
 

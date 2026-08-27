@@ -1,9 +1,10 @@
 # Stale Documentation Inventory
 
-**Status:** CANONICAL V4 DESIGN / CURRENT EVIDENCE
-**Last reconciled:** 2026-08-19 + **2026-08-25 DAG soft-retire contract** (see [DAG-SOFT-RETIRE-CONTRACT.md](DAG-SOFT-RETIRE-CONTRACT.md))
-**Documentation base:** 9900c10 (local ref only; deployed SHA NOT_PROVEN)
-**See also:** [README.md](README.md) | [CURRENT_STATE.md](CURRENT_STATE.md) | [EVIDENCE_AND_OPEN_QUESTIONS.md](EVIDENCE_AND_OPEN_QUESTIONS.md)
+**Status:** CANONICAL V4 DESIGN / CURRENT EVIDENCE + **V4 STABLE ACCEPTED 2026-08-27**
+**Last reconciled:** 2026-08-19 + **2026-08-25 DAG soft-retire contract** (see [DAG-SOFT-RETIRE-CONTRACT.md](DAG-SOFT-RETIRE-CONTRACT.md)) + **2026-08-27 V4 stable truth-sync** (see [CHECKPOINT-2026-08-27-V4-STABLE.md](CHECKPOINT-2026-08-27-V4-STABLE.md) + [RELEASE-STABLE-V4.md](../../RELEASE-STABLE-V4.md))
+**Documentation base (pre-V4-stable design docs):** 9900c10 (local ref only; pre-V4 beta worktree — **NOT** the V4 stable commit)
+**V4 stable connector (durable binding):** `4ae5060931a64741185c5c8deb3886a5901f21cc` (short `4ae5060`, branch `v4-candidate-integration`, surface `beta`, API `v4.wave0`, Hermes Core MCP baseline `d7eba25ea8f6`)
+**See also:** [README.md](README.md) | [CURRENT_STATE.md](CURRENT_STATE.md) | [EVIDENCE_AND_OPEN_QUESTIONS.md](EVIDENCE_AND_OPEN_QUESTIONS.md) | [CHECKPOINT-2026-08-27-V4-STABLE.md](CHECKPOINT-2026-08-27-V4-STABLE.md) | [RELEASE-STABLE-V4.md](../../RELEASE-STABLE-V4.md)
 **Derived from:** t_4d983898 (`STALE-DOCS-INVENTORY.md`)
 
 ---
@@ -77,3 +78,39 @@ Every current-state claim must include Hermes version, local HEAD or deployed SH
 - Historical docs' version/commit claims are preserved as historical claims, not overwritten.
 - `Kanban_Beta` is retained only as stale naming metadata; controller evidence classifies deployment as STABLE.
 - Live connector exact SHA, live HTTP auth/reachability, and unsafe mutation paths remain explicitly unresolved.
+
+---
+
+## V4 stable reclassification (2026-08-27)
+
+The 2026-08-27 V4 stable acceptance changed the classification of some claims that the 2026-08-19 canonical design flagged as `NOT_PROVEN` or `STILL_NOT_PROVEN`. The reclassification is **evidence-bound** (live readback of 3 surfaces, 4 on-disk SHA-256 manifest pins, 8/8 prerequisites PASS). The full reconciliation is in [CHECKPOINT-2026-08-27-V4-STABLE.md](CHECKPOINT-2026-08-27-V4-STABLE.md) and the short anchor in [RELEASE-STABLE-V4.md](../../RELEASE-STABLE-V4.md).
+
+| Prior classification (2026-08-19 / 2026-08-25) | New classification (2026-08-27) | Evidence |
+|----------------------------------------------|----------------------------------|----------|
+| `Deployed connector SHA: STILL_NOT_PROVEN` (in `CURRENT_STATE.md` §2 + §11, `EVIDENCE_AND_OPEN_QUESTIONS.md` §2) | **RESOLVED** — durably bound to `4ae5060931a64741185c5c8deb3886a5901f21cc` (V4 stable, branch `v4-candidate-integration`, surface `beta`, API `v4.wave0`) | live readback (3 surfaces, all 4 headers match); 4 on-disk SHA-256 manifest pins matching R2; 8/8 prerequisites PASS |
+| `Live HTTP/API auth and reachability: STILL_NOT_PROVEN` (in `EVIDENCE_AND_OPEN_QUESTIONS.md` §2) | **PARTIALLY RESOLVED** — public origin reachability proven for `/healthz`, `/mcp` (401 with bearer challenge), and OAuth discovery. Full native API surface (dashboard plugin mount, native Hermes REST) remains `STILL_NOT_PROVEN`. | live readback; see [CHECKPOINT-2026-08-27-V4-STABLE.md §1a](CHECKPOINT-2026-08-27-V4-STABLE.md) |
+| `Live MCP tool count: 54` (2026-08-19 discovery) | **UPDATED** — `4ae5060` exposes **71** tools (post-Wave-0-to-4 integration); all 6 v4.wave0 required tools present | post-switch smoke `t_a47fd88f` contract check #10 |
+| v0.4 `docs/DEPLOYMENT.md` + `docs/SECURITY.md` `8791` topology descriptions | **RETAIN / LINK; SUPERSEDE for current runtime** — preserved as **dated v0.4 contract**; a new `## V4 stable runtime (2026-08-27)` section in those files points readers at the V4 stable truth | live readback (no process on 8791; 8789 is override-redirected; 8792 is the canary) |
+| `Kanban_Beta` discovery label is "stale metadata; controller classifies deployment as STABLE" | **UPDATED** — narrative preserved; the **on-disk build.json `surface` value is now `beta`** (not `stable`); controller still classifies as STABLE; documented residual (no contract violation) | live readback; `t_a47fd88f` POST_SWITCH_REPORT residual note |
+
+### Newly documented residuals (non-blocking, durable in V4 stable)
+
+| # | Residual | Severity | Source |
+|---|----------|----------|--------|
+| 1 | F-DOGFOOD-01 `bounded_log` cursor `BACKEND_ERROR` (additive convenience only) | LOW, fail-closed | `t_45647dc7` extended dogfood |
+| 2 | W0 Low `initialize` 1999-01-01 negotiates 2025-11-25 | LOW | `t_068740be` independent review |
+| 3 | Ephemeral worker venv `hermes_cli` `ModuleNotFoundError` (canary venv only) | LOW | canary-side observation |
+| 4 | `deployed_at` reports canary's original deploy time, not 2026-08-27 cutover time | Informational | `t_a47fd88f` POST_SWITCH_REPORT |
+| 5 | No `/opt/hermes-chatgpt-mcp` (stable checkout dir); rollback uses venv only | Informational | `t_1e84eb11` parent handoff |
+| 6 | Pre-V4 `hermes-chatgpt-mcp-beta.service` (8791) dormant in V4 stable topology | Informational | live readback |
+
+These residuals are **not** V4 stable blockers. They are documented in [CHECKPOINT-2026-08-27-V4-STABLE.md §6](CHECKPOINT-2026-08-27-V4-STABLE.md), [CURRENT_STATE.md §17.6](CURRENT_STATE.md), and [EVIDENCE_AND_OPEN_QUESTIONS.md §9](EVIDENCE_AND_OPEN_QUESTIONS.md).
+
+### Pre-promotion backups (preserved, byte-anchored rollback targets)
+
+These on-disk backups are the **prior-good** state to revert to if the V4 stable is rolled back. They are NOT the V4 stable; they are the **byte-anchored rollback targets** documented in [CHECKPOINT-2026-08-27-V4-STABLE.md §1c](CHECKPOINT-2026-08-27-V4-STABLE.md).
+
+| Backup | Commit | Surface | Deployed at | Role |
+|--------|--------|---------|--------------|------|
+| `/var/lib/hermes-chatgpt-mcp/build.json.pre-surface-rectification-20260826T103951Z.bak` | `d7eba25ea8f692d2d0b65d7e5044df79e94c8a92` | `stable` | 2026-08-25T15:13:56Z | Immediate prior-good (the rollback target) |
+| `/var/lib/hermes-chatgpt-mcp/build.json.pre-edge-state-20260825T1440Z.bak` | `dc25e8bf7a66be87e12da33613d83c874be50038` | `stable` | 2026-08-24T19:35:56Z | Prior-before-the-prior (recovery-mutation generation; not the rollback target) |

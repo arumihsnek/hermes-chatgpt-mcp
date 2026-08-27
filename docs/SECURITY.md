@@ -1,5 +1,7 @@
 # Security boundary
 
+**Status:** V0.4 SECURITY CONTRACT (dated 2026-08-16; **SUPERSEDED for current runtime by the 2026-08-27 V4 stable cutover**). The v0.4 eight-tool allowlist and three-scope contract below remain the **v0.4 contract** for the `8791` beta deployment unit when it is resurrected. The V4 stable runtime uses a different topology (canary + 8789 override) and a **71-tool** surface (vs the v0.4 8-tool / 11-tool allowlists). See [## V4 stable runtime (2026-08-27)](#v4-stable-runtime-2026-08-27) below for the current runtime security truth.
+
 ## External surface
 
 The stable public surface is the exact `/mcp` endpoint plus the OAuth
@@ -164,3 +166,75 @@ adapter still uses SQLite `mode=ro` and `PRAGMA query_only=ON`; the
 board-storage allowance is only for Hermes' canonical command connection. The
 services bind to loopback; TLS is terminated by the corresponding OpenResty
 edge. The deployment does not expose other Hermes services.
+
+---
+
+## V4 stable runtime (2026-08-27)
+
+**This is the current runtime security truth.** The v0.4 security contract above remains the **v0.4 contract** for the `8791` beta deployment unit when it is resurrected. The V4 stable cutover uses the canary + 8789 override model; the public surface is **`https://kanban.hermesinthenight.duckdns.org`** forwarding via OpenResty to `127.0.0.1:8789` (the override-redirected stable). The pre-V4 `8791` beta (`kanban-beta.hermesinthenight.duckdns.org` → `127.0.0.1:8791`) is **dormant** in the V4 stable topology.
+
+### V4 stable external surface (current)
+
+| Public URL | Path | Forwarded to | Identity |
+|------------|------|---------------|----------|
+| `https://kanban.hermesinthenight.duckdns.org/mcp` | MCP | `127.0.0.1:8789` (override-redirected) | `4ae5060931a64741185c5c8deb3886a5901f21cc` / `beta` / `v4.wave0` |
+| `https://kanban.hermesinthenight.duckdns.org/healthz` | healthz | `127.0.0.1:8789` (override-redirected) | same (with `x-v4-provenance`, `x-api-version`, `x-baseline-branch`, `x-baseline-mcp` headers) |
+| `https://kanban.hermesinthenight.duckdns.org/.well-known/oauth-authorization-server` | OAuth discovery | `127.0.0.1:8789` | DCR + PKCE S256 |
+| `https://kanban.hermesinthenight.duckdns.org/.well-known/oauth-protected-resource` | OAuth protected-resource | `127.0.0.1:8789` | resource metadata, scope list |
+| `https://kanban.hermesinthenight.duckdns.org/oauth/...` | OAuth DCR/authorize/token/revoke | `127.0.0.1:8789` | standard OAuth 2.1 + DCR + PKCE S256 |
+| (none) | canary `127.0.0.1:8792` | n/a — no public route | `4ae5060931a64741185c5c8deb3886a5901f21cc` / `beta` / `v4.wave0` (loopback only) |
+
+### V4 stable authentication and scopes (current)
+
+All MCP requests on the public origin require a bearer token validated for issuer, audience, expiry, signature, and `hermes:read`. OAuth registration accepts public `none` clients, exact registered HTTPS redirect URIs (or localhost HTTP for development), authorization code, PKCE S256, and the same scope vocabulary as v0.4 (`hermes:read`, `hermes:create`, `hermes:manage`, `hermes:board:create`, `offline_access` for refresh tokens only). The current **proven** scope set is unchanged from the v0.4 contract; the V4 wave0 stable does **not** migrate to the fine-grained `hermes:task:read` / `hermes:task:create` / etc. PROPOSED scopes — those remain PROPOSED only and require their own connector release + E2E + dogfood chain before adoption.
+
+### V4 stable tool surface (current)
+
+| Surface | Tool count | Required (v4.wave0) | Source |
+|---------|------------|---------------------|--------|
+| Public MCP `tools/list` | **71** | `list_boards`, `get_board`, `list_tasks`, `get_task`, `create_task`, `add_comment` (all 6 present) | post-switch smoke `t_a47fd88f` contract check #10 |
+| Canary `tools/list` (loopback only) | 71 | same | live readback |
+| Pre-V4 v0.4 stable allowlist | 8 | n/a (v0.4 contract) | v0.4 `SECURITY.md` above |
+| Pre-V4 v0.4 beta allowlist | 11 | n/a (v0.4 contract) | v0.4 `SECURITY.md` above |
+
+The 71-tool surface is the **post-Wave-0-to-4** surface; exposure is not validation, and `AVAILABLE_VALIDATED` requires real invocation evidence per tool. The 6 v4.wave0 required tools are the only tools that MUST be present in every V4 wave.
+
+### V4 stable process and network controls (current)
+
+The `hermes-chatgpt-mcp.service` (running the canary venv+WD via override) retains the v0.4 systemd hardening: `NoNewPrivileges`, `ProtectSystem=full`, `ProtectHome=read-only`, private devices/temp space, restricted address families, write paths limited to canonical Hermes named-board storage plus the service's own OAuth state directory, and loopback bind with OpenResty TLS termination. The `hermes-chatgpt-mcp-canary.service` (port 8792) has the same hardening plus `ReadWritePaths=/home/ubuntu/.hermes/kanban/boards /var/lib/hermes-chatgpt-mcp-canary` and `PrivateDevices=yes`; it is bound to loopback and is **not** publicly routed.
+
+### V4 stable OAuth state
+
+`/var/lib/hermes-chatgpt-mcp/oauth-state.json` is **untouched** by the V4 stable cutover. Its mtime is `2026-08-27T20:40:40Z` (in the recovery window, not the cutover window). The cutover was a code cutover only: override.conf redirect + build.json write + one bounded restart. All DCR client metadata, refresh-grant records, revoked-grant identifiers, and signing keys are preserved across the cutover and would be preserved across a rollback. The signing key in `/home/ubuntu/.hermes/hermes-chatgpt-mcp.env` (mtime 2026-08-18, pre-promotion, **untouched**) is reused by the canary venv via the override drop-in's `EnvironmentFile` directive.
+
+### V4 stable identity (durable binding)
+
+- Connector: `4ae5060931a64741185c5c8deb3886a5901f21cc` (branch `v4-candidate-integration`)
+- Phase-S source bundle: `9a8410b4e883e27a4e0572951ee00f9faf4f3d19` (branch `release/source-bundle-phase-s`)
+- Hermes Core MCP baseline: `d7eba25ea8f692d2d0b65d7e5044df79e94c8a92` (branch `v4/baseline-post-update-885e9ef`)
+- Surface: `beta` (controller classifies as STABLE; `Kanban_Beta` discovery label is stale naming metadata)
+- API version: `v4.wave0`
+- Live MCP `tools/list` tool count: **71**
+- v4.wave0 required tools (all 6 present): `list_boards`, `get_board`, `list_tasks`, `get_task`, `create_task`, `add_comment`
+
+### V4 stable rollback
+
+The V4 stable rollback is **three reversible mutations only** (no credential rotation, no OAuth state rewrite, no OpenResty mutation, no schema migration):
+
+1. **Delete the override drop-in** at `/etc/systemd/system/hermes-chatgpt-mcp.service.d/override.conf` (SHA-256 `d8d87c59…1d90a`).
+2. **Restore the prior-good `build.json`** from the in-place backup `/var/lib/hermes-chatgpt-mcp/build.json.pre-surface-rectification-20260826T103951Z.bak`.
+3. **One bounded `systemctl restart hermes-chatgpt-mcp.service`**.
+
+See [DEPLOYMENT.md §V4 stable runtime](DEPLOYMENT.md#v4-stable-runtime-2026-08-27) for the full rollback narrative and the byte-anchored R2 manifest pins.
+
+### Authoritative references
+
+- **[RELEASE-STABLE-V4.md](../RELEASE-STABLE-V4.md)** — durable release anchor.
+- **[CHECKPOINT-2026-08-27-V4-STABLE.md](v4/CHECKPOINT-2026-08-27-V4-STABLE.md)** — full truth-sync checkpoint, including live readback, topology narrative, rollback path, residuals register, dogfood lessons.
+- **[CURRENT_STATE.md](v4/CURRENT_STATE.md) §17** — V4 stable reconciliation summary.
+- **[EVIDENCE_AND_OPEN_QUESTIONS.md](v4/EVIDENCE_AND_OPEN_QUESTIONS.md) §2 + §9** — `STILL_NOT_PROVEN` register + V4 stable residual register.
+- **[STALE_DOCS.md](v4/STALE_DOCS.md)** — explicit classification of the v0.4 `8791` topology descriptions as **RETAIN / LINK; SUPERSEDE for current runtime**.
+
+### Historical context (preserved)
+
+The pre-V4 `8791` beta security contract (eleven-tool allowlist, five-scope contract, separate state directory and signing key) is **preserved unchanged** in the v0.4 section above. The v0.4 contract is the security contract to use when the `8791` beta is resurrected; it is **not** the current runtime security contract. The 2026-08-27 V4 stable cutover chose the canary + 8789 override model and reuses the **stable** v0.4 systemd hardening, OAuth scope vocabulary, OAuth DCR + PKCE S256 flow, refresh-rotation, and revocation semantics; the differences are **topology** (canary + 8789 override vs stable 8789 + beta 8791) and **tool count** (71 vs 8/11).
