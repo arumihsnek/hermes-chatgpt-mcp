@@ -4,6 +4,7 @@ import json
 import hashlib
 import logging
 import os
+import time
 from typing import Literal
 from urllib.parse import parse_qs, urlencode, urlparse, urlsplit, urlunsplit
 
@@ -33,6 +34,18 @@ from .config import Settings
 from .diagnostics import emit, fingerprint, redirect_identity, request_fingerprint, scope_summary
 from .provenance import API_VERSION, get_candidate_provenance
 from .release import load_build_metadata
+from .human_gate_ui import build_human_gate_ui_html
+from .ui_mutation import UiMutationAdapter, UiMutationError
+from .ui_write_contract import UiCapabilityIssuer
+from .ui import (
+    HUMAN_GATE_RESOURCE_URI,
+    KANBAN_UI_MIME_TYPE,
+    KANBAN_UI_MAX_BYTES,
+    KANBAN_UI_RESOURCE_URI,
+    KANBAN_UI_RESOURCE_URI_V2,
+    build_kanban_ui_html,
+    build_kanban_ui_v2_html,
+)
 from .schemas import (
     AddCommentInput,
     AddCommentResult,
@@ -713,6 +726,37 @@ def create_app(
 
         enforce_probe_safe(request, "create_task")
         with board_resolver.creation_lock(handle.slug):
+            if settings.ui_write_enabled_v2:
+                token = get_access_token()
+                subject = token.subject if token is not None and token.subject else "mcp-client"
+                capability = UiCapabilityIssuer().issue(
+                    subject=subject, board=handle.slug, tenant=request.tenant or "default"
+                )
+                try:
+                    result = UiMutationAdapter(
+                        board_resolver.query_adapter(handle).store, capability
+                    ).create_task(
+                        title=request.title,
+                        body=request.body,
+                        parent_ids=request.parent_ids,
+                        expected_board_revision=request.expected_board_revision,
+                        idempotency_key=request.idempotency_key,
+                    )
+                except UiMutationError as exc:
+                    raise tool_error(exc.code, str(exc)) from exc
+                return CreateTaskResult(
+                    created=result.mutation_status == "created",
+                    idempotent_replay=result.mutation_status == "idempotent_replay",
+                    task_id=result.canonical_task_id,
+                    board=result.board,
+                    title=request.title,
+                    status="running",
+                    tenant=result.tenant,
+                    priority=request.priority,
+                    parent_ids=list(request.parent_ids),
+                    created_at=int(time.time()),
+                    board_revision=result.board_revision_after,
+                )
             return await run_command(
                 board_resolver.command_adapter(handle).create_task,
                 title=request.title,
@@ -735,6 +779,38 @@ def create_app(
                 goal_mode=request.goal_mode,
                 goal_max_turns=request.goal_max_turns,
             )
+
+    @mcp.resource(
+        KANBAN_UI_RESOURCE_URI, name="hermes_kanban_ui", title="Hermes Kanban board",
+        description="Read-only Hermes Kanban board view.", mime_type=KANBAN_UI_MIME_TYPE,
+        meta={"ui": {}},
+    )
+    def kanban_ui() -> str:
+        html = build_kanban_ui_html()
+        if len(html.encode("utf-8")) > KANBAN_UI_MAX_BYTES:
+            raise ValueError("Kanban UI resource exceeds size limit")
+        return html
+
+    @mcp.resource(
+        HUMAN_GATE_RESOURCE_URI, name="hermes_human_gate_ui", title="Hermes Human Gate readback",
+        description="Non-authoritative Human Gate evidence and dashboard handoff.",
+        mime_type=KANBAN_UI_MIME_TYPE, meta={"ui": {}, "version": "v1"},
+    )
+    def human_gate_ui() -> str:
+        html = build_human_gate_ui_html()
+        if len(html.encode("utf-8")) > KANBAN_UI_MAX_BYTES:
+            raise ValueError("Human Gate UI resource exceeds size limit")
+        return html
+
+    if settings.ui_write_enabled_v2:
+        @mcp.resource(
+            KANBAN_UI_RESOURCE_URI_V2, name="hermes_kanban_ui_v2",
+            title="Hermes Kanban board (create)",
+            description="Bounded create-task view; canonical readback is required.",
+            mime_type=KANBAN_UI_MIME_TYPE, meta={"ui": {}, "version": "v2"},
+        )
+        def kanban_ui_v2() -> str:
+            return build_kanban_ui_v2_html()
 
     if beta:
         @mcp.tool(

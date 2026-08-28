@@ -325,6 +325,7 @@ async def _test_stable_default_and_beta_tool_discovery_are_exact(tmp_path, monke
         "get_dispatch",
         "get_activity",
         "create_task",
+        "get_human_gate_readback",
     }
     assert set(stable_metadata.json()["scopes_supported"]) == {
         "hermes:read",

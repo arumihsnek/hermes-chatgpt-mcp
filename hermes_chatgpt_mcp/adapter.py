@@ -155,6 +155,7 @@ class HermesReadOnlyAdapter:
         with self.store.connect() as conn:
             stats = self.hermes.board_stats(conn)
         metadata = self._metadata()
+        board_revision = self._read_ui_board_revision()
         return BoardView(
             slug=self.store.board,
             name=str(metadata.get("name") or self.store.board),
@@ -166,7 +167,27 @@ class HermesReadOnlyAdapter:
             },
             oldest_ready_age_seconds=stats.get("oldest_ready_age_seconds"),
             generated_at=stats.get("now"),
+            board_revision=board_revision,
         )
+
+    def _read_ui_board_revision(self) -> int:
+        """Best-effort read of the UI `board_revision` table maintained by
+        UiMutationAdapter. Returns 0 when the table is absent (e.g. a fresh
+        board that has never had a v2 write, or a board whose UI write is not
+        enabled). A failure here must never block the read surface, and this
+        helper must not open a read-write connection (which would persist a
+        WAL-mode header change and break read-only tree-fingerprint tests).
+        """
+        if not self.store.db_path.is_file():
+            return 0
+        try:
+            with self.store.connect() as conn:
+                row = conn.execute(
+                    "SELECT revision FROM board_revision WHERE board=?", (self.store.board,)
+                ).fetchone()
+        except Exception:  # table absent, or any read error — never block the read surface
+            return 0
+        return int(row[0]) if row else 0
 
     def list_tasks(self, *, assignee: str | None = None, status: str | None = None,
                    tenant: str | None = None, session_id: str | None = None,

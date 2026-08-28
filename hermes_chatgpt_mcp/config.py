@@ -108,6 +108,7 @@ class Settings:
     surface: Literal["stable", "beta"] = "stable"
     board_create_enabled: bool = False
     chatgpt_compat_mode: bool = False
+    ui_write_enabled_v2: bool = False
     build_metadata_file: Path | None = None
 
     @classmethod
@@ -159,6 +160,7 @@ class Settings:
             surface=_surface(),
             board_create_enabled=_boolean("MCP_BOARD_CREATE_ENABLED"),
             chatgpt_compat_mode=_boolean("MCP_CHATGPT_COMPAT_MODE"),
+            ui_write_enabled_v2=_boolean("UI_WRITE_ENABLED_V2"),
             build_metadata_file=(
                 Path(value).expanduser()
                 if (value := _env("MCP_BUILD_METADATA_FILE"))

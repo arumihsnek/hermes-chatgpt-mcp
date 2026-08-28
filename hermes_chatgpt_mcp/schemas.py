@@ -170,6 +170,7 @@ class CreateTaskInput(BoardQuery):
     goal_mode: bool | None = Field(default=None)
     goal_max_turns: int | None = Field(default=None, ge=1)
     probe: bool = False
+    expected_board_revision: int = Field(default=0, ge=0)
 
 
 class ListTasksInput(BoardQuery):
@@ -337,6 +338,7 @@ class CreateTaskResult(StrictModel):
     child_ids: list[str] = Field(default_factory=list)
     created_by: str | None = None
     created_at: int
+    board_revision: int | None = None
 
 
 # --- Batch 1: Diagnostics, link, unlink, set_model, reclaim, reassign, complete, edit, block, schedule, unblock, request_review, request_changes, reopen_review, promote, archive ---
