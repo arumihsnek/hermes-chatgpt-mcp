@@ -1,0 +1,1366 @@
+{
+  "metadata": {
+    "version": "v4.0",
+    "date": "2026-08-19",
+    "hermes_version": "0.20.2 (2026.8.16)",
+    "source_head": "39cfd1ab41",
+    "board": "hermes-chatgpt-mcp",
+    "synthesis_task": "t_2d568471",
+    "cli_investigation_task": "t_59a2a2f5",
+    "native_tools_task": "t_5caf4595",
+    "profiles_task": "t_c2257b50",
+    "skills_task": "t_2d78d03f",
+    "runtime_task": "t_ad6925aa",
+    "config_task": "t_ef94f514",
+    "attachments_task": "t_2499ad0a",
+    "status": "CANONICAL V4 DESIGN / CURRENT EVIDENCE",
+    "last_reconciled": "2026-08-19",
+    "documentation_base": "9900c10 (local ref only; deployed SHA NOT_PROVEN)",
+    "deployed_connector_sha": "STILL_NOT_PROVEN",
+    "live_mcp_discovery_tools": 54,
+    "exposure_is_not_validation": true,
+    "registration_is_not_behavioral_pass": true,
+    "mcp_status_source": "v4-tool-catalog.json"
+  },
+  "status_vocabulary": {
+    "VALIDATED": "DISPONIBLE Y VALIDADO",
+    "ERRORES": "DISPONIBLE CON ERRORES/INCONSISTENCIAS",
+    "EN_TRABAJO": "EN TRABAJO",
+    "PLANIFICADO_V4": "PLANIFICADO V4",
+    "PLANIFICADO_V4X": "PLANIFICADO V4.x",
+    "PLANIFICADO_V5": "PLANIFICADO V5",
+    "NO_DISPONIBLE": "NO DISPONIBLE/NO PLANIFICADO",
+    "NOT_PROVEN": "NOT_PROVEN",
+    "UNSAFE": "UNSAFE_TO_TEST",
+    "NO_APLICA": "NO APLICA AL MCP"
+  },
+  "priority_vocabulary": {
+    "P0": "Blocking for V4 release",
+    "P1": "Important for V4, non-blocking",
+    "P2": "Nice to have for V4",
+    "P3": "Deferred",
+    "DO_NOT_EXPOSE": "Must not be exposed via MCP/connector"
+  },
+  "kanban_cli": {
+    "total_registered": 47,
+    "special_notes": {
+      "aliases": {
+        "ls": "list",
+        "diag": "diagnostics"
+      },
+      "deprecated": [
+        "daemon"
+      ],
+      "absent": [
+        "pause (board-local)",
+        "resume (board-local)",
+        "workers"
+      ]
+    },
+    "commands": [
+      {
+        "command": "init",
+        "description": "Initialize new Kanban board",
+        "flags": [
+          "--board <slug>"
+        ],
+        "utility": "Create board DB, schema, metadata",
+        "risk": "LOW",
+        "primitive": "kanban_db.init_db()",
+        "current_live_mcp_tool": null,
+        "planned_v4_mcp_tool": null,
+        "validation": "NOT_PROVEN",
+        "priority": "P2",
+        "target_version": "V4.x",
+        "evidence": [
+          "t_59a2a2f5"
+        ]
+      },
+      {
+        "command": "boards",
+        "description": "List all boards",
+        "flags": [
+          "--json"
+        ],
+        "utility": "Discovery, multi-board ops",
+        "risk": "LOW",
+        "primitive": "kanban_db.list_boards()",
+        "current_live_mcp_tool": null,
+        "planned_v4_mcp_tool": "kanban_boards",
+        "validation": "NOT_PROVEN",
+        "priority": "P1",
+        "target_version": "V4",
+        "evidence": [
+          "t_59a2a2f5",
+          "t_ef94f514"
+        ]
+      },
+      {
+        "command": "create",
+        "description": "Create new task",
+        "flags": [
+          "--board",
+          "--assignee",
+          "--priority",
+          "--skills",
+          "--model",
+          "--provider",
+          "--reasoning",
+          "--workspace-kind",
+          "--workspace-path",
+          "--project",
+          "--triage",
+          "--idempotency-key",
+          "--max-runtime-seconds",
+          "--initial-status",
+          "--goal-mode",
+          "--goal-max-turns"
+        ],
+        "utility": "Task creation entry point",
+        "risk": "MEDIUM",
+        "primitive": "kanban_db.create_task()",
+        "current_live_mcp_tool": "VALIDATED_via_MCP_E2E",
+        "planned_v4_mcp_tool": "kanban_create",
+        "validation": {
+          "cli_leaf": "NOT_PROVEN",
+          "mcp_e2e": "VALIDATED"
+        },
+        "priority": "P0",
+        "target_version": "V4",
+        "evidence": [
+          "t_59a2a2f5",
+          "board_QA_evidence"
+        ]
+      },
+      {
+        "command": "swarm",
+        "description": "Create multiple tasks",
+        "flags": [
+          "--board",
+          "--parent",
+          "--count",
+          "--assignee"
+        ],
+        "utility": "Orchestrator fan-out",
+        "risk": "MEDIUM",
+        "primitive": "kanban_db.swarm_create()",
+        "current_live_mcp_tool": null,
+        "planned_v4_mcp_tool": "kanban_swarm",
+        "validation": "NOT_PROVEN",
+        "priority": "P1",
+        "target_version": "V4",
+        "evidence": [
+          "t_59a2a2f5"
+        ]
+      },
+      {
+        "command": "list",
+        "aliases": [
+          "ls"
+        ],
+        "description": "List tasks with filters",
+        "flags": [
+          "--status",
+          "--assignee",
+          "--board",
+          "--json",
+          "--limit",
+          "--offset",
+          "--parent",
+          "--tags",
+          "--priority"
+        ],
+        "utility": "Primary read surface",
+        "risk": "LOW",
+        "primitive": "kanban_db.list_tasks()",
+        "current_live_mcp_tool": "VALIDATED_via_MCP_E2E",
+        "planned_v4_mcp_tool": "kanban_list",
+        "validation": {
+          "cli_leaf": "VALIDATED",
+          "mcp_e2e": "VALIDATED"
+        },
+        "priority": "P0",
+        "target_version": "V4",
+        "evidence": [
+          "t_59a2a2f5",
+          "t_ad6925aa",
+          "board_QA_evidence"
+        ]
+      },
+      {
+        "command": "show",
+        "description": "Show full task state",
+        "flags": [
+          "--board",
+          "--json"
+        ],
+        "utility": "Task inspection",
+        "risk": "LOW",
+        "primitive": "kanban_db.get_task()",
+        "current_live_mcp_tool": "VALIDATED_via_MCP_E2E",
+        "planned_v4_mcp_tool": "kanban_show",
+        "validation": {
+          "cli_leaf": "VALIDATED",
+          "mcp_e2e": "VALIDATED"
+        },
+        "priority": "P0",
+        "target_version": "V4",
+        "evidence": [
+          "t_59a2a2f5",
+          "t_ad6925aa",
+          "board_QA_evidence"
+        ]
+      },
+      {
+        "command": "assign",
+        "description": "Assign task to profile",
+        "flags": [
+          "--board",
+          "<task_id>",
+          "<assignee>"
+        ],
+        "utility": "Manual routing",
+        "risk": "MEDIUM",
+        "primitive": "kanban_db.assign_task()",
+        "current_live_mcp_tool": "VALIDATED_via_MCP_E2E",
+        "planned_v4_mcp_tool": "kanban_assign",
+        "validation": {
+          "cli_leaf": "NOT_PROVEN",
+          "mcp_e2e": "VALIDATED"
+        },
+        "priority": "P1",
+        "target_version": "V4",
+        "evidence": [
+          "t_59a2a2f5",
+          "board_QA_evidence"
+        ]
+      },
+      {
+        "command": "set-model",
+        "description": "Override model/provider",
+        "flags": [
+          "--board",
+          "<task_id>",
+          "--model",
+          "--provider",
+          "--reasoning"
+        ],
+        "utility": "Model pinning",
+        "risk": "MEDIUM",
+        "primitive": "kanban_db.set_task_model()",
+        "current_live_mcp_tool": null,
+        "planned_v4_mcp_tool": "kanban_set-model",
+        "validation": "NOT_PROVEN",
+        "priority": "P1",
+        "target_version": "V4",
+        "evidence": [
+          "t_59a2a2f5"
+        ]
+      },
+      {
+        "command": "reclaim",
+        "description": "Reclaim stuck/running task",
+        "flags": [
+          "--board",
+          "<task_id>",
+          "--force"
+        ],
+        "utility": "Stale task recovery",
+        "risk": "HIGH",
+        "primitive": "kanban_db.reclaim_task()",
+        "current_live_mcp_tool": null,
+        "planned_v4_mcp_tool": "kanban_reclaim",
+        "validation": "NOT_PROVEN",
+        "priority": "P0",
+        "target_version": "V4",
+        "evidence": [
+          "t_59a2a2f5",
+          "t_ad6925aa"
+        ]
+      },
+      {
+        "command": "reassign",
+        "description": "Reassign to different profile",
+        "flags": [
+          "--board",
+          "<task_id>",
+          "<assignee>"
+        ],
+        "utility": "Routing correction",
+        "risk": "MEDIUM",
+        "primitive": "kanban_db.reassign_task()",
+        "current_live_mcp_tool": null,
+        "planned_v4_mcp_tool": "kanban_reassign",
+        "validation": "NOT_PROVEN",
+        "priority": "P1",
+        "target_version": "V4",
+        "evidence": [
+          "t_59a2a2f5"
+        ]
+      },
+      {
+        "command": "diagnostics",
+        "aliases": [
+          "diag"
+        ],
+        "description": "Board health diagnostics",
+        "flags": [
+          "--board",
+          "--json"
+        ],
+        "utility": "Observability",
+        "risk": "LOW",
+        "primitive": "kanban_db.diagnostics()",
+        "current_live_mcp_tool": null,
+        "planned_v4_mcp_tool": "kanban_diagnostics",
+        "validation": {
+          "cli_leaf": "VALIDATED"
+        },
+        "priority": "P1",
+        "target_version": "V4",
+        "evidence": [
+          "t_59a2a2f5",
+          "t_ad6925aa"
+        ]
+      },
+      {
+        "command": "link",
+        "description": "Add parent-child dependency",
+        "flags": [
+          "--board",
+          "<parent_id>",
+          "<child_id>"
+        ],
+        "utility": "DAG construction",
+        "risk": "MEDIUM",
+        "primitive": "kanban_db.link_tasks()",
+        "current_live_mcp_tool": "VALIDATED_via_MCP_E2E",
+        "planned_v4_mcp_tool": "kanban_link",
+        "validation": {
+          "cli_leaf": "NOT_PROVEN",
+          "mcp_e2e": "VALIDATED"
+        },
+        "priority": "P1",
+        "target_version": "V4",
+        "evidence": [
+          "t_59a2a2f5",
+          "board_QA_evidence"
+        ]
+      },
+      {
+        "command": "unlink",
+        "description": "Remove dependency edge",
+        "flags": [
+          "--board",
+          "<parent_id>",
+          "<child_id>"
+        ],
+        "utility": "DAG repair",
+        "risk": "MEDIUM",
+        "primitive": "kanban_db.unlink_tasks()",
+        "current_live_mcp_tool": "VALIDATED_via_MCP_E2E",
+        "planned_v4_mcp_tool": "kanban_unlink",
+        "validation": {
+          "cli_leaf": "NOT_PROVEN",
+          "mcp_e2e": "VALIDATED"
+        },
+        "priority": "P2",
+        "target_version": "V4",
+        "evidence": [
+          "t_59a2a2f5",
+          "board_QA_evidence"
+        ]
+      },
+      {
+        "command": "claim",
+        "description": "Claim task for worker",
+        "flags": [
+          "--board",
+          "<task_id>"
+        ],
+        "utility": "Worker self-claim",
+        "risk": "MEDIUM",
+        "primitive": "kanban_db.claim_task()",
+        "current_live_mcp_tool": "VALIDATED_via_MCP_E2E",
+        "planned_v4_mcp_tool": "kanban_claim",
+        "validation": {
+          "cli_leaf": "NOT_PROVEN",
+          "mcp_e2e": "VALIDATED"
+        },
+        "priority": "P1",
+        "target_version": "V4",
+        "evidence": [
+          "t_59a2a2f5",
+          "board_QA_evidence"
+        ]
+      },
+      {
+        "command": "comment",
+        "description": "Add comment to task",
+        "flags": [
+          "--board",
+          "<task_id>",
+          "<body>"
+        ],
+        "utility": "Collaboration",
+        "risk": "LOW",
+        "primitive": "kanban_db.add_comment()",
+        "current_live_mcp_tool": "VALIDATED_via_MCP_E2E",
+        "planned_v4_mcp_tool": "kanban_comment",
+        "validation": {
+          "cli_leaf": "VALIDATED",
+          "mcp_e2e": "VALIDATED"
+        },
+        "priority": "P1",
+        "target_version": "V4",
+        "evidence": [
+          "t_59a2a2f5",
+          "board_QA_evidence"
+        ]
+      },
+      {
+        "command": "attach",
+        "description": "Attach file (base64 inline)",
+        "flags": [
+          "--board",
+          "<task_id>",
+          "--content-base64",
+          "--filename",
+          "--content-type"
+        ],
+        "utility": "File upload",
+        "risk": "MEDIUM",
+        "primitive": "kanban_db.store_attachment_bytes()",
+        "current_live_mcp_tool": "PARTIAL: local_path only; no content_base64",
+        "planned_v4_mcp_tool": "kanban_attach",
+        "validation": {
+          "cli_leaf": "VALIDATED",
+          "mcp_e2e": "STAGING_BOUND"
+        },
+        "priority": "P0",
+        "target_version": "V4",
+        "known_issues": "MCP connector lacks content_base64; SERVER_LOCAL_BOUND",
+        "evidence": [
+          "t_59a2a2f5",
+          "t_2499ad0a"
+        ]
+      },
+      {
+        "command": "attachments",
+        "description": "List task attachments",
+        "flags": [
+          "--board",
+          "<task_id>",
+          "--json"
+        ],
+        "utility": "File listing",
+        "risk": "LOW",
+        "primitive": "kanban_db.list_attachments()",
+        "current_live_mcp_tool": null,
+        "planned_v4_mcp_tool": "kanban_attachments",
+        "validation": "NOT_PROVEN",
+        "priority": "P1",
+        "target_version": "V4",
+        "evidence": [
+          "t_59a2a2f5"
+        ]
+      },
+      {
+        "command": "attach-rm",
+        "description": "Remove attachment",
+        "flags": [
+          "--board",
+          "<task_id>",
+          "<attachment_id>"
+        ],
+        "utility": "Cleanup",
+        "risk": "MEDIUM",
+        "primitive": "kanban_db.remove_attachment()",
+        "current_live_mcp_tool": null,
+        "planned_v4_mcp_tool": "kanban_attach-rm",
+        "validation": "NOT_PROVEN",
+        "priority": "P2",
+        "target_version": "V4",
+        "evidence": [
+          "t_59a2a2f5"
+        ]
+      },
+      {
+        "command": "complete",
+        "description": "Complete task with handoff",
+        "flags": [
+          "--board",
+          "<task_id>",
+          "--summary",
+          "--metadata",
+          "--result",
+          "--artifacts",
+          "--created-cards"
+        ],
+        "utility": "Task termination",
+        "risk": "HIGH",
+        "primitive": "kanban_db.complete_task()",
+        "current_live_mcp_tool": "VALIDATED_via_MCP_E2E",
+        "planned_v4_mcp_tool": "kanban_complete",
+        "validation": {
+          "cli_leaf": "VALIDATED",
+          "mcp_e2e": "VALIDATED"
+        },
+        "priority": "P0",
+        "target_version": "V4",
+        "evidence": [
+          "t_59a2a2f5",
+          "board_QA_evidence"
+        ]
+      },
+      {
+        "command": "edit",
+        "description": "Edit task fields",
+        "flags": [
+          "--board",
+          "<task_id>",
+          "--title",
+          "--body",
+          "--priority",
+          "--assignee"
+        ],
+        "utility": "Task mutation",
+        "risk": "MEDIUM",
+        "primitive": "kanban_db.edit_task()",
+        "current_live_mcp_tool": null,
+        "planned_v4_mcp_tool": "kanban_edit",
+        "validation": "NOT_PROVEN",
+        "priority": "P1",
+        "target_version": "V4",
+        "evidence": [
+          "t_59a2a2f5"
+        ]
+      },
+      {
+        "command": "block",
+        "description": "Block task with reason/kind",
+        "flags": [
+          "--board",
+          "<task_id>",
+          "--reason",
+          "--kind"
+        ],
+        "utility": "Explicit block",
+        "risk": "MEDIUM",
+        "primitive": "kanban_db.block_task()",
+        "current_live_mcp_tool": "VALIDATED_via_MCP_E2E",
+        "planned_v4_mcp_tool": "kanban_block",
+        "validation": {
+          "cli_leaf": "NOT_PROVEN",
+          "mcp_e2e": "VALIDATED"
+        },
+        "priority": "P1",
+        "target_version": "V4",
+        "evidence": [
+          "t_59a2a2f5",
+          "board_QA_evidence"
+        ]
+      },
+      {
+        "command": "schedule",
+        "description": "Schedule future task",
+        "flags": [
+          "--board",
+          "--at",
+          "--cron",
+          "--title",
+          "--body"
+        ],
+        "utility": "Deferred work",
+        "risk": "MEDIUM",
+        "primitive": "kanban_db.schedule_task()",
+        "current_live_mcp_tool": null,
+        "planned_v4_mcp_tool": "kanban_schedule",
+        "validation": "NOT_PROVEN",
+        "priority": "P2",
+        "target_version": "V4.x",
+        "evidence": [
+          "t_59a2a2f5"
+        ]
+      },
+      {
+        "command": "unblock",
+        "description": "Unblock task",
+        "flags": [
+          "--board",
+          "<task_id>"
+        ],
+        "utility": "Resume blocked",
+        "risk": "MEDIUM",
+        "primitive": "kanban_db.unblock_task()",
+        "current_live_mcp_tool": null,
+        "planned_v4_mcp_tool": "kanban_unblock",
+        "validation": "NOT_PROVEN",
+        "priority": "P1",
+        "target_version": "V4",
+        "evidence": [
+          "t_59a2a2f5"
+        ]
+      },
+      {
+        "command": "request-review",
+        "description": "Move to review column",
+        "flags": [
+          "--board",
+          "<task_id>",
+          "--summary",
+          "--reviewer",
+          "--metadata"
+        ],
+        "utility": "Review gate",
+        "risk": "MEDIUM",
+        "primitive": "kanban_db.request_review()",
+        "current_live_mcp_tool": null,
+        "planned_v4_mcp_tool": "kanban_request-review",
+        "validation": "NOT_PROVEN",
+        "priority": "P0",
+        "target_version": "V4",
+        "known_issues": "Force-loads sdlc-review at dispatch time",
+        "evidence": [
+          "t_59a2a2f5",
+          "t_2d78d03f"
+        ]
+      },
+      {
+        "command": "request-changes",
+        "description": "Return review to implementer",
+        "flags": [
+          "--board",
+          "<task_id>",
+          "--reason"
+        ],
+        "utility": "Review rejection",
+        "risk": "MEDIUM",
+        "primitive": "kanban_db.request_changes()",
+        "current_live_mcp_tool": null,
+        "planned_v4_mcp_tool": "kanban_request-changes",
+        "validation": "NOT_PROVEN",
+        "priority": "P1",
+        "target_version": "V4",
+        "evidence": [
+          "t_59a2a2f5"
+        ]
+      },
+      {
+        "command": "reopen-review",
+        "description": "Reopen closed review",
+        "flags": [
+          "--board",
+          "<task_id>"
+        ],
+        "utility": "Review cycle",
+        "risk": "MEDIUM",
+        "primitive": "kanban_db.reopen_review()",
+        "current_live_mcp_tool": null,
+        "planned_v4_mcp_tool": "kanban_reopen-review",
+        "validation": "NOT_PROVEN",
+        "priority": "P2",
+        "target_version": "V4",
+        "evidence": [
+          "t_59a2a2f5"
+        ]
+      },
+      {
+        "command": "promote",
+        "description": "Promote ready children",
+        "flags": [
+          "--board",
+          "<task_id>"
+        ],
+        "utility": "DAG promotion",
+        "risk": "MEDIUM",
+        "primitive": "kanban_db.promote_children()",
+        "current_live_mcp_tool": null,
+        "planned_v4_mcp_tool": "kanban_promote",
+        "validation": "NOT_PROVEN",
+        "priority": "P1",
+        "target_version": "V4",
+        "evidence": [
+          "t_59a2a2f5"
+        ]
+      },
+      {
+        "command": "archive",
+        "description": "Archive completed task",
+        "flags": [
+          "--board",
+          "<task_id>"
+        ],
+        "utility": "Cleanup",
+        "risk": "MEDIUM",
+        "primitive": "kanban_db.archive_task()",
+        "current_live_mcp_tool": null,
+        "planned_v4_mcp_tool": "kanban_archive",
+        "validation": "NOT_PROVEN",
+        "priority": "P2",
+        "target_version": "V4",
+        "evidence": [
+          "t_59a2a2f5"
+        ]
+      },
+      {
+        "command": "tail",
+        "description": "Tail task log",
+        "flags": [
+          "--board",
+          "<task_id>",
+          "--lines",
+          "--follow"
+        ],
+        "utility": "Live logs",
+        "risk": "LOW",
+        "primitive": "kanban_db.tail_log()",
+        "current_live_mcp_tool": null,
+        "planned_v4_mcp_tool": "kanban_tail",
+        "validation": "NOT_PROVEN",
+        "priority": "P1",
+        "target_version": "V4",
+        "evidence": [
+          "t_59a2a2f5"
+        ]
+      },
+      {
+        "command": "dispatch",
+        "description": "Single dispatch tick",
+        "flags": [
+          "--board",
+          "--once"
+        ],
+        "utility": "Manual dispatch",
+        "risk": "HIGH",
+        "primitive": "kanban_db.dispatch_once()",
+        "current_live_mcp_tool": null,
+        "planned_v4_mcp_tool": "kanban_dispatch",
+        "validation": "NOT_PROVEN",
+        "priority": "P1",
+        "target_version": "V4",
+        "evidence": [
+          "t_59a2a2f5",
+          "t_ad6925aa"
+        ]
+      },
+      {
+        "command": "daemon",
+        "description": "Standalone dispatch daemon (DEPRECATED)",
+        "flags": [
+          "--interval",
+          "--max",
+          "--failure-limit",
+          "--pidfile",
+          "--verbose"
+        ],
+        "utility": "Legacy dispatch",
+        "risk": "HIGH",
+        "primitive": "kanban_db.run_daemon()",
+        "current_live_mcp_tool": null,
+        "planned_v4_mcp_tool": null,
+        "validation": "DEPRECATED",
+        "priority": "DO_NOT_EXPOSE",
+        "target_version": "NO_APLICA",
+        "known_issues": "Marked DEPRECATED; use hermes gateway start",
+        "evidence": [
+          "t_59a2a2f5",
+          "t_ad6925aa"
+        ]
+      },
+      {
+        "command": "watch",
+        "description": "Watch board for changes",
+        "flags": [
+          "--board",
+          "--interval"
+        ],
+        "utility": "Live monitoring",
+        "risk": "LOW",
+        "primitive": "kanban_db.watch()",
+        "current_live_mcp_tool": null,
+        "planned_v4_mcp_tool": "kanban_watch",
+        "validation": "NOT_PROVEN",
+        "priority": "P2",
+        "target_version": "V4.x",
+        "evidence": [
+          "t_59a2a2f5"
+        ]
+      },
+      {
+        "command": "stats",
+        "description": "Board statistics",
+        "flags": [
+          "--board",
+          "--json"
+        ],
+        "utility": "Metrics",
+        "risk": "LOW",
+        "primitive": "kanban_db.stats()",
+        "current_live_mcp_tool": null,
+        "planned_v4_mcp_tool": "kanban_stats",
+        "validation": {
+          "cli_leaf": "VALIDATED"
+        },
+        "priority": "P1",
+        "target_version": "V4",
+        "evidence": [
+          "t_59a2a2f5",
+          "t_ef94f514"
+        ]
+      },
+      {
+        "command": "notify-subscribe",
+        "description": "Subscribe to notifications",
+        "flags": [
+          "--board",
+          "--channel",
+          "--filter"
+        ],
+        "utility": "Event streaming",
+        "risk": "LOW",
+        "primitive": "kanban_db.subscribe()",
+        "current_live_mcp_tool": null,
+        "planned_v4_mcp_tool": "kanban_notify-subscribe",
+        "validation": "NOT_PROVEN",
+        "priority": "P2",
+        "target_version": "V4.x",
+        "evidence": [
+          "t_59a2a2f5"
+        ]
+      },
+      {
+        "command": "notify-list",
+        "description": "List subscriptions",
+        "flags": [
+          "--board",
+          "--json"
+        ],
+        "utility": "Subscription mgmt",
+        "risk": "LOW",
+        "primitive": "kanban_db.list_subscriptions()",
+        "current_live_mcp_tool": null,
+        "planned_v4_mcp_tool": "kanban_notify-list",
+        "validation": "NOT_PROVEN",
+        "priority": "P2",
+        "target_version": "V4.x",
+        "evidence": [
+          "t_59a2a2f5"
+        ]
+      },
+      {
+        "command": "notify-unsubscribe",
+        "description": "Remove subscription",
+        "flags": [
+          "--board",
+          "<subscription_id>"
+        ],
+        "utility": "Cleanup",
+        "risk": "LOW",
+        "primitive": "kanban_db.unsubscribe()",
+        "current_live_mcp_tool": null,
+        "planned_v4_mcp_tool": "kanban_notify-unsubscribe",
+        "validation": "NOT_PROVEN",
+        "priority": "P2",
+        "target_version": "V4.x",
+        "evidence": [
+          "t_59a2a2f5"
+        ]
+      },
+      {
+        "command": "log",
+        "description": "Task event log",
+        "flags": [
+          "--board",
+          "<task_id>",
+          "--tail",
+          "--json"
+        ],
+        "utility": "History",
+        "risk": "LOW",
+        "primitive": "kanban_db.get_log()",
+        "current_live_mcp_tool": null,
+        "planned_v4_mcp_tool": "kanban_log",
+        "validation": {
+          "cli_leaf": "VALIDATED"
+        },
+        "priority": "P1",
+        "target_version": "V4",
+        "evidence": [
+          "t_59a2a2f5",
+          "t_ad6925aa"
+        ]
+      },
+      {
+        "command": "runs",
+        "description": "Task run history",
+        "flags": [
+          "--board",
+          "<task_id>",
+          "--json"
+        ],
+        "utility": "Attempt history",
+        "risk": "LOW",
+        "primitive": "kanban_db.get_runs()",
+        "current_live_mcp_tool": null,
+        "planned_v4_mcp_tool": "kanban_runs",
+        "validation": {
+          "cli_leaf": "VALIDATED"
+        },
+        "priority": "P0",
+        "target_version": "V4",
+        "evidence": [
+          "t_59a2a2f5",
+          "t_ad6925aa"
+        ]
+      },
+      {
+        "command": "heartbeat",
+        "description": "Send worker heartbeat",
+        "flags": [
+          "--board",
+          "<task_id>",
+          "--note"
+        ],
+        "utility": "Liveness",
+        "risk": "LOW",
+        "primitive": "kanban_db.heartbeat_claim()",
+        "current_live_mcp_tool": "registered",
+        "planned_v4_mcp_tool": "kanban_heartbeat",
+        "validation": {
+          "cli_leaf": "NOT_PROVEN",
+          "mcp_tool_registered": true
+        },
+        "priority": "P1",
+        "target_version": "V4",
+        "evidence": [
+          "t_59a2a2f5"
+        ]
+      },
+      {
+        "command": "assignees",
+        "description": "List dispatcher-eligible profiles",
+        "flags": [
+          "--board",
+          "--json"
+        ],
+        "utility": "Profile discovery",
+        "risk": "LOW",
+        "primitive": "kanban_db.list_assignees()",
+        "current_live_mcp_tool": null,
+        "planned_v4_mcp_tool": "kanban_assignees",
+        "validation": {
+          "cli_leaf": "VALIDATED"
+        },
+        "priority": "P0",
+        "target_version": "V4",
+        "evidence": [
+          "t_59a2a2f5",
+          "t_c2257b50"
+        ]
+      },
+      {
+        "command": "context",
+        "description": "Get task context for worker",
+        "flags": [
+          "--board",
+          "<task_id>",
+          "--json"
+        ],
+        "utility": "Worker bootstrap",
+        "risk": "LOW",
+        "primitive": "kanban_db.get_context()",
+        "current_live_mcp_tool": null,
+        "planned_v4_mcp_tool": "kanban_context",
+        "validation": {
+          "cli_leaf": "VALIDATED"
+        },
+        "priority": "P1",
+        "target_version": "V4",
+        "evidence": [
+          "t_59a2a2f5"
+        ]
+      },
+      {
+        "command": "specify",
+        "description": "Add acceptance criteria",
+        "flags": [
+          "--board",
+          "<task_id>",
+          "--criteria"
+        ],
+        "utility": "AC tracking",
+        "risk": "MEDIUM",
+        "primitive": "kanban_db.specify()",
+        "current_live_mcp_tool": null,
+        "planned_v4_mcp_tool": "kanban_specify",
+        "validation": "NOT_PROVEN",
+        "priority": "P2",
+        "target_version": "V4.x",
+        "evidence": [
+          "t_59a2a2f5"
+        ]
+      },
+      {
+        "command": "decompose",
+        "description": "Auto-decompose triage task",
+        "flags": [
+          "--board",
+          "<task_id>"
+        ],
+        "utility": "Orchestrator",
+        "risk": "MEDIUM",
+        "primitive": "kanban_db.decompose_task()",
+        "current_live_mcp_tool": null,
+        "planned_v4_mcp_tool": "kanban_decompose",
+        "validation": "NOT_PROVEN",
+        "priority": "P1",
+        "target_version": "V4",
+        "evidence": [
+          "t_59a2a2f5"
+        ]
+      },
+      {
+        "command": "gc",
+        "description": "Garbage collect old data",
+        "flags": [
+          "--board",
+          "--days"
+        ],
+        "utility": "Maintenance",
+        "risk": "HIGH",
+        "primitive": "kanban_db.gc()",
+        "current_live_mcp_tool": null,
+        "planned_v4_mcp_tool": "kanban_gc",
+        "validation": "NOT_PROVEN",
+        "priority": "P2",
+        "target_version": "V4.x",
+        "evidence": [
+          "t_59a2a2f5"
+        ]
+      },
+      {
+        "command": "repair",
+        "description": "Repair board inconsistencies",
+        "flags": [
+          "--board"
+        ],
+        "utility": "Recovery",
+        "risk": "HIGH",
+        "primitive": "kanban_db.repair()",
+        "current_live_mcp_tool": null,
+        "planned_v4_mcp_tool": "kanban_repair",
+        "validation": "NOT_PROVEN",
+        "priority": "P1",
+        "target_version": "V4",
+        "evidence": [
+          "t_59a2a2f5"
+        ]
+      },
+      {
+        "command": "ls",
+        "alias_for": "list",
+        "description": "Alias for list",
+        "flags": "Same flags as list",
+        "utility": "Primary read surface alias",
+        "risk": "LOW",
+        "primitive": "alias -> kanban_db.list_tasks()",
+        "current_live_mcp_tool": "VALIDATED_via_MCP_E2E",
+        "planned_v4_mcp_tool": "kanban_list",
+        "validation": "CLI alias validated by parser; MCP E2E follows list_tasks",
+        "priority": "P0",
+        "target_version": "V4",
+        "evidence": [
+          "t_59a2a2f5"
+        ]
+      },
+      {
+        "command": "diag",
+        "alias_for": "diagnostics",
+        "description": "Alias for diagnostics",
+        "flags": "Same flags as diagnostics",
+        "utility": "Observability alias",
+        "risk": "LOW",
+        "primitive": "alias -> kanban_db.diagnostics()",
+        "current_live_mcp_tool": null,
+        "planned_v4_mcp_tool": "kanban_diagnostics",
+        "validation": "CLI alias validated by parser; behavior follows diagnostics",
+        "priority": "P1",
+        "target_version": "V4",
+        "evidence": [
+          "t_59a2a2f5"
+        ]
+      }
+    ]
+  },
+  "hermes_top_level_cli": {
+    "total_registered": 74,
+    "validated": [
+      "chat",
+      "gateway",
+      "status",
+      "config",
+      "skills",
+      "tools",
+      "version",
+      "profile",
+      "pause",
+      "resume"
+    ],
+    "not_proven": [
+      "model",
+      "moa",
+      "fallback",
+      "secrets",
+      "egress",
+      "migrate",
+      "proxy",
+      "lsp",
+      "setup",
+      "whatsapp",
+      "whatsapp-cloud",
+      "slack",
+      "send",
+      "login",
+      "logout",
+      "auth",
+      "cron",
+      "sync",
+      "webhook",
+      "portal",
+      "project",
+      "hooks",
+      "doctor",
+      "verify",
+      "security",
+      "approvals",
+      "dump",
+      "debug",
+      "backup",
+      "checkpoints",
+      "import",
+      "import-agent",
+      "skin",
+      "console",
+      "pairing",
+      "bundles",
+      "plugins",
+      "curator",
+      "pets",
+      "journey",
+      "learning",
+      "memory-graph",
+      "memory",
+      "computer-use",
+      "mcp",
+      "sessions",
+      "insights",
+      "monitoring",
+      "claw",
+      "update",
+      "uninstall",
+      "acp",
+      "completion",
+      "dashboard",
+      "serve",
+      "desktop",
+      "gui",
+      "logs",
+      "prompt-size"
+    ],
+    "evidence": "t_59a2a2f5"
+  },
+  "native_tools": {
+    "total_unique_leaf": 87,
+    "static_toolsets": 59,
+    "registry_toolsets": 31,
+    "by_origin": {
+      "BUILTIN": 87,
+      "PLUGIN": 0,
+      "MCP": 0,
+      "DYNAMIC": 0
+    },
+    "by_risk": {
+      "READ_ONLY": 39,
+      "MUTATING": 48
+    },
+    "by_availability": {
+      "always_available": 14,
+      "check_fn_available": 69,
+      "requires_env": 4
+    },
+    "core_hermes_cli_toolset": {
+      "tool_count": 54,
+      "toolsets": [
+        "web",
+        "terminal",
+        "file",
+        "vision",
+        "image_gen",
+        "bfl",
+        "skills",
+        "browser",
+        "tts",
+        "todo",
+        "memory",
+        "session_search",
+        "clarify",
+        "code_execution",
+        "delegation",
+        "cronjob",
+        "homeassistant",
+        "kanban",
+        "computer_use"
+      ]
+    },
+    "kanban_agent_tools": {
+      "count": 14,
+      "tools": [
+        "kanban_attach",
+        "kanban_attach_url",
+        "kanban_attachments",
+        "kanban_block",
+        "kanban_comment",
+        "kanban_complete",
+        "kanban_create",
+        "kanban_heartbeat",
+        "kanban_link",
+        "kanban_list",
+        "kanban_request_changes",
+        "kanban_request_review",
+        "kanban_show",
+        "kanban_unblock"
+      ],
+      "orchestrator_only": [
+        "kanban_list",
+        "kanban_unblock"
+      ],
+      "evidence": "t_5caf4595"
+    },
+    "evidence": "t_5caf4595"
+  },
+  "profiles": {
+    "count": 14,
+    "names": [
+      "default",
+      "coder",
+      "github-steward",
+      "investigator",
+      "kahuku",
+      "kahuku-candidate",
+      "kanban-coordinator",
+      "operator",
+      "profile-architect",
+      "researcher",
+      "reviewer",
+      "software-architect",
+      "wilson",
+      "worker"
+    ],
+    "observed_spawn": [
+      "investigator",
+      "profile-architect",
+      "operator",
+      "software-architect"
+    ],
+    "inferred_only": [
+      "default",
+      "coder",
+      "github-steward",
+      "kahuku",
+      "kahuku-candidate",
+      "kanban-coordinator",
+      "researcher",
+      "reviewer",
+      "wilson",
+      "worker"
+    ],
+    "toolset_mismatch_note": "Profiles without platform_toolsets.cli inherit broad hermes-cli composite (18 tools) despite narrow top-level toolset declarations",
+    "evidence": "t_c2257b50"
+  },
+  "skills": {
+    "total_enabled_default": 53,
+    "by_origin": {
+      "builtin": 39,
+      "local": 14,
+      "hub": 0
+    },
+    "sdlc_review": {
+      "installed": true,
+      "origin": "builtin",
+      "force_loaded": true,
+      "in_reviewer_profile": false,
+      "cli_inspect_resolvable": false,
+      "skill_view_resolvable": true,
+      "note": "Force-loaded by dispatcher at kanban_db.py:10384 for review workers"
+    },
+    "inspect_limitation": "hermes skills inspect cannot resolve builtin/local skills — hub-only search",
+    "missing_skill_policy": "ALL-missing → hard fail (ValueError); SOME-missing → warn+continue",
+    "evidence": "t_2d78d03f"
+  },
+  "mcp_gaps": [
+    {
+      "id": "P0-1",
+      "title": "Add content_base64 to MCP connector AttachInput",
+      "severity": "BLOCKING",
+      "reason": "local_path-only attach is architecturally wrong for remote clients",
+      "evidence": "t_2499ad0a"
+    },
+    {
+      "id": "P0-2",
+      "title": "Unify attachment size cap (25MB agent vs 10MB MCP)",
+      "severity": "HIGH",
+      "reason": "Size mismatch between surfaces",
+      "evidence": "t_2499ad0a"
+    },
+    {
+      "id": "P0-3",
+      "title": "Pin deployed connector SHA",
+      "severity": "MEDIUM",
+      "reason": "Local master stale, deployed version unknown",
+      "evidence": "t_2499ad0a"
+    },
+    {
+      "id": "P0-4",
+      "title": "V4 skill queries: use skills list or skill_view, never inspect",
+      "severity": "MEDIUM",
+      "reason": "inspect is hub-only, fails for builtin/local",
+      "evidence": "t_2d78d03f"
+    },
+    {
+      "id": "P0-5",
+      "title": "Preserve sdlc-review force-load pattern",
+      "severity": "PRODUCTION_CRITICAL",
+      "reason": "Dispatcher appends at dispatch time",
+      "evidence": "t_2d78d03f"
+    }
+  ],
+  "classifications": {
+    "gate_decision": "INVENTORY_COMPLETE_FOR_V4_DOCS",
+    "cli_registration_caveat": "registration proves command exists; does NOT prove operational PASS for every leaf",
+    "mcp_e2e_validated_commands": [
+      "create",
+      "list",
+      "show",
+      "assign",
+      "comment",
+      "link",
+      "unlink",
+      "claim",
+      "block",
+      "complete"
+    ],
+    "cli_validated_commands": [
+      "list",
+      "show",
+      "diagnostics",
+      "comment",
+      "complete",
+      "runs",
+      "assignees",
+      "context",
+      "log",
+      "stats"
+    ]
+  }
+}
