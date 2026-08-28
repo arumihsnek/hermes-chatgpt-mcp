@@ -10,7 +10,8 @@ import json
 from typing import Any
 from urllib.parse import quote, urlsplit, urlunsplit
 
-HUMAN_GATE_READBACK_TOOL = "get_human_gate_readback"
+# The rolling baseline's canonical read-only Human Gate tool name.
+HUMAN_GATE_READBACK_TOOL = "human-gate"
 READBACK_STATES = frozenset({"not_authorized", "needs_input", "authorized", "expired_or_no"})
 READBACK_KEYS = ("gate_state", "binding_fingerprint", "consumed_at", "consumed_by_principal", "window")
 
@@ -76,7 +77,7 @@ def build_human_gate_ui_html() -> str:
 <script>(function(){"use strict";
 var s={generation:0,inflight:false,attempt:0,identity:null,readback:null},states=["not_authorized","needs_input","authorized","expired_or_no"],status=document.getElementById("status");
 function text(id,v){document.getElementById(id).textContent=v==null?"none":String(v);}
-function call(args){if(s.inflight)return;s.inflight=true;var g=++s.generation,id=Date.now();s.attempt++;window.parent.postMessage({jsonrpc:"2.0",id:id,method:"tools/call",params:{name:"get_human_gate_readback",arguments:{request:args}}},"*");s.identity={generation:g,id:id,board:args.board||null,tenant:args.tenant||null,revision:args.revision};}
+function call(args){if(s.inflight)return;s.inflight=true;var g=++s.generation,id=Date.now();s.attempt++;window.parent.postMessage({jsonrpc:"2.0",id:id,method:"tools/call",params:{name:"human-gate",arguments:{request:args}}},"*");s.identity={generation:g,id:id,board:args.board||null,tenant:args.tenant||null,revision:args.revision};}
 function schedule(args){if(s.attempt>=5)return;var delays=[250,500,1000,2000,4000];setTimeout(function(){call(args);},delays[s.attempt]);}
 function render(d){if(!d||!s.identity||d.board!==s.identity.board||d.tenant!==s.identity.tenant||d.revision!==s.identity.revision)return;var r=d.readback||d;if(!r.gate_state)return;s.readback=r;text("target",d.task_id);text("gate-state",r.gate_state);text("fingerprint",r.binding_fingerprint||"none");text("consumed-at",r.consumed_at||"none");text("consumed-by",r.consumed_by_principal||"none");text("window",r.window?JSON.stringify(r.window):"none");if(d.evidence)text("evidence",d.evidence);if(d.deep_link){var a=document.getElementById("dashboard");a.href=d.deep_link;a.hidden=false;}if(r.gate_state!=="needs_input"&&r.gate_state!=="not_authorized")document.getElementById("banner").textContent="Gate state is authoritative on the dashboard; this view remains read-only.";}
 window.addEventListener("message",function(e){var m=e.data||{};if(s.identity&&m.id&&m.id!==s.identity.id)return;s.inflight=false;if(m.error){status.className="error";status.textContent="Readback unavailable; gate remains unresolved.";return;}var d=(m.result&& (m.result.structuredContent||m.result.data))||m.result||m;if(!s.identity&&d&&d.task_id&&d.board)call({task_id:d.task_id,board:d.board,tenant:d.tenant||null,revision:Number(d.revision||0)});render(d);if(s.identity)schedule({task_id:d.task_id,board:s.identity.board,tenant:s.identity.tenant,revision:s.identity.revision});});

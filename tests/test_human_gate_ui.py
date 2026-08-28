@@ -45,4 +45,4 @@ def test_readback_rejects_untrusted_fields_and_invalid_state():
     data = render_readback({"gate_state": "authorized", "signature": "secret", "nonce": "bad"})
     assert data["gate_state"] == "authorized"
     assert "signature" not in data and "nonce" not in data
-    assert HUMAN_GATE_READBACK_TOOL == "get_human_gate_readback"
+    assert HUMAN_GATE_READBACK_TOOL == "human-gate"

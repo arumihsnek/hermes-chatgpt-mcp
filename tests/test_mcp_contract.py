@@ -99,7 +99,7 @@ async def _test_health_metadata_auth_and_exact_tool_contract(tmp_path):
         "get_dispatch",
         "get_activity",
         "create_task",
-        "get_human_gate_readback",
+
     }
     readonly = [tool for tool in tools if tool["name"] != "create_task"]
     create = next(tool for tool in tools if tool["name"] == "create_task")

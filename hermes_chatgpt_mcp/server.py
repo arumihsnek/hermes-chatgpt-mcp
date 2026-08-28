@@ -566,6 +566,7 @@ def create_app(
         description="Read the configured Hermes Kanban board summary and status counts.",
         annotations=readonly,
         structured_output=True,
+        meta={"ui": {"resourceUri": KANBAN_UI_RESOURCE_URI}},
     )
     async def get_board(request: BoardQuery) -> BoardView:
         handle = resolve_board(request.board, operation="read")

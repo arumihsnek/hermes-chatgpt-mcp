@@ -260,6 +260,7 @@ class BoardView(StrictModel):
     assignee_counts: dict[str, dict[str, int]] = Field(default_factory=dict)
     oldest_ready_age_seconds: int | None = None
     generated_at: int | None = None
+    board_revision: int = 0
     capabilities: BetaBoardCapabilities | None = None
 
 
@@ -338,7 +339,7 @@ class CreateTaskResult(StrictModel):
     child_ids: list[str] = Field(default_factory=list)
     created_by: str | None = None
     created_at: int
-    board_revision: int | None = None
+    board_revision: int = 0
 
 
 # --- Batch 1: Diagnostics, link, unlink, set_model, reclaim, reassign, complete, edit, block, schedule, unblock, request_review, request_changes, reopen_review, promote, archive ---
