@@ -948,7 +948,26 @@ def create_app(
             hash_algo=r.hash_algo,
             hash_expected=r.hash_expected
         )), admin=True)
-        register_canonical("attachments", AttachmentsInput, lambda h, r: CanonicalActionResult(board=h.slug, action="attachments", data={"attachments": board_resolver.management_adapter(h).attachments(r.task_id)}), scope=auth_service.read_scope)
+        register_canonical(
+            "attachments",
+            AttachmentsInput,
+            lambda h, r: AttachmentsResult(
+                task_id=r.task_id,
+                attachments=[
+                    AttachmentInfo(
+                        id=int(item["id"]),
+                        filename=str(item["filename"]),
+                        content_type=item.get("content_type"),
+                        size=int(item.get("size", 0)),
+                        uploaded_by=item.get("uploaded_by"),
+                        created_at=int(item.get("created_at", 0)),
+                    )
+                    for item in board_resolver.management_adapter(h).attachments(r.task_id)
+                ],
+            ),
+            scope=auth_service.read_scope,
+            result_model=AttachmentsResult,
+        )
         register_canonical("attach-rm", AttachRemoveInput, lambda h, r: CanonicalActionResult(board=h.slug, action="attach-rm", data=board_resolver.management_adapter(h).attach_rm(r.attachment_id)), admin=True)
         register_canonical("stats", BoardQuery, lambda h, r: CanonicalActionResult(board=h.slug, action="stats", data=board_resolver.management_adapter(h).stats()), scope=auth_service.read_scope)
         register_canonical("log", TaskLogInput, lambda h, r: CanonicalActionResult(board=h.slug, action="log", data=board_resolver.management_adapter(h).log(r.task_id, r.limit)), scope=auth_service.read_scope)
@@ -1425,10 +1444,19 @@ def create_app(
         # The API-style ChatGPT connector needs only this deliberately frozen
         # contract. Keep beta OAuth gates and handlers, but do not advertise
         # any of the wider beta control-plane leaves.
+        # V4.1-Compat-Plus-r1: the connector projection is deliberately
+        # narrower than the beta registry.  Keep this as a server-side
+        # allowlist so authority-bearing beta leaves cannot become visible by
+        # accident when new canonical tools are registered.
         allowed_tools = {
+            # V4 stable rollback profile (11 tools).
             "list_boards", "get_board", "list_tasks", "get_task",
             "get_task_graph", "get_dispatch", "get_activity", "create_task",
             "create_board", "add_comment", "assign_task",
+            # V4.1 reviewed read/manage additions (10 tools).
+            "get_run", "list_runs", "active_workers", "bounded_log",
+            "runtime_status", "attachments", "control-status", "canary",
+            "diagnostics", "update_task",
         }
         mcp._tool_manager._tools = {  # type: ignore[attr-defined]
             name: tool

@@ -450,6 +450,7 @@ class UpdateTaskInput(BoardQuery):
     title: str | None = Field(default=None, max_length=512)
     body: str | None = Field(default=None, max_length=64_000)
     priority: int | None = Field(default=None, ge=-1_000, le=1_000)
+    probe: bool = False
 
 
 class UpdateTaskResult(StrictModel):

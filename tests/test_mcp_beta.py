@@ -107,11 +107,11 @@ def test_settings_beta_derives_beta_mcp_surface_without_explicit_override(tmp_pa
     asyncio.run(_test_settings_beta_derives_beta_mcp_surface_without_explicit_override(tmp_path, monkeypatch))
 
 
-def test_chatgpt_compat_mode_freezes_exact_eleven_tool_contract(tmp_path, monkeypatch):
-    asyncio.run(_test_chatgpt_compat_mode_freezes_exact_eleven_tool_contract(tmp_path, monkeypatch))
+def test_chatgpt_compat_mode_freezes_exact_v41_tool_contract(tmp_path, monkeypatch):
+    asyncio.run(_test_chatgpt_compat_mode_freezes_exact_v41_tool_contract(tmp_path, monkeypatch))
 
 
-async def _test_chatgpt_compat_mode_freezes_exact_eleven_tool_contract(tmp_path, monkeypatch):
+async def _test_chatgpt_compat_mode_freezes_exact_v41_tool_contract(tmp_path, monkeypatch):
     fixture, settings, auth, resolver, _ = _beta_app(tmp_path, monkeypatch)
     settings = replace(settings, chatgpt_compat_mode=True)
     app = create_app(board_resolver=resolver, settings=settings, auth_service=auth, surface="beta")
@@ -133,7 +133,9 @@ async def _test_chatgpt_compat_mode_freezes_exact_eleven_tool_contract(tmp_path,
     assert {tool["name"] for tool in response.json()["result"]["tools"]} == {
         "list_boards", "get_board", "list_tasks", "get_task", "get_task_graph",
         "get_dispatch", "get_activity", "create_task", "create_board",
-        "add_comment", "assign_task",
+        "add_comment", "assign_task", "get_run", "list_runs", "active_workers",
+        "bounded_log", "runtime_status", "attachments", "control-status", "canary",
+        "diagnostics", "update_task",
     }
 
 
