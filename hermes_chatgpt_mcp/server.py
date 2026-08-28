@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from typing import Literal
 from urllib.parse import parse_qs, urlencode, urlparse, urlsplit, urlunsplit
 
@@ -30,11 +31,17 @@ from .command import HermesCreateAdapter
 from .config import Settings
 from .diagnostics import emit, fingerprint, redirect_identity, request_fingerprint, scope_summary
 from .release import load_build_metadata
+from .human_gate_ui import build_human_gate_ui_html, readback_payload
+from .ui_mutation import UiMutationAdapter, UiMutationError
+from .ui_write_contract import UiCapabilityIssuer
 from .ui import (
+    HUMAN_GATE_RESOURCE_URI,
     KANBAN_UI_MIME_TYPE,
     KANBAN_UI_MAX_BYTES,
     KANBAN_UI_RESOURCE_URI,
+    KANBAN_UI_RESOURCE_URI_V2,
     build_kanban_ui_html,
+    build_kanban_ui_v2_html,
 )
 from .schemas import (
     AddCommentInput,
@@ -144,6 +151,8 @@ from .schemas import (
     AttachRemoveInput,
     InitResult,
     SwarmResult,
+    HumanGateReadbackInput,
+    HumanGateReadbackView,
     DaemonResult,
     DaemonInput,
     WatchResult,
@@ -598,6 +607,41 @@ def create_app(
         require_scope(auth_service.create_scope)
         handle = resolve_board(request.board, operation="create")
         with board_resolver.creation_lock(handle.slug):
+            if settings.ui_write_enabled_v2:
+                token = get_access_token()
+                subject = token.subject if token is not None and token.subject else "mcp-client"
+                tenant = request.tenant or "default"
+                capability = UiCapabilityIssuer().issue(
+                    subject=subject,
+                    board=handle.slug,
+                    tenant=tenant,
+                )
+                try:
+                    result = UiMutationAdapter(
+                        board_resolver.query_adapter(handle).store,
+                        capability,
+                    ).create_task(
+                        title=request.title,
+                        body=request.body,
+                        parent_ids=request.parent_ids,
+                        expected_board_revision=request.expected_board_revision,
+                        idempotency_key=request.idempotency_key,
+                    )
+                except UiMutationError as exc:
+                    raise tool_error(exc.code, str(exc)) from exc
+                return CreateTaskResult(
+                    created=result.mutation_status == "created",
+                    idempotent_replay=result.mutation_status == "idempotent_replay",
+                    task_id=result.canonical_task_id,
+                    board=result.board,
+                    title=request.title,
+                    status="running",
+                    tenant=result.tenant,
+                    priority=request.priority,
+                    parent_ids=list(request.parent_ids),
+                    created_at=int(time.time()),
+                    board_revision=result.board_revision_after,
+                )
             return await run_command(
                 board_resolver.command_adapter(handle).create_task,
                 title=request.title,
@@ -610,6 +654,32 @@ def create_app(
                 triage=request.triage,
                 idempotency_key=request.idempotency_key,
             )
+
+    @mcp.tool(
+        name="get_human_gate_readback",
+        description="Read redacted, non-authoritative Human Gate evidence for an exact task.",
+        annotations=readonly,
+        structured_output=True,
+    )
+    async def get_human_gate_readback(request: HumanGateReadbackInput) -> HumanGateReadbackView:
+        require_scope(auth_service.create_scope)
+        handle = resolve_board(request.board, operation="read")
+        activity = await run_query(board_resolver.query_adapter(handle).get_activity, request.task_id)
+        evidence = activity.evidence if isinstance(activity.evidence, dict) else {}
+        readback = evidence.get("human_gate", {})
+        if not isinstance(readback, dict):
+            readback = {}
+        return HumanGateReadbackView(
+            **readback_payload(
+                task_id=request.task_id,
+                board=handle.slug,
+                tenant=request.tenant,
+                revision=request.revision,
+                readback=readback,
+                dashboard_origin=settings.public_base_url,
+                evidence=str(evidence.get("latest_summary") or ""),
+            )
+        )
 
     @mcp.resource(
         KANBAN_UI_RESOURCE_URI,
@@ -624,6 +694,32 @@ def create_app(
         if len(html.encode("utf-8")) > KANBAN_UI_MAX_BYTES:
             raise ValueError("Kanban UI resource exceeds size limit")
         return html
+
+    @mcp.resource(
+        HUMAN_GATE_RESOURCE_URI,
+        name="hermes_human_gate_ui",
+        title="Hermes Human Gate readback",
+        description="Non-authoritative Human Gate evidence and dashboard handoff.",
+        mime_type=KANBAN_UI_MIME_TYPE,
+        meta={"ui": {}, "version": "v1"},
+    )
+    def human_gate_ui() -> str:
+        html = build_human_gate_ui_html()
+        if len(html.encode("utf-8")) > KANBAN_UI_MAX_BYTES:
+            raise ValueError("Human Gate UI resource exceeds size limit")
+        return html
+
+    if settings.ui_write_enabled_v2:
+        @mcp.resource(
+            KANBAN_UI_RESOURCE_URI_V2,
+            name="hermes_kanban_ui_v2",
+            title="Hermes Kanban board (create)",
+            description="Bounded create-task view; canonical readback is required.",
+            mime_type=KANBAN_UI_MIME_TYPE,
+            meta={"ui": {}, "version": "v2"},
+        )
+        def kanban_ui_v2() -> str:
+            return build_kanban_ui_v2_html()
 
     if beta:
         @mcp.tool(

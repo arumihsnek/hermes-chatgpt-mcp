@@ -155,6 +155,10 @@ class CreateTaskInput(BoardQuery):
     session_id: SessionId | None = None
     triage: bool = False
     idempotency_key: IdempotencyKey
+    # Optional CAS revision for the bounded UI write path. The server defaults
+    # to 0 when omitted, which is the right value for the first UI write on a
+    # fresh board.
+    expected_board_revision: int = Field(default=0, ge=0)
 
 
 class ListTasksInput(BoardQuery):
@@ -245,6 +249,9 @@ class BoardView(StrictModel):
     oldest_ready_age_seconds: int | None = None
     generated_at: int | None = None
     capabilities: BetaBoardCapabilities | None = None
+    # UI write-revision (board_revision table maintained by UiMutationAdapter).
+    # Always 0 for surfaces without the v2 write path.
+    board_revision: int = 0
 
 
 class TaskListView(StrictModel):
@@ -305,6 +312,22 @@ class ActivityView(StrictModel):
     truncated: bool = False
 
 
+class HumanGateReadbackInput(BoardQuery):
+    task_id: TaskId
+    tenant: TenantName | None = None
+    revision: int = Field(default=0, ge=0)
+
+
+class HumanGateReadbackView(StrictModel):
+    task_id: TaskId
+    board: BoardSlug
+    tenant: TenantName | None = None
+    revision: int = Field(ge=0)
+    readback: dict[str, Any]
+    deep_link: str
+    evidence: str = ""
+
+
 class CreateTaskResult(StrictModel):
     created: bool
     # True when the create returned an existing task matching the same
@@ -322,6 +345,10 @@ class CreateTaskResult(StrictModel):
     child_ids: list[str] = Field(default_factory=list)
     created_by: str | None = None
     created_at: int
+    # UI write-revision AFTER this mutation succeeded (or was idempotently
+    # replayed). Bounded UI callers use this to keep their next
+    # expected_board_revision in sync.
+    board_revision: int = 0
 
 
 # --- Batch 1: Diagnostics, link, unlink, set_model, reclaim, reassign, complete, edit, block, schedule, unblock, request_review, request_changes, reopen_review, promote, archive ---
