@@ -55,8 +55,10 @@ This document derives exclusively from **local read-only investigations** comple
 | **V4 stable surface** | `beta` (controller classifies the deployment as STABLE; `Kanban_Beta` discovery label is stale naming metadata) |
 | **V4 stable API surface** | `v4.wave0` (response header `x-api-version`; durable contract identifier) |
 | **Hermes Core MCP baseline** | `d7eba25ea8f692d2d0b65d7e5044df79e94c8a92` (header short `d7eba25ea8f6`; branch `v4/baseline-post-update-885e9ef`) |
-| **Live MCP `tools/list` tool count** | **71** (vs the 2026-08-19 54-tool discovery; updated by `4ae5060` Wave-0-to-4 integration) |
-| **v4.wave0 required tools (all 6 present)** | `list_boards`, `get_board`, `list_tasks`, `get_task`, `create_task`, `add_comment` |
+| **Live raw MCP `tools/list` tool count** (reproducible 2026-08-28) | **66** distinct names (35 unique `@mcp.tool(name=...)` decorators + 31 unique `register_canonical(...)` names; one decorator `name="list_boards"` is registered twice and deduped by FastMCP) — see [CHECKPOINT-2026-08-27-V4-STABLE.md §5.1](CHECKPOINT-2026-08-27-V4-STABLE.md) for the reconciliation with the historical 71 and the ChatGPT 11-tool contract |
+| **Live raw MCP `tools/list` tool count** (historical, post-switch smoke `t_a47fd88f`) | **71** (transient / not reproducible against the same `4ae5060` today; the 5-tool delta is documented in §5.1) |
+| **ChatGPT-visible / invocable surface** (frozen projection) | **11** tools (the `t_01200e57` ChatGPT session-compat contract; OpenAI's MCP connector filters `tools/list` and pins what it offers; **not equal to raw `tools/list`**) |
+| **v4.wave0 required tools (all 6 present)** | `list_boards`, `get_board`, `list_tasks`, `get_task`, `create_task`, `add_comment` (these 6 are a strict subset of the 11-tool ChatGPT contract) |
 | **Stable runtime** | `/opt/venvs/hermes-chatgpt-mcp` (venv) + `/opt/hermes-chatgpt-mcp-canary` (override-redirected 8789 working dir; same `4ae5060` image) |
 | **Public MCP origin** | `https://kanban.hermesinthenight.duckdns.org/mcp` (OpenResty forwards to `127.0.0.1:8789`) |
 | **Deployed-at (build.json)** | `2026-08-26T14:34:00Z` — canary's original deploy time, **not** the 2026-08-27 R2 cutover time (residual; see [CHECKPOINT-2026-08-27-V4-STABLE.md §6](CHECKPOINT-2026-08-27-V4-STABLE.md)) |
@@ -316,8 +318,10 @@ This section overlays the **V4 stable acceptance** (parent task `t_1e84eb11` ACC
 | Surface (build.json) | `beta` (controller classifies the deployment as STABLE; `Kanban_Beta` discovery label is stale naming metadata) | build.json `surface` + response header `x-v4-provenance` |
 | API surface version | `v4.wave0` | response header `x-api-version` |
 | Live V4 provenance header | `4ae5060931a6/d7eba25/beta` | response header `x-v4-provenance` |
-| Live MCP `tools/list` tool count | **71** | post-switch smoke `t_a47fd88f` contract check #10 |
-| v4.wave0 required tools (all 6 present) | `list_boards`, `get_board`, `list_tasks`, `get_task`, `create_task`, `add_comment` | `t_a47fd88f` contract check #10 |
+| Live raw MCP `tools/list` tool count (reproducible 2026-08-28) | **66** distinct names | `t_f30cf660` parity investigation §3.1 (source enumeration at `4ae5060`) + live readback against the public origin — see [CHECKPOINT-2026-08-27-V4-STABLE.md §5.1](CHECKPOINT-2026-08-27-V4-STABLE.md) |
+| Live raw MCP `tools/list` tool count (historical, post-switch smoke) | **71** | `t_a47fd88f` contract check #10, captured 2026-08-26 14:34 UTC; transient measurement, not reproducible against the same `4ae5060` today |
+| ChatGPT-visible / invocable surface (frozen projection) | **11** | `t_01200e57` ChatGPT session-compat contract; OpenAI's MCP connector filters `tools/list` and pins what it offers; **not equal to raw `tools/list`** |
+| v4.wave0 required tools (all 6 present) | `list_boards`, `get_board`, `list_tasks`, `get_task`, `create_task`, `add_comment` (subset of the 11-tool ChatGPT contract) | `t_a47fd88f` contract check #10 |
 
 ### 17.2 Live readback (captured 2026-08-27 21:31 UTC)
 
@@ -381,12 +385,13 @@ The 8 prerequisites of the parent `t_1e84eb11` ACCEPT chain are all PASS indepen
 | Prior claim | Prior evidence | Now | Evidence |
 |-------------|----------------|-----|----------|
 | `Deployed connector SHA: STILL_NOT_PROVEN` | design-doc baseline only (9900c10 is pre-V4 beta worktree) | `4ae5060931a64741185c5c8deb3886a5901f21cc` (V4 stable, branch `v4-candidate-integration`) | live readback (3 surfaces, all 4 headers match); 4 on-disk SHA-256 manifest pins matching R2; 8/8 prerequisites PASS |
-| `Live MCP tool count: 54` (2026-08-19 discovery) | design-doc baseline only | **71** (post-Wave-0-to-4 integration at `4ae5060`) | post-switch smoke `t_a47fd88f` contract check #10 |
+| `Live MCP tool count: 54` (2026-08-19 discovery) | design-doc baseline only | **66 raw** (reproducible today, `t_f30cf660` §3.1) — the historical post-switch smoke `t_a47fd88f` reported **71** at 2026-08-26 14:34 UTC; the ChatGPT-visible / invocable surface is **11** (frozen by `t_01200e57`) and is **not** equal to raw `tools/list`; full reconciliation in [CHECKPOINT-2026-08-27-V4-STABLE.md §5.1](CHECKPOINT-2026-08-27-V4-STABLE.md) | `t_a47fd88f` contract check #10 (historical 71) + `t_f30cf660` §3.1 (reproducible 66) + `t_01200e57` (frozen 11) |
 | `Kanban_Beta` discovery label is "stale metadata; controller classifies deployment as STABLE" | design-doc narrative | unchanged in narrative; the **build.json `surface` value is now `beta`** (not `stable`) — controller still classifies as STABLE, but the **on-disk surface label is `beta`** (documented residual, no contract violation) | live readback; `t_a47fd88f` POST_SWITCH_REPORT residual note |
 
 ### 17.8 Historical context (preserved, not silently corrected)
 
 - The 2026-08-19 design baseline (`Documentation base: 9900c10`, `Hermes Version: 0.20.2`, `Source HEAD: 39cfd1ab41`, `live_mcp_discovery_tools: 54`) is **not deleted**; it is preserved as the **historical design baseline** that the V4 stable was built on. The 2026-08-25 DAG soft-retire contract, the 2026-08-25 current-truth freshness checkpoint, the 2026-08-24 recovery truth-sync, and the 2026-08-21 release-candidate truth-sync are all preserved unchanged in their original sections.
+- The 2026-08-26 post-switch smoke `t_a47fd88f` reported `tools/list = 71`. That number is **preserved as the historical post-cutover measurement** but is **not** the current raw `tools/list` count: `t_f30cf660` (2026-08-28 00:08 UTC, same `4ae5060` build) reproduces 66. The ChatGPT-visible / invocable surface is **11** (frozen by `t_01200e57`), and is **not** equal to raw `tools/list`. The full reconciliation is in [CHECKPOINT-2026-08-27-V4-STABLE.md §5.1](CHECKPOINT-2026-08-27-V4-STABLE.md).
 - The v0.4 `8791` deployment topology described in `docs/DEPLOYMENT.md` and `docs/SECURITY.md` is **not silently corrected**; it is preserved as **dated v0.4 contract** in [STALE_DOCS.md](STALE_DOCS.md) and re-classified in the v0.4 sections as **RETAIN / LINK; SUPERSEDE for current runtime**. A new `## V4 stable runtime (2026-08-27)` section in those files points readers at this checkpoint.
 - The `STILL_NOT_PROVEN` items unrelated to the V4 stable cutover (live HTTP/API auth for native API, provider/model validity, dynamic tool registration, etc.) are **not silently marked resolved**; they are preserved in §11 with their prior `NOT_PROVEN` classification and explicit cross-references to where the resolved items are now bound.
 

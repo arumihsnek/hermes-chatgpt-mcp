@@ -1,6 +1,6 @@
 # Security boundary
 
-**Status:** V0.4 SECURITY CONTRACT (dated 2026-08-16; **SUPERSEDED for current runtime by the 2026-08-27 V4 stable cutover**). The v0.4 eight-tool allowlist and three-scope contract below remain the **v0.4 contract** for the `8791` beta deployment unit when it is resurrected. The V4 stable runtime uses a different topology (canary + 8789 override) and a **71-tool** surface (vs the v0.4 8-tool / 11-tool allowlists). See [## V4 stable runtime (2026-08-27)](#v4-stable-runtime-2026-08-27) below for the current runtime security truth.
+**Status:** V0.4 SECURITY CONTRACT (dated 2026-08-16; **SUPERSEDED for current runtime by the 2026-08-27 V4 stable cutover**). The v0.4 eight-tool allowlist and three-scope contract below remain the **v0.4 contract** for the `8791` beta deployment unit when it is resurrected. The V4 stable runtime uses a different topology (canary + 8789 override) and a **66-tool raw** surface today (reproducible 2026-08-28; the historical post-switch smoke `t_a47fd88f` reported **71**; the ChatGPT-visible / invocable surface is **11**, frozen by `t_01200e57`, and is **not** equal to raw `tools/list`). See [## V4 stable runtime (2026-08-27)](#v4-stable-runtime-2026-08-27) below for the current runtime security truth and [CHECKPOINT-2026-08-27-V4-STABLE.md §5.1](v4/CHECKPOINT-2026-08-27-V4-STABLE.md) for the reconciliation.
 
 ## External surface
 
@@ -190,14 +190,16 @@ All MCP requests on the public origin require a bearer token validated for issue
 
 ### V4 stable tool surface (current)
 
-| Surface | Tool count | Required (v4.wave0) | Source |
-|---------|------------|---------------------|--------|
-| Public MCP `tools/list` | **71** | `list_boards`, `get_board`, `list_tasks`, `get_task`, `create_task`, `add_comment` (all 6 present) | post-switch smoke `t_a47fd88f` contract check #10 |
-| Canary `tools/list` (loopback only) | 71 | same | live readback |
+| Surface | Tool count (raw) | Required (v4.wave0, all 6 present) | Source |
+|---------|------------------|------------------------------------|--------|
+| Public MCP `tools/list` (raw, reproducible 2026-08-28) | **66** | `list_boards`, `get_board`, `list_tasks`, `get_task`, `create_task`, `add_comment` (all 6 present; subset of the 11-tool ChatGPT contract) | `t_f30cf660` parity investigation §3.1 (source enumeration at `4ae5060` + live readback) |
+| Public MCP `tools/list` (historical post-switch smoke) | **71** | same | `t_a47fd88f` contract check #10, captured 2026-08-26 14:34 UTC; transient measurement, not reproducible against the same `4ae5060` today |
+| ChatGPT-visible / invocable surface (frozen projection) | **11** | (the 6 v4.wave0 names are a strict subset) | `t_01200e57` ChatGPT session-compat contract; OpenAI's MCP connector filters `tools/list` and pins what it offers; **not equal to raw `tools/list`** |
+| Canary `tools/list` (loopback only, raw) | **66** | same as public | `t_f30cf660` parity investigation §3.1 |
 | Pre-V4 v0.4 stable allowlist | 8 | n/a (v0.4 contract) | v0.4 `SECURITY.md` above |
 | Pre-V4 v0.4 beta allowlist | 11 | n/a (v0.4 contract) | v0.4 `SECURITY.md` above |
 
-The 71-tool surface is the **post-Wave-0-to-4** surface; exposure is not validation, and `AVAILABLE_VALIDATED` requires real invocation evidence per tool. The 6 v4.wave0 required tools are the only tools that MUST be present in every V4 wave.
+The 66-tool raw surface is the **post-Wave-0-to-4** surface (reproducible 2026-08-28 against the same `4ae5060` build); the historical 71 from the post-switch smoke is **not** a contract. Exposure is not validation, and `AVAILABLE_VALIDATED` requires real invocation evidence per tool. The **6 v4.wave0 required tools** are the only tools that MUST be present in every V4 wave; the **11-tool ChatGPT contract** (`t_01200e57`) is the only set ChatGPT can actually invoke, regardless of raw cardinality. See [CHECKPOINT-2026-08-27-V4-STABLE.md §5.1](v4/CHECKPOINT-2026-08-27-V4-STABLE.md) for the full reconciliation.
 
 ### V4 stable process and network controls (current)
 
@@ -214,8 +216,8 @@ The `hermes-chatgpt-mcp.service` (running the canary venv+WD via override) retai
 - Hermes Core MCP baseline: `d7eba25ea8f692d2d0b65d7e5044df79e94c8a92` (branch `v4/baseline-post-update-885e9ef`)
 - Surface: `beta` (controller classifies as STABLE; `Kanban_Beta` discovery label is stale naming metadata)
 - API version: `v4.wave0`
-- Live MCP `tools/list` tool count: **71**
-- v4.wave0 required tools (all 6 present): `list_boards`, `get_board`, `list_tasks`, `get_task`, `create_task`, `add_comment`
+- Live raw MCP `tools/list` tool count (reproducible 2026-08-28): **66** distinct names — the historical post-switch smoke `t_a47fd88f` (2026-08-26 14:34 UTC) reported **71**; the 5-tool delta is transient / not reproducible against the same `4ae5060` today. The ChatGPT-visible / invocable surface is **11** (frozen by `t_01200e57`) and is **not** equal to raw `tools/list`. Full reconciliation: [CHECKPOINT-2026-08-27-V4-STABLE.md §5.1](v4/CHECKPOINT-2026-08-27-V4-STABLE.md) + `t_f30cf660` §3.1.
+- v4.wave0 required tools (all 6 present, subset of the 11-tool ChatGPT contract): `list_boards`, `get_board`, `list_tasks`, `get_task`, `create_task`, `add_comment`
 
 ### V4 stable rollback
 
@@ -237,4 +239,4 @@ See [DEPLOYMENT.md §V4 stable runtime](DEPLOYMENT.md#v4-stable-runtime-2026-08-
 
 ### Historical context (preserved)
 
-The pre-V4 `8791` beta security contract (eleven-tool allowlist, five-scope contract, separate state directory and signing key) is **preserved unchanged** in the v0.4 section above. The v0.4 contract is the security contract to use when the `8791` beta is resurrected; it is **not** the current runtime security contract. The 2026-08-27 V4 stable cutover chose the canary + 8789 override model and reuses the **stable** v0.4 systemd hardening, OAuth scope vocabulary, OAuth DCR + PKCE S256 flow, refresh-rotation, and revocation semantics; the differences are **topology** (canary + 8789 override vs stable 8789 + beta 8791) and **tool count** (71 vs 8/11).
+The pre-V4 `8791` beta security contract (eleven-tool allowlist, five-scope contract, separate state directory and signing key) is **preserved unchanged** in the v0.4 section above. The v0.4 contract is the security contract to use when the `8791` beta is resurrected; it is **not** the current runtime security contract. The 2026-08-27 V4 stable cutover chose the canary + 8789 override model and reuses the **stable** v0.4 systemd hardening, OAuth scope vocabulary, OAuth DCR + PKCE S256 flow, refresh-rotation, and revocation semantics; the differences are **topology** (canary + 8789 override vs stable 8789 + beta 8791) and **raw tool count** (66 reproducible today vs 71 historical post-switch smoke vs 11 frozen ChatGPT contract; the v0.4 8/11-tool allowlists are preserved for the 8791 beta contract). See [CHECKPOINT-2026-08-27-V4-STABLE.md §5.1](v4/CHECKPOINT-2026-08-27-V4-STABLE.md) for the full reconciliation.

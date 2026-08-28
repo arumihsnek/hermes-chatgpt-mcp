@@ -4,8 +4,8 @@
 **Last reconciled:** 2026-08-19 (canonical design) + **2026-08-27 V4 stable truth-sync** (see [CHECKPOINT-2026-08-27-V4-STABLE.md](CHECKPOINT-2026-08-27-V4-STABLE.md) + [RELEASE-STABLE-V4.md](../../RELEASE-STABLE-V4.md))
 **Documentation base (pre-V4-stable design docs):** 9900c10 (local ref only; pre-V4 beta worktree — **NOT** the V4 stable commit)
 **V4 stable connector (durable binding):** `4ae5060931a64741185c5c8deb3886a5901f21cc` (short `4ae5060`, branch `v4-candidate-integration`, surface `beta`, API `v4.wave0`, Hermes Core MCP baseline `d7eba25ea8f6`)
-**Live MCP `tools/list` tool count:** **71** (vs the 2026-08-19 54-tool discovery; updated by `4ae5060` Wave-0-to-4 integration)
-**v4.wave0 required tools (all 6 present):** `list_boards`, `get_board`, `list_tasks`, `get_task`, `create_task`, `add_comment`
+**Live raw MCP `tools/list` tool count (reproducible 2026-08-28):** **66** distinct names (35 unique `@mcp.tool(name=...)` decorators + 31 unique `register_canonical(...)` names; one decorator `name="list_boards"` is registered twice and deduped by FastMCP). The historical post-switch smoke `t_a47fd88f` (2026-08-26 14:34 UTC) reported **71**; the 5-tool delta is transient / not reproducible against the same `4ae5060` today. The ChatGPT-visible / invocable surface is **11** (frozen by `t_01200e57`) and is **not** equal to raw `tools/list`. Full reconciliation: [CHECKPOINT-2026-08-27-V4-STABLE.md §5.1](CHECKPOINT-2026-08-27-V4-STABLE.md) + `t_f30cf660` §3.1 (parity investigation).
+**v4.wave0 required tools (all 6 present, subset of the 11-tool ChatGPT contract):** `list_boards`, `get_board`, `list_tasks`, `get_task`, `create_task`, `add_comment`
 **See also:** [README.md](README.md) | [CURRENT_STATE.md](CURRENT_STATE.md) | [EVIDENCE_AND_OPEN_QUESTIONS.md](EVIDENCE_AND_OPEN_QUESTIONS.md) | [CHECKPOINT-2026-08-27-V4-STABLE.md](CHECKPOINT-2026-08-27-V4-STABLE.md) | [RELEASE-STABLE-V4.md](../../RELEASE-STABLE-V4.md)
 **Derived from:** t_1419658e (`V4-TOOL-CATALOG-DRAFT.md`)
 **Topology:** Single MCP server with internally privilege-separated adapters (t_484d4ab0)

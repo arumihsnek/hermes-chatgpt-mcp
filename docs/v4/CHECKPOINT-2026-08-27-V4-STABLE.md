@@ -36,7 +36,9 @@ After the V4 stable acceptance (parent `t_1e84eb11` ACCEPT 2026-08-27), the **au
 | Surface (build.json + x-v4-provenance) | `beta` (controller classifies the deployment as STABLE; `Kanban_Beta` discovery label is stale naming metadata) |
 | API version (x-api-version) | `v4.wave0` |
 | Live V4 provenance header | `4ae5060931a6/d7eba25/beta` |
-| Live tool count (MCP `tools/list`, post-switch smoke `t_a47fd88f`) | **71** (vs the 2026-08-19 54-tool discovery) |
+| Live raw MCP `tools/list` tool count (reproducible, post-truth-sync parity investigation 2026-08-28) | **66** distinct tool names registered at `4ae5060` (35 unique `@mcp.tool(name=...)` decorators after FastMCP last-wins dedup of the two `list_boards` registrations, plus 31 unique `register_canonical(...)` names = 66) — see §5.1 for the reconciliation with the historical 71 and the ChatGPT 11-tool contract |
+| Live raw MCP `tools/list` tool count (historical, post-switch smoke `t_a47fd88f`, 2026-08-26 14:34 UTC) | **71** (transient / not reproducible against the same `4ae5060` build today; the 5-tool delta is documented in §5.1 and §5.1.3) |
+| ChatGPT-visible / invocable surface (projection, frozen) | **11** tools (the `t_01200e57` ChatGPT session-compatibility contract); **NOT** equal to raw `tools/list` — OpenAI's MCP connector parses `tools/list` and pins / filters what it offers |
 | v4.wave0 required tools (all 6 present) | `list_boards`, `get_board`, `list_tasks`, `get_task`, `create_task`, `add_comment` |
 | Public MCP origin | `https://kanban.hermesinthenight.duckdns.org/mcp` |
 | Stable loopback | `127.0.0.1:8789` (override-redirected to canary venv+WD, see §3) |
@@ -95,7 +97,7 @@ These are the same eight prerequisites as the parent `t_1e84eb11` ACCEPT, re-ver
 |---|--------------|-------------------|------------------------|
 | 1 | Clean build reproducible | `t_da03fbe7` 221/221 in fresh `/tmp/hermes-v4-build` py3.11.15 | `build_commit=4ae5060931a6` matches clean-build HEAD ✅ |
 | 2 | Canary deploy isolated | `t_56187ec4` 8792 systemd disabled, full isolation matrix | `MainPID 2506251` on 127.0.0.1:8792, system unit disabled per parent handoff ✅ |
-| 3 | Real MCP E2E | `t_5a9c43f7` 77/77 PASS OAuth/DCR PKCE S256 + refresh rotation + board-scoped grants + dispatch realism on `hermes-chatgpt-e2e-04780a62` | Same OAuth DCR live; tools/list 71 with all 6 v4.wave0 required tools ✅ |
+| 3 | Real MCP E2E | `t_5a9c43f7` 77/77 PASS OAuth/DCR PKCE S256 + refresh rotation + board-scoped grants + dispatch realism on `hermes-chatgpt-e2e-04780a62` | Same OAuth DCR live; tools/list **66** reproducible today (historical smoke `t_a47fd88f` reported 71; see §5.1), all 6 v4.wave0 required tools ✅ |
 | 4 | Wave 0-4 carry-forward | W0 13/13, W1 13/13, W2 20/20, W3 15/15, W4 15/15, integration 221/221 (`t_068740be` + `t_f96589bf`) | `4ae5060` is the integrated candidate head ✅ |
 | 5 | Extended dogfood | `t_45647dc7` 88/1 with F-DOGFOOD-01 LOW non-blocking; full DIAGNOSE→FIX→REVIEW→REGRESSION→RETEST chain closed | F-DOGFOOD-01 retained as documented non-blocking residual (see §6) ✅ |
 | 6 | Incident attestation | `t_ae8e6c64` NONE — zero release-blocking incidents; full chain `t_7afc509f`→`t_a0d6bae7`→`t_ed301a4c`→`t_aad72b38`→`t_a343fc54` all done | No open release-blocker incidents ✅ |
@@ -179,11 +181,71 @@ The V4 stable exposes a **stable** tool-surface contract identified by the `x-ap
 | `x-v4-provenance` (response header) | `4ae5060931a6/d7eba25/beta` | live readback (this run) |
 | `x-baseline-branch` (response header) | `v4/baseline-post-update-885e9ef` | live readback (this run) |
 | `x-baseline-mcp` (response header) | `d7eba25ea8f6` | live readback (this run) |
-| Live MCP `tools/list` tool count | **71** | `t_a47fd88f` post-switch smoke (23/23 contract checks, including tool-surface cardinality) |
+| Live raw MCP `tools/list` tool count (reproducible 2026-08-28) | **66** distinct names (35 unique `@mcp.tool(name=...)` decorators + 31 unique `register_canonical(...)` names; one decorator is `name="list_boards"` registered twice, deduped by FastMCP) | source enumeration at `4ae5060` (`server.py`); parity investigation `t_f30cf660` §3.1 — see §5.1 |
+| Live raw MCP `tools/list` tool count (historical, 2026-08-26 14:34 UTC) | **71** (transient measurement; not reproducible against the same `4ae5060` today; the 5-tool delta is documented in §5.1) | `t_a47fd88f` post-switch smoke contract check #10 — see §5.1 |
+| ChatGPT-visible / invocable surface (projection) | **11** (the `t_01200e57` ChatGPT session-compat contract; OpenAI's MCP connector filters `tools/list` and pins what it offers) | `t_01200e57` ChatGPT contract; `t_f30cf660` §3.2 (real ChatGPT-style 7-call sequence against the same `4ae5060`) — see §5.1 |
 | v4.wave0 required tools (all 6 present) | `list_boards`, `get_board`, `list_tasks`, `get_task`, `create_task`, `add_comment` | `t_a47fd88f` post-switch smoke, contract check #10 |
 | Other notable Wave-0/1/2/3/4 features | board-scoped attachments (FS-drift fix, `4ae5060`); cursor paging for `list_tasks`/`runs` (Wave-2 F1); Wave-4 control-plane (provenance, human gates, canary, bounded status) | `4ae5060` commit message: `fix(integration): resolve cross-wave residuals — board-scoped attachments (FS drift) + cursor paging wired (Wave-2 F1)` |
 
-> **Convention for future waves:** the `x-api-version` header is the **stable** API surface identifier. A future `v4.wave1` (or higher) becomes current **only** after its own full E2E + dogfood + Human Gate + promotion chain; until then, the surface remains `v4.wave0` and the `x-v4-provenance` advances to the new connector SHA. This convention is **not yet** enforced by the connector; the current contract is that the four headers are advisory and the build.json + service identity are the durable truth.
+### 5.1 Tool count reconciliation: 54 (historical baseline) → 71 (transient smoke) → 66 (reproducible raw) → 11 (ChatGPT contract)
+
+The raw MCP `tools/list` count is **not** the same as the ChatGPT-usable tool count. This sub-section makes the three numbers distinct so that no reader can mistake a raw discovery count for ChatGPT usability.
+
+#### 5.1.1 The 54 (2026-08-19 baseline) → 71 (post-Wave-0-to-4, `t_a47fd88f`) arc
+
+| Stage | Count | When | Evidence |
+|-------|-------|------|----------|
+| 2026-08-19 design discovery | **54** | pre-V4-candidate (`9900c10`) | pre-V4 baseline; documented in `CURRENT_STATE.md` and `RELEASE-STABLE-V4.md` (historical) |
+| 2026-08-26 14:34 UTC post-switch smoke (`t_a47fd88f`) | **71** | immediately after V4 stable cutover, same `4ae5060` build | `t_a47fd88f` post-switch smoke contract check #10 (`tools/list` enumerated 71 entries, all 6 v4.wave0 required tools present) |
+| 2026-08-28 00:08 UTC parity investigation (`t_f30cf660`) | **66** | same `4ae5060` build, later timestamp | `t_f30cf660` §3.1: live `tools/list` against the public origin returns exactly 66 tools; source enumeration at `4ae5060` confirms 66 distinct tool names |
+
+#### 5.1.2 Why 71 is not reproducible against the same `4ae5060` build
+
+`4ae5060` (`fix(integration): resolve cross-wave residuals — board-scoped attachments (FS drift) + cursor paging wired (Wave-2 F1)`) is the V4 stable. Source enumeration at this commit yields:
+
+- 36 `@mcp.tool(name=...)` decorator occurrences, of which **2 are duplicates of `name="list_boards"`** (one in a stable branch, one in a beta branch). FastMCP deduplicates by name (last-wins), so the `tools/list` surface sees 35 unique decorator-named tools.
+- 31 unique `register_canonical("...")` names (no duplicates with the decorators).
+- Union of distinct names: **35 + 31 = 66** (the two `list_boards` decorator occurrences collapse to one `tools/list` entry).
+
+The 5-tool delta (71 − 66 = 5) cannot be reproduced against the current `4ae5060` build. The most likely explanations, in order of likelihood (`t_f30cf660` §4):
+
+1. The post-switch smoke's measurement included a transient double-registration of `list_boards` (1 of the 5).
+2. The other 4 entries may have been FastMCP transport-level methods (`initialize`, `ping`, `tools/list` self-reference, `notifications/cancelled`) that the FastMCP framework exposed during the transient post-cutover window and then hid once the integration commit settled.
+
+**The post-switch smoke `t_a47fd88f` is the canonical historical evidence for the V4 stable cutover**; the 71 it reported is a valid, time-stamped measurement of the V4 stable at that moment. It is **not**, however, a contract; the reproducible raw count today is 66, and the V4 stable runtime does **not** depend on a particular number in the 66–71 range.
+
+#### 5.1.3 The ChatGPT-visible / invocable surface is 11, not 66 or 71
+
+The `t_01200e57` ChatGPT session-compatibility contract **intentionally** freezes the ChatGPT-side view to a narrow 11-tool projection of the underlying raw surface:
+
+| Tool | Class | Visible to ChatGPT? | Real-call evidence (`t_f30cf660` §3.2) |
+|------|-------|---------------------|------------------------------------------|
+| `list_boards` | read | yes | 200, structured items[8 boards], default_board, global_capabilities |
+| `get_board` | read | yes | 200, structured slug, name, task_counts, capabilities |
+| `list_tasks` | read | yes | 200, structured items[3 tasks], limit, truncated |
+| `get_task` | read | yes | 200, structured full TaskDetail with parent_ids, child_ids, runs, attachments |
+| `get_task_graph` | read | yes | 200, structured nodes, edges, depth, truncated |
+| `get_dispatch` | read | yes | 200, structured task_id, raw_status, state=BLOCKED, reasons |
+| `get_activity` | read | yes | 200, structured events[5], comments[0], runs[1], task_log, evidence |
+| `create_task` | mutate (idempotent) | yes (schema-verified; no throwaway call) | hermes:create |
+| `create_board` | mutate (idempotent) | yes (schema-verified) | hermes:board:create + board_create_enabled |
+| `add_comment` | mutate | yes (schema-verified) | hermes:manage |
+| `assign_task` | mutate | yes (schema-verified) | hermes:manage |
+
+All 7 read tools were invoked under an admin-scope OAuth token against the live connector in the exact ChatGPT-style sequence (no `mcp-session-id` header, consecutive `list` / `read` / `readback`) and returned 200 with `isError=false` and structured readback. The 4 mutating tools were schema-verified via `tools/list` to avoid creating throwaway tasks.
+
+**Implication:** OpenAI's MCP connector parses `tools/list` once and pins / filters the tools it offers to ChatGPT. Even though `tools/list` returns 66 distinct names today, **ChatGPT sees and can invoke only the 11 listed above**. Raw `tools/list` cardinality is therefore NOT a proxy for ChatGPT usability. The `v4.wave0 required tools` (6 names) are a *strict subset* of the 11, and they are the only names that MUST be present in every V4 wave.
+
+The 55-tool gap (66 raw − 11 ChatGPT) is **by design** in the connector's `enabledTools` filter, not enforced server-side. Future V4.1-Compat-Plus expansion (see `t_f30cf660` §6) proposes 11 → 22 (18 read + 2 bounded manage, all `hermes:read` or `hermes:manage`) and is held behind a separate, fresh Human Gate; until that expansion is independently reviewed and a new connector release is promoted, the ChatGPT surface remains exactly 11.
+
+#### 5.1.4 Erratum and review notes
+
+- **Erratum:** the prior version of this checkpoint and the parallel updates in `CURRENT_STATE.md`, `RELEASE-STABLE-V4.md`, `TOOL_CATALOG.md`, `DEPLOYMENT.md`, `SECURITY.md`, `v4-tool-catalog.json`, `STALE_DOCS.md`, `README.md`, and `CHECKPOINT-2026-08-25-CURRENT-TRUTH-FRESHNESS.md` all promoted `71` as the *current* tool count. The correct framing after the parity investigation `t_f30cf660` is: **71 is the post-switch smoke historical measurement (still valid for that timestamp); 66 is the reproducible raw discovery count; 11 is the ChatGPT-visible / invocable surface**.
+- **Cross-document consistency:** every "71" or "71-tool" reference in this branch (`docs/v4-post-v4-stable-truth-sync`) is now qualified with one of {historical, raw, ChatGPT-projection} so that no claim implies raw `tools/list` equals ChatGPT usability.
+- **No runtime, no merge, no deploy, no Human Gate, no OAuth, no traffic action was taken on this card.** This is a docs-only erratum on the proposed PR. The PR remains draft until independent docs review.
+- **Authoritative review chain:** `t_f30cf660` is the parity-investigation parent (ACCEPT 2026-08-28); `t_01200e57` is the ChatGPT contract parent; `t_a47fd88f` is the post-switch smoke that produced the historical 71; `t_1e84eb11` is the V4 stable ACCEPT parent (this branch's grandparent). Any reader who needs to re-derive any of the three numbers (66 / 71 / 11) should read these four cards before the docs.
+
+> **Convention for future waves:** the `x-api-version` header is the **stable** API surface identifier. A future `v4.wave1` (or higher) becomes current **only** after its own full E2E + dogfood + Human Gate + promotion chain; until then, the surface remains `v4.wave0` and the `x-v4-provenance` advances to the new connector SHA. This convention is **not yet** enforced by the connector; the current contract is that the four headers are advisory and the build.json + service identity are the durable truth. **Additionally, for any future wave that changes the raw `tools/list` cardinality, the erratum pattern in §5.1 is the required disclosure discipline** — the raw count, the historical smoke count, and the ChatGPT-projection count must all be distinguished, not collapsed.
 
 ---
 
@@ -200,6 +262,7 @@ These residuals are **explicitly preserved** by the V4 stable acceptance. They a
 | 5 | **No `/opt/hermes-chatgpt-mcp` (stable checkout dir)** — stable venv exists at `/opt/venvs/hermes-chatgpt-mcp`; the corresponding checkout dir does not exist on this host; rollback uses the venv only | Informational | `t_1e84eb11` parent handoff | **Retained** (rollback path documented; no checkout needed) |
 | 6 | **Pre-V4 `hermes-chatgpt-mcp-beta.service` (8791) not running** in the V4 stable topology; pre-V4 `8791` deployment unit and `/var/lib/hermes-chatgpt-mcp-beta` state dir still exist on disk | Informational | live readback (no process on 8791) | **Retained** (resurrection requires fresh authorization; out of scope for V4 stable) |
 | 7 | **STILL_NOT_PROVEN** items in [EVIDENCE_AND_OPEN_QUESTIONS.md](EVIDENCE_AND_OPEN_QUESTIONS.md) §2 (other than the now-resolved "Exact deployed connector SHA"): live HTTP/API auth surface for native API, provider/model validity, dynamic tool registration, etc. | Various | unchanged from 2026-08-19 / 2026-08-21 | **Preserved** (each is unrelated to the V4 stable cutover) |
+| 8 | **Tool count erratum (2026-08-28):** the prior version of this checkpoint (and the parallel updates in `CURRENT_STATE.md`, `RELEASE-STABLE-V4.md`, `TOOL_CATALOG.md`, `DEPLOYMENT.md`, `SECURITY.md`, `v4-tool-catalog.json`, `STALE_DOCS.md`, `README.md`, `CHECKPOINT-2026-08-25-CURRENT-TRUTH-FRESHNESS.md`) cited `71` as the current tool count. The parity investigation `t_f30cf660` (2026-08-28 00:08 UTC, same `4ae5060` build) reproduces **66** distinct raw tool names; the post-switch smoke `t_a47fd88f` (2026-08-26 14:34 UTC, same build) reported 71 as a transient post-cutover measurement. The ChatGPT-visible / invocable surface is **11** (frozen by `t_01200e57`). §5.1 documents the reconciliation. | Informational, docs-only erratum | `t_f30cf660` ACCEPT 2026-08-28 | **Resolved** (this erratum) |
 
 ---
 
@@ -213,15 +276,15 @@ The 2026-08-25 DAG soft-retire / extended dogfood program produced lessons that 
 4. **Source Precedence Ladder** (carried from [CHECKPOINT-2026-08-25-CURRENT-TRUTH-FRESHNESS.md](CHECKPOINT-2026-08-25-CURRENT-TRUTH-FRESHNESS.md)) is the **only** allowed override rule. A doc or card's age does not make it wrong within its scope, but it cannot outrank a live readback.
 5. **Fail-closed on unknown identity.** The V4 stable cutover requires the canary handshake (`t_be036abf` style) to observe a fresh MCP/OAuth session + observed receipt (canary/release ID, Connector SHA, Core SHA/version, schema/tool-surface version, scopes actually granted/effective) before first mutation. A mismatch / unknown identity ⇒ FAIL. The V4 stable cutover met this requirement (parent `t_1e84eb11` evidence chain).
 6. **Scope vocabulary is exact.** Current proven scopes are `hermes:read`, `hermes:create`, `hermes:manage`, `hermes:board:create`, `offline_access` (connection only). Finer proposed scopes in `CURRENT_STATE.md` §9 are **PROPOSED only**, **not current**; the V4 stable does **not** migrate to them. Any future fine-grained scope migration requires a fresh connector release and its own E2E + dogfood chain.
-7. **Operator-authoritative discovery proves exposure only.** The V4 stable exposes **71 tools** (live `tools/list`); exposure is not validation. The 71-tool count is the **post-wave-0-to-4** count, not a contract. The 6 v4.wave0 required tools are the only tools that MUST be present in every V4 wave.
+7. **Operator-authoritative discovery proves exposure only.** The V4 stable exposes **66 distinct raw tools** at `4ae5060` today (the post-switch smoke `t_a47fd88f` reported 71 immediately after the cutover; the 5-tool delta is documented in §5.1 and is not a contract). The ChatGPT-visible / invocable surface is **11** (the `t_01200e57` frozen contract), not 66 or 71. Exposure is not validation, and `AVAILABLE_VALIDATED` requires real invocation evidence per tool. The 6 v4.wave0 required tools are the only tools that MUST be present in every V4 wave.
 
 ---
 
 ## 8. Cross-references (what to read in what order)
 
 1. **[README.md](README.md)** — `docs/v4` index, updated to point at this checkpoint + `RELEASE-STABLE-V4.md`.
-2. **[CURRENT_STATE.md](CURRENT_STATE.md)** — section 17 added: 2026-08-27 V4 stable reconciliation. `Deployed connector SHA` flipped from `STILL_NOT_PROVEN` to `4ae5060931a64741185c5c8deb3886a5901f21cc` (resolved). `Live MCP tool count` updated from 54 to 71.
-3. **[TOOL_CATALOG.md](TOOL_CATALOG.md) + [v4-tool-catalog.json](v4-tool-catalog.json)** — metadata block updated: `deployed_connector_sha: 4ae5060931a6`, `live_discovery_tools: 71`, `hermes_version: 0.20.2 (2026.8.16) [unchanged, but reconciled against V4 stable]`, `last_reconciled: 2026-08-27`, `api_version: v4.wave0`.
+2. **[CURRENT_STATE.md](CURRENT_STATE.md)** — section 17 added: 2026-08-27 V4 stable reconciliation. `Deployed connector SHA` flipped from `STILL_NOT_PROVEN` to `4ae5060931a64741185c5c8deb3886a5901f21cc` (resolved). `Live MCP tool count` updated from 54 to **66 raw / 71 historical smoke / 11 ChatGPT** (see §5.1 of this checkpoint for the reconciliation; the 71 the previous version cited as current has been reclassified as a transient post-switch smoke measurement).
+3. **[TOOL_CATALOG.md](TOOL_CATALOG.md) + [v4-tool-catalog.json](v4-tool-catalog.json)** — metadata block updated: `deployed_connector_sha: 4ae5060931a6`, `live_discovery_tools: 66 (reproducible; 71 is the historical post-switch smoke measurement)`, `chatgpt_visible_surface: 11 (frozen by t_01200e57; not equal to raw tools/list)`, `hermes_version: 0.20.2 (2026.8.16) [unchanged, but reconciled against V4 stable]`, `last_reconciled: 2026-08-28`, `api_version: v4.wave0`.
 4. **[EVIDENCE_AND_OPEN_QUESTIONS.md](EVIDENCE_AND_OPEN_QUESTIONS.md)** — `Exact deployed connector SHA` removed from `STILL_NOT_PROVEN` (now resolved). 4ae5060931a6 added as the durable binding. Known residuals in §6 above are recorded with cross-references.
 5. **[DEPLOYMENT.md](../DEPLOYMENT.md) + [SECURITY.md](../SECURITY.md)** — v0.4 `8791` topology labelled **RETAIN / LINK; SUPERSEDE for current runtime**; new `## V4 stable runtime (2026-08-27)` section points at this checkpoint. STALE_DOCS.md already classifies the v0.4 descriptions correctly; the cross-link is now in place.
 6. **[MCP_TOPOLOGY_ADR.md](MCP_TOPOLOGY_ADR.md) + [CONTROL_PLANE_SPEC.md](CONTROL_PLANE_SPEC.md)** — topology section updated to point at the post-V4-stable topology (`8789 / 8792 canary / 8791 dormant`) and the `v4.wave0` API surface.

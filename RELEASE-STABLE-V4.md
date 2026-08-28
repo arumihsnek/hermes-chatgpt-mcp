@@ -29,7 +29,9 @@
 | **API surface version** (response header `x-api-version`) | `v4.wave0` |
 | **V4 provenance header** (response header `x-v4-provenance`) | `4ae5060931a6/d7eba25/beta` |
 | **Surface** (build.json) | `beta` (controller classifies the deployment as STABLE; `Kanban_Beta` discovery label is stale naming metadata) |
-| **Live MCP `tools/list` tool count** | 71 |
+| **Live raw MCP `tools/list` tool count** (reproducible 2026-08-28) | **66** distinct names (35 unique `@mcp.tool(name=...)` decorators after FastMCP last-wins dedup of the two `list_boards` registrations + 31 unique `register_canonical(...)` names) — see [CHECKPOINT-2026-08-27-V4-STABLE.md §5.1](docs/v4/CHECKPOINT-2026-08-27-V4-STABLE.md) for the reconciliation with the historical 71 and the ChatGPT 11-tool contract |
+| **Live raw MCP `tools/list` tool count** (historical post-switch smoke, 2026-08-26 14:34 UTC) | **71** (transient measurement; not reproducible against the same `4ae5060` today; the 5-tool delta is documented in the §5.1 link above) |
+| **ChatGPT-visible / invocable surface** (frozen projection) | **11** tools (the `t_01200e57` ChatGPT session-compatibility contract; OpenAI's MCP connector filters `tools/list` and pins what it offers; **not equal to raw `tools/list`**) |
 | **v4.wave0 required tools** (all 6 present) | `list_boards`, `get_board`, `list_tasks`, `get_task`, `create_task`, `add_comment` |
 | **deployed_at** (build.json) | `2026-08-26T14:34:00Z` — canary's original deploy time, **not** the 2026-08-27 R2 cutover time (residual; see checkpoint §6) |
 
@@ -100,9 +102,11 @@ All 8 prerequisites PASS independently:
 ## Post-cutover evidence (durable, all post-2026-08-26T14:34:00Z)
 
 - `t_5a7cf41c` (TRAFFIC-SWITCH-V4-STABLE) — promotion manifest sha256 `e5ffbf2c…94ba1`; immutable public routing preserved.
-- `t_a47fd88f` (POST-SWITCH-SMOKE) — 23/23 contract checks through public origin, including healthz, OAuth PKCE end-to-end, MCP `initialize` 200, `tools/list` 71 with all 6 v4.wave0 required tools, board-read, one safe mutation (`t_c67c7d03`, comment_id 1337), and rollback predicate anchored.
+- `t_a47fd88f` (POST-SWITCH-SMOKE) — 23/23 contract checks through public origin, including healthz, OAuth PKCE end-to-end, MCP `initialize` 200, `tools/list` 71 (historical measurement at that timestamp; the reproducible count today against the same `4ae5060` is 66 — see [CHECKPOINT-2026-08-27-V4-STABLE.md §5.1](docs/v4/CHECKPOINT-2026-08-27-V4-STABLE.md)) with all 6 v4.wave0 required tools present, board-read, one safe mutation (`t_c67c7d03`, comment_id 1337), and rollback predicate anchored.
+- `t_f30cf660` (V4-CHATGPT-TOOL-PARITY-P0) — 2026-08-28 parity investigation that re-derived the raw `tools/list` count as **66** (from 71) and confirmed the **11**-tool ChatGPT contract is reachable via the live connector in the exact ChatGPT-style sequence. The reconciliation lives in [CHECKPOINT-2026-08-27-V4-STABLE.md §5.1](docs/v4/CHECKPOINT-2026-08-27-V4-STABLE.md) and the full report at `/home/ubuntu/.hermes/kanban/boards/hermes-chatgpt-mcp/attachments/t_f30cf660/REPORT.md`.
+- `t_01200e57` (CHATGPT-SESSION-COMPAT-CONTRACT) — the frozen 11-tool ChatGPT contract that defines the ChatGPT-visible / invocable surface; **not** equal to raw `tools/list`. The V4.1-Compat-Plus expansion (`t_f30cf660` §6, 11 → 22) is held behind a separate, fresh Human Gate and is **not** in the V4 stable contract.
 - `t_a343fc54` (V4-DOGFOOD-RETEST-01-ATTESTATION) — bounded chain DIAGNOSE→FIX→REVIEW→REGRESSION→RETEST closed; F-DOGFOOD-01 retained as documented non-blocking residual.
-- `t_1e84eb11` (parent V4 stable ACCEPT) — this task's parent; all 8 prerequisites above PASS; live state verified.
+- `t_1e84eb11` (parent V4 stable ACCEPT) — this task's grandparent; all 8 prerequisites above PASS; live state verified.
 
 ## Related documents
 
@@ -119,9 +123,12 @@ All 8 prerequisites PASS independently:
 
 | Step | Card | Profile | Status |
 |------|------|---------|--------|
-| Truth-sync authorship | `t_ca2ba9ae` (this task) | github-steward | running |
+| Truth-sync authorship | `t_ca2ba9ae` (initial truth-sync) + `t_d1b356f4` (tool-count erratum 2026-08-28) | github-steward | running |
 | Independent truth-sync audit | _open_ | reviewer | pending — proposed via PR |
 | Canonical docs PR | _open_ | github-steward | proposed branch `docs/v4-post-v4-stable-truth-sync`; PR against `docs/v4-control-plane-source-of-truth-final` |
+| Parity investigation (parent of the tool-count erratum) | `t_f30cf660` ACCEPT 2026-08-28 | investigator | DONE (66 raw / 11 ChatGPT / 71 historical) |
+| ChatGPT session-compat contract (grandparent) | `t_01200e57` | investigator | DONE (11-tool frozen) |
+| Post-switch smoke (historical 71) | `t_a47fd88f` ACCEPT 2026-08-27 | investigator | DONE |
 | Parent ACCEPT | `t_1e84eb11` | operator | DONE 2026-08-27 (release identity pinned) |
 
 The V4 stable is **NOT** a "go-merge" artifact; it is a **durable record** that any future V4.x cutover, audit, or external communication can cite without re-deriving the live state. Every claim in this document is bound to a SHA, a URL, a manifest pin, or a Kanban task id, and is independently re-verifiable.

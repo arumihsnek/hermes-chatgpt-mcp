@@ -21,7 +21,7 @@
 | [CONTROL_PLANE_SPEC.md](CONTROL_PLANE_SPEC.md) | Corrected V4 tool contract with exact current OAuth scopes | Canonical |
 | [MCP_TOPOLOGY_ADR.md](MCP_TOPOLOGY_ADR.md) | ADR: Single MCP + privilege-separated internal adapters | Canonical |
 | [TOOL_CATALOG.md](TOOL_CATALOG.md) | Final 79-entry MCP tool catalog with product status vocabulary (metadata updated 2026-08-27: V4 stable binding) | Canonical |
-| [v4-tool-catalog.json](v4-tool-catalog.json) | Machine-readable catalog index (metadata updated 2026-08-27: V4 stable binding, live_discovery_tools=71) | Canonical |
+| [v4-tool-catalog.json](v4-tool-catalog.json) | Machine-readable catalog index (metadata updated 2026-08-28: V4 stable binding, `live_discovery_tools=66` (reproducible; 71 is the historical post-switch smoke; see [CHECKPOINT-2026-08-27-V4-STABLE.md §5.1](CHECKPOINT-2026-08-27-V4-STABLE.md) for the reconciliation), `chatgpt_visible_surface=11` (frozen by `t_01200e57`, not equal to raw `tools/list`)) | Canonical |
 | [KANBAN_CLI_MATRIX.md](KANBAN_CLI_MATRIX.md) | 47-entry CLI→MCP matrix; registration ≠ behavioral PASS | Canonical |
 | [HERMES_CAPABILITIES_MATRIX.md](HERMES_CAPABILITIES_MATRIX.md) | Native Hermes tool/skill/profile registry matrix | Canonical |
 | [capability-index.json](capability-index.json) | Machine-readable capability index | Canonical |

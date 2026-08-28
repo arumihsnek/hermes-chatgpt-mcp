@@ -305,8 +305,8 @@ No installer run, no wheel re-hash, no OAuth state rewrite, no credential rotati
 - Hermes Core MCP baseline: `d7eba25ea8f692d2d0b65d7e5044df79e94c8a92` (header short `d7eba25ea8f6`; branch `v4/baseline-post-update-885e9ef`)
 - Surface: `beta` (controller classifies as STABLE; `Kanban_Beta` discovery label is stale naming metadata)
 - API version: `v4.wave0`
-- Live MCP `tools/list` tool count: **71** (vs the 2026-08-19 54-tool discovery)
-- v4.wave0 required tools (all 6 present): `list_boards`, `get_board`, `list_tasks`, `get_task`, `create_task`, `add_comment`
+- Live raw MCP `tools/list` tool count (reproducible 2026-08-28): **66** distinct names — the historical post-switch smoke `t_a47fd88f` (2026-08-26 14:34 UTC) reported **71**; the 5-tool delta is transient / not reproducible against the same `4ae5060` today. The ChatGPT-visible / invocable surface is **11** (frozen by `t_01200e57`) and is **not** equal to raw `tools/list`. Full reconciliation: [CHECKPOINT-2026-08-27-V4-STABLE.md §5.1](v4/CHECKPOINT-2026-08-27-V4-STABLE.md) + `t_f30cf660` §3.1.
+- v4.wave0 required tools (all 6 present, subset of the 11-tool ChatGPT contract): `list_boards`, `get_board`, `list_tasks`, `get_task`, `create_task`, `add_comment`
 
 ### Authoritative references
 

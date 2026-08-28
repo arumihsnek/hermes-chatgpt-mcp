@@ -89,7 +89,9 @@ The Project Model answers "what is the system designed to be"; the Current State
 | Item | Value | Evidence / source |
 |------|-------|-------------------|
 | V4 stable connector SHA | `4ae5060931a64741185c5c8deb3886a5901f21cc` (branch `v4-candidate-integration`) | live readback (3 surfaces, all 4 headers match); 4 on-disk SHA-256 manifest pins matching R2; 8/8 prerequisites PASS |
-| Live tool surface | **71 tools** enumerated via `tools/list` | post-switch smoke `t_a47fd88f` contract check #10 (vs the 2026-08-25 54-tool snapshot) |
+| Live raw MCP `tools/list` tool count (reproducible 2026-08-28) | **66** distinct names | parity investigation `t_f30cf660` §3.1 (source enumeration at `4ae5060` + live readback against the public origin) |
+| Live raw MCP `tools/list` tool count (historical, post-switch smoke `t_a47fd88f`, 2026-08-26 14:34 UTC) | **71** (transient / not reproducible against the same `4ae5060` today; the 5-tool delta is documented in [CHECKPOINT-2026-08-27-V4-STABLE.md §5.1](CHECKPOINT-2026-08-27-V4-STABLE.md) + `t_f30cf660` §4) | `t_a47fd88f` contract check #10 (vs the 2026-08-25 54-tool snapshot) |
+| ChatGPT-visible / invocable surface (frozen projection) | **11** (the `t_01200e57` ChatGPT session-compat contract; OpenAI's MCP connector filters `tools/list` and pins what it offers — **not** equal to raw `tools/list`) | `t_01200e57` ChatGPT contract; `t_f30cf660` §3.2 (real ChatGPT-style 7-call sequence against the same `4ae5060`) |
 | v4.wave0 required tools (all 6 present) | `list_boards`, `get_board`, `list_tasks`, `get_task`, `create_task`, `add_comment` | `t_a47fd88f` contract check #10 |
 | Surface | `beta` (controller classifies as STABLE; `Kanban_Beta` discovery label is stale naming metadata) | build.json `surface` + response header `x-v4-provenance` |
 | API surface version | `v4.wave0` | response header `x-api-version` |
