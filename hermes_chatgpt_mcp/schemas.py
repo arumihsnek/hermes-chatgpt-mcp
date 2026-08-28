@@ -106,6 +106,7 @@ class CreateBoardInput(StrictModel):
     description: str | None = Field(default=None, max_length=2_000)
     icon: BoardIcon | None = None
     color: BoardIcon | None = None
+    probe: bool = False
 
 
 class CreateBoardResult(StrictModel):
@@ -121,6 +122,7 @@ class CreateBoardResult(StrictModel):
 class AddCommentInput(BoardQuery):
     task_id: TaskId
     body: str = Field(min_length=1, max_length=16_000)
+    probe: bool = False
 
 
 class AddCommentResult(StrictModel):
@@ -134,6 +136,7 @@ class AddCommentResult(StrictModel):
 class AssignTaskInput(BoardQuery):
     task_id: TaskId
     assignee: AssigneeName
+    probe: bool = False
 
 
 class AssignTaskResult(StrictModel):
@@ -166,6 +169,7 @@ class CreateTaskInput(BoardQuery):
     max_retries: int | None = Field(default=None, ge=0)
     goal_mode: bool | None = Field(default=None)
     goal_max_turns: int | None = Field(default=None, ge=1)
+    probe: bool = False
 
 
 class ListTasksInput(BoardQuery):
@@ -351,6 +355,7 @@ class DiagnosticsResult(StrictModel):
 class LinkTasksInput(BoardQuery):
     parent_id: TaskId
     child_id: TaskId
+    probe: bool = False
 
 
 class LinkTasksResult(StrictModel):
@@ -364,6 +369,7 @@ class LinkTasksResult(StrictModel):
 class UnlinkTasksInput(BoardQuery):
     parent_id: TaskId
     child_id: TaskId
+    probe: bool = False
 
 
 class UnlinkTasksResult(StrictModel):
@@ -378,6 +384,7 @@ class SetModelInput(BoardQuery):
     task_id: TaskId
     model: str | None = Field(default=None, max_length=512)
     provider: str | None = Field(default=None, max_length=512)
+    probe: bool = False
 
 
 class SetModelResult(StrictModel):
@@ -390,6 +397,7 @@ class SetModelResult(StrictModel):
 class ReclaimInput(BoardQuery):
     task_id: TaskId
     reason: str | None = Field(default=None, max_length=1_000)
+    probe: bool = False
 
 
 class ReclaimResult(StrictModel):
@@ -610,6 +618,7 @@ class RenameBoardInput(StrictModel):
     slug: BoardSlug
     name: str | None = Field(default=None, min_length=1, max_length=512)
     description: str | None = Field(default=None, max_length=2_000)
+    probe: bool = False
 
 
 class RenameBoardResult(StrictModel):
@@ -845,6 +854,7 @@ class SwarmInput(BoardQuery):
     idempotency_key: IdempotencyKey | None = None
     priority: int = Field(default=0, ge=-1_000, le=1_000)
     created_by: AssigneeName = "chatgpt_mcp"
+    probe: bool = False
 
 
 class InitResult(StrictModel):
@@ -884,6 +894,7 @@ class WatchResult(StrictModel):
 
 class ClaimInput(TaskInput):
     ttl_seconds: int = Field(default=900, ge=1, le=86_400)
+    probe: bool = False
 
 
 class AttachInput(BoardQuery):
@@ -894,6 +905,7 @@ class AttachInput(BoardQuery):
     content_type: str | None = Field(default=None, max_length=128)
     hash_algo: Literal["sha256"] | None = None
     hash_expected: str | None = Field(default=None, min_length=64, max_length=64, pattern=r"^[0-9a-fA-F]{64}$")
+    probe: bool = False
 
     @model_validator(mode='after')
     def _check_attach_input(self) -> 'AttachInput':
@@ -909,6 +921,7 @@ class AttachInput(BoardQuery):
 class DispatchInput(BoardQuery):
     dry_run: bool = False
     max_spawn: int | None = Field(default=None, ge=1, le=100)
+    probe: bool = False
 
 
 class StreamInput(BoardQuery):
@@ -1001,6 +1014,10 @@ class RuntimeStatusResult(StrictModel):
     running_other_boards: int
     running_host_total: int
     daemon: dict[str, Any] | None = None
+
+
+# --- Human Gate ---
+
 class HumanGateInput(BoardQuery):
     task_id: TaskId
     residual_risk: list[str] | None = Field(default=None, max_length=10)
@@ -1023,6 +1040,7 @@ class HumanGateDecisionInput(BoardQuery):
     decision: Literal["YES", "NO"]
     reason: str | None = Field(default=None, max_length=8_000)
     requester: str | None = Field(default=None, max_length=256)
+    probe: bool = False
 
 
 class HumanGateDecisionResult(StrictModel):
@@ -1060,3 +1078,28 @@ class ControlStatusResult(StrictModel):
     control_plane: dict[str, str]
     pause: dict[str, Any] | None = None
     drain_preview: dict[str, Any] | None = None
+
+
+# --- Probe Mode ---
+
+class ProbeModeInput(StrictModel):
+    """Request body for tools invoked under explicit opt-in probe mode.
+
+    When ``probe`` is true, every authority-bearing (non-read) tool fails
+    closed with a deterministic ``PROBE_MODE_REFUSAL`` instead of executing
+    side effects.  Read tools are unaffected and remain callable.
+    """
+    probe: bool = False
+
+
+class ProbeModeRefusal(StrictModel):
+    """Deterministic, typed refusal returned for authority-bearing tools when
+    probe mode is active.  Compatible with MCP structured outputs and never
+    exposes stack traces, internal paths, or request bodies.
+    """
+    code: Literal["PROBE_MODE_REFUSAL"] = "PROBE_MODE_REFUSAL"
+    message: str = "tool call refused: probe mode is active"
+    tool_name: str
+    refused: bool = True
+    attempted: bool = True
+    executed: bool = False

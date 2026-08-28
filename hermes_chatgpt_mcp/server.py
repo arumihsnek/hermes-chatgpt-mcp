@@ -709,6 +709,9 @@ def create_app(
     async def create_task(request: CreateTaskInput) -> CreateTaskResult:
         require_scope(auth_service.create_scope)
         handle = resolve_board(request.board, operation="create")
+        from .probe_mode import enforce_probe_safe
+
+        enforce_probe_safe(request, "create_task")
         with board_resolver.creation_lock(handle.slug):
             return await run_command(
                 board_resolver.command_adapter(handle).create_task,
@@ -742,6 +745,9 @@ def create_app(
         )
         async def create_board(request: CreateBoardInput) -> CreateBoardResult:
             require_scope(auth_service.board_create_scope)
+            from .probe_mode import enforce_probe_safe
+
+            enforce_probe_safe(request, "create_board")
             if not settings.board_create_enabled:
                 raise tool_error("BOARD_CREATE_DISABLED", "board creation is disabled")
             try:
@@ -766,7 +772,10 @@ def create_app(
         )
         async def add_comment(request: AddCommentInput) -> AddCommentResult:
             require_scope(auth_service.manage_scope)
+            from .probe_mode import enforce_probe_safe
+
             handle = resolve_board(request.board, operation="manage")
+            enforce_probe_safe(request, "add_comment")
             return await run_beta_command(
                 board_resolver.management_adapter(handle).add_comment,
                 request.task_id,
@@ -782,7 +791,10 @@ def create_app(
         )
         async def assign_task(request: AssignTaskInput) -> AssignTaskResult:
             require_scope(auth_service.manage_scope)
+            from .probe_mode import enforce_probe_safe
+
             handle = resolve_board(request.board, operation="manage")
+            enforce_probe_safe(request, "assign_task")
             return await run_beta_command(
                 board_resolver.management_adapter(handle).assign_task,
                 request.task_id,
@@ -802,7 +814,11 @@ def create_app(
 
         async def _manage(request, method_name: str, *args, **kwargs):
             require_scope(auth_service.manage_scope)
+            from .probe_mode import enforce_probe_safe
+
             handle = resolve_board(request.board, operation="manage")
+            # Probe enforcement runs after scope + resolution and before side effect.
+            enforce_probe_safe(request, method_name)
             return await run_beta_command(getattr(board_resolver.management_adapter(handle), method_name), *args, task_command=True, **kwargs)
 
         @mcp.tool(name="link_tasks", description="Add parent dependencies.", annotations=manage_annotations, structured_output=True)
@@ -887,10 +903,31 @@ def create_app(
         # arbitrary command or SQL operation.
         def register_canonical(name, model, callback, *, scope=auth_service.manage_scope, admin=False, result_model=CanonicalActionResult):
             required = auth_service.admin_scope if admin else scope
+
+            # Reads stay probe-free.  Every authority-bearing tool fails closed
+            # under probe mode, after scope + resolution and before side effect.
+            read_scope_names = {
+                "attachments",
+                "stats",
+                "log",
+                "runs",
+                "assignees",
+                "context",
+                "tail",
+                "watch",
+                "human-gate",
+                "canary",
+                "control-status",
+            }
+
             async def tool(request):
                 require_scope(required)
                 board = getattr(request, "board", None)
                 handle = resolve_board(board, operation="manage" if required != auth_service.read_scope else "read")
+                if name not in read_scope_names:
+                    from .probe_mode import enforce_probe_safe
+
+                    enforce_probe_safe(request, name)
                 return await run_beta_command(lambda: callback(handle, request), task_command=required != auth_service.read_scope)
             tool.__name__ = name.replace("-", "_")
             tool.__annotations__ = {"request": model, "return": result_model}

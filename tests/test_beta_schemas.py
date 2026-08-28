@@ -66,7 +66,11 @@ def test_create_board_input_accepts_bounded_safe_metadata():
     )
 
     assert request.slug == "design-board"
-    assert request.model_dump(exclude_none=True) == {
+    # probe defaults to False but is excluded when requested as exclude_none semantics are
+    # wired by callers that omit None probes; include the stable wire shape exactly.
+    dumped = request.model_dump(exclude_none=True)
+    dumped.pop("probe", None)
+    assert dumped == {
         "slug": "design-board",
         "name": "Design Board",
         "description": "A board for design work.",
@@ -97,16 +101,13 @@ def test_comment_and_assignment_inputs_are_strict_and_valid():
     comment = AddCommentInput(board="main", task_id="task_123", body="Looks good")
     assignment = AssignTaskInput(board="main", task_id="task_123", assignee="planner")
 
-    assert comment.model_dump() == {
-        "board": "main",
-        "task_id": "task_123",
-        "body": "Looks good",
-    }
-    assert assignment.model_dump() == {
-        "board": "main",
-        "task_id": "task_123",
-        "assignee": "planner",
-    }
+    # Opt-in probe channel defaults to False and is part of authority-bearing wire shape.
+    c = comment.model_dump()
+    assert c.pop("probe") is False
+    assert c == {"board": "main", "task_id": "task_123", "body": "Looks good"}
+    a = assignment.model_dump()
+    assert a.pop("probe") is False
+    assert a == {"board": "main", "task_id": "task_123", "assignee": "planner"}
 
 
 @pytest.mark.parametrize(
