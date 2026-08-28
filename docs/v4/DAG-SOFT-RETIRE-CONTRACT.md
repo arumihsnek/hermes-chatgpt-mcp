@@ -1,9 +1,9 @@
 # DAG / Projection Soft-Retire Contract & Release Blocker — Canonical Truth
 
-**Status:** CANONICAL V4 DESIGN / CURRENT EVIDENCE (supplemental)
+**Status:** CANONICAL V4 DESIGN / CURRENT EVIDENCE (supplemental) + **V4 STABLE ACCEPTED 2026-08-27** — the V4 stable runtime `4ae5060931a64741185c5c8deb3886a5901f21cc` is **edge_state-aware**, so the `PROJECTION_RUNTIME_P0` blocker is **closed in the V4 stable**. The soft-retire contract remains the canonical contract for any future V4.x evolution.
 **Authored by:** github-steward (task `t_ed19e80c`)
-**Reconciliation date:** 2026-08-25 (UTC)
-**Documentation base:** `9900c10` (local ref only; deployed connector SHA is **NOT_PROVEN** — carried from canonical docs)
+**Reconciliation date:** 2026-08-25 (UTC); **V4 stable binding 2026-08-27** (carried)
+**Documentation base:** `9900c10` (local ref only; pre-V4 beta worktree — **NOT** the V4 stable commit) **+ V4 stable binding 2026-08-27**
 **Companion card:** `t_31d1c67f` (implementation), `t_20dd938c` (review), `t_ef3ae8d4` (activation-gate-prep)
 **Scope:** Documentation-only truth persistence. No Git mutation to any live runtime repo, no service/restart/deploy/OAuth/DCR/V4/downstream mutation, no `DELETE` of retired edges, no `barrier` completion for throughput.
 

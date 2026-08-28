@@ -1,10 +1,10 @@
 # V4 / Phase-S Reconciliation Checkpoint — 2026-08-21
 
-**Status:** DOCUMENTATION TRUTH-SYNC (supplemental to the canonical 2026-08-19 V4 design docs)
+**Status:** DOCUMENTATION TRUTH-SYNC (supplemental to the canonical 2026-08-19 V4 design docs; **superseded by the 2026-08-25 DAG soft-retire contract + 2026-08-27 V4 stable truth-sync** for current-state authority. The V4 stable binding at `4ae5060931a64741185c5c8deb3886a5901f21cc` lives in [CHECKPOINT-2026-08-27-V4-STABLE.md](CHECKPOINT-2026-08-27-V4-STABLE.md) + [RELEASE-STABLE-V4.md](../../RELEASE-STABLE-V4.md).)
 **Reconciliation date:** 2026-08-21 (UTC)
 **Authored by:** github-steward (task `t_b6b71c9b`)
 **Companion review card:** `t_4bb689c9` (DOCS-CHECKPOINT-REVIEW-20260821 — independent truth-sync audit)
-**Documentation base (unchanged from canonical docs):** `9900c10` (local ref only; deployed connector SHA is **NOT_PROVEN** — see below)
+**Documentation base (unchanged from canonical docs):** `9900c10` (local ref only; pre-V4 beta worktree — **NOT** the V4 stable commit) **+ V4 stable binding 2026-08-27 (carried)**
 **Scope of this document:** Bring canonical documentation up to the live 2026-08-21 Kanban state. This is a documentation truth-sync, NOT a new roadmap, NOT a product-scope change, NOT an authorization to build, deploy, or release.
 
 ---

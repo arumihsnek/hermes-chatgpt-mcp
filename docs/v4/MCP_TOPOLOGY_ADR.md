@@ -1,9 +1,10 @@
 # MCP Topology ADR — Canonical
 
-**Status:** CANONICAL V4 DESIGN / CURRENT EVIDENCE
-**Last reconciled:** 2026-08-19
-**Documentation base:** 9900c10 (local ref only; deployed SHA NOT_PROVEN)
-**See also:** [README.md](README.md) | [CONTROL_PLANE_SPEC.md](CONTROL_PLANE_SPEC.md) | [CURRENT_STATE.md](CURRENT_STATE.md)
+**Status:** CANONICAL V4 DESIGN / CURRENT EVIDENCE + **V4 STABLE ACCEPTED 2026-08-27**
+**Last reconciled:** 2026-08-19 (canonical design) + **2026-08-27 V4 stable truth-sync** (see [CHECKPOINT-2026-08-27-V4-STABLE.md](CHECKPOINT-2026-08-27-V4-STABLE.md) + [RELEASE-STABLE-V4.md](../../RELEASE-STABLE-V4.md))
+**Documentation base (pre-V4-stable design docs):** 9900c10 (local ref only; pre-V4 beta worktree — **NOT** the V4 stable commit)
+**V4 stable connector (durable binding):** `4ae5060931a64741185c5c8deb3886a5901f21cc` (short `4ae5060`, branch `v4-candidate-integration`, surface `beta`, API `v4.wave0`, Hermes Core MCP baseline `d7eba25ea8f6`)
+**See also:** [README.md](README.md) | [CONTROL_PLANE_SPEC.md](CONTROL_PLANE_SPEC.md) | [CURRENT_STATE.md](CURRENT_STATE.md) | [CHECKPOINT-2026-08-27-V4-STABLE.md](CHECKPOINT-2026-08-27-V4-STABLE.md) | [RELEASE-STABLE-V4.md](../../RELEASE-STABLE-V4.md)
 **Derived from:** t_484d4ab0 (`MCP-TOPOLOGY-ADR-DRAFT.md`)
 
 ---

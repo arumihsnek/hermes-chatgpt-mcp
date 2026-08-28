@@ -1,9 +1,10 @@
 # V4 Evidence and Open Questions
 
-**Status:** CANONICAL V4 DESIGN / CURRENT EVIDENCE
-**Last reconciled:** 2026-08-19 (canonical design) + **2026-08-21 release-candidate truth-sync** (see [CHECKPOINT-2026-08-21.md](CHECKPOINT-2026-08-21.md)) + **2026-08-25 DAG soft-retire contract** (see [DAG-SOFT-RETIRE-CONTRACT.md](DAG-SOFT-RETIRE-CONTRACT.md))
-**Documentation base:** 9900c10 (local ref only; deployed SHA NOT_PROVEN)
-**See also:** [README.md](README.md) | [CURRENT_STATE.md](CURRENT_STATE.md) | [STALE_DOCS.md](STALE_DOCS.md)
+**Status:** CANONICAL V4 DESIGN / CURRENT EVIDENCE + **V4 STABLE ACCEPTED 2026-08-27**
+**Last reconciled:** 2026-08-19 (canonical design) + **2026-08-21 release-candidate truth-sync** (see [CHECKPOINT-2026-08-21.md](CHECKPOINT-2026-08-21.md)) + **2026-08-25 DAG soft-retire contract** (see [DAG-SOFT-RETIRE-CONTRACT.md](DAG-SOFT-RETIRE-CONTRACT.md)) + **2026-08-27 V4 stable truth-sync** (see [CHECKPOINT-2026-08-27-V4-STABLE.md](CHECKPOINT-2026-08-27-V4-STABLE.md) + [RELEASE-STABLE-V4.md](../../RELEASE-STABLE-V4.md))
+**Documentation base (pre-V4-stable design docs):** 9900c10 (local ref only; pre-V4 beta worktree — **NOT** the V4 stable commit)
+**V4 stable connector (durable binding):** `4ae5060931a64741185c5c8deb3886a5901f21cc` (short `4ae5060`, branch `v4-candidate-integration`, surface `beta`, API `v4.wave0`, Hermes Core MCP baseline `d7eba25ea8f6`)
+**See also:** [README.md](README.md) | [CURRENT_STATE.md](CURRENT_STATE.md) | [STALE_DOCS.md](STALE_DOCS.md) | [CHECKPOINT-2026-08-27-V4-STABLE.md](CHECKPOINT-2026-08-27-V4-STABLE.md) | [RELEASE-STABLE-V4.md](../../RELEASE-STABLE-V4.md)
 
 ---
 
@@ -19,8 +20,8 @@ Evidence is ranked as follows:
 
 ### Binding rules
 
-- Current-state claims must include Hermes version and local documentation base; exact deployed connector SHA remains **STILL_NOT_PROVEN**.
-- `Kanban_Beta` is stale discovery metadata; controller evidence classifies deployment as STABLE. Do not infer deployed version from the label.
+- Current-state claims must include Hermes version and local documentation base; the **deployed connector SHA is now durably bound** to `4ae5060931a64741185c5c8deb3886a5901f21cc` (V4 stable, branch `v4-candidate-integration`, surface `beta`, API `v4.wave0`) — see [CHECKPOINT-2026-08-27-V4-STABLE.md](CHECKPOINT-2026-08-27-V4-STABLE.md) §0 and [RELEASE-STABLE-V4.md](../../RELEASE-STABLE-V4.md). The prior `STILL_NOT_PROVEN` claim for the deployed connector SHA is **RESOLVED 2026-08-27**.
+- `Kanban_Beta` is stale discovery metadata; controller evidence classifies deployment as STABLE. The **on-disk build.json `surface` value is now `beta`** for the V4 stable (controller still classifies as STABLE; no contract violation; documented residual).
 - CLI/source is an oracle/contrast for dogfood; MCP calls are the subject under test.
 - CLI registration or `--help` output is not behavioral PASS.
 - Current scope vocabulary is exactly `hermes:read`, `hermes:create`, `hermes:manage`, `hermes:board:create`; `offline_access` is connection-only. Finer scopes are PROPOSED only.
@@ -32,8 +33,8 @@ Evidence is ranked as follows:
 
 | Item | Why unresolved | Impact / next safe evidence |
 |------|----------------|-----------------------------|
-| Exact deployed connector SHA | Discovery metadata does not pin an immutable deployment commit; local 9900c10 is documentation base only | Pin exact SHA from authenticated deployment evidence before release promotion |
-| Live HTTP/API auth and reachability | Dashboard/native API reachability and auth were not proven in the read-only run | Safe authenticated health/read probe in a controlled environment |
+| ~~Exact deployed connector SHA~~ | **RESOLVED 2026-08-27** — was `STILL_NOT_PROVEN`; now durably bound to `4ae5060931a64741185c5c8deb3886a5901f21cc` (V4 stable, branch `v4-candidate-integration`, surface `beta`, API `v4.wave0`) | **REMOVED from `STILL_NOT_PROVEN`** — see [CHECKPOINT-2026-08-27-V4-STABLE.md §0](CHECKPOINT-2026-08-27-V4-STABLE.md) and [RELEASE-STABLE-V4.md](../../RELEASE-STABLE-V4.md). Live readback (3 surfaces, all 4 headers match), 4 on-disk SHA-256 manifest pins matching R2, 8/8 prerequisites PASS. |
+| ~~Live HTTP/API auth and reachability~~ | **PARTIALLY RESOLVED 2026-08-27** — public origin `https://kanban.hermesinthenight.duckdns.org` reachability proven for `/healthz`, `/mcp` (401 with bearer challenge), and OAuth discovery. Full native API surface (dashboard plugin mount, native Hermes REST, etc.) remains `STILL_NOT_PROVEN`. | **Reclassified as PARTIALLY_RESOLVED** — see [CHECKPOINT-2026-08-27-V4-STABLE.md §1a](CHECKPOINT-2026-08-27-V4-STABLE.md) for the live readback evidence. Native API surface still requires a fresh read-only discovery in a controlled environment. |
 | Dashboard plugin live mount/auth | Source endpoints exist, but running gateway mount was not proven | Read-only plugin status/health evidence before workers/run MCP contracts |
 | Provider/model validity and quota | Profile configuration and provider credentials were not exercised | Controlled non-mutating provider validation |
 | Temporary per-task skill resolution | Partial source resolution depends on profile contents and dispatcher context | Disposable task preflight with no production mutation |
@@ -151,8 +152,26 @@ This section records the live release-candidate decision trail and supersession 
 - **Canonical 2026-08-19 docs** — authoritative for design/scope; where they conflict on *release-candidate* status, Kanban (live) wins and the doc should be re-reconciled.
 
 ### Evidence-state summary (point-in-time)
-- Deployed connector SHA: **STILL_NOT_PROVEN** (must be pinned at clean-build identity).
-- Outcome-gate closeout: **NOT_PROVEN** (pending `t_fc541b39` + `t_7c2f0fdd`).
-- G1: **blocked** (current Phase-S blocker).
-- Release authorization: **NOT_GRANTED** (separate revision-bound human gate).
+- **Deployed connector SHA: RESOLVED 2026-08-27** — bound to `4ae5060931a64741185c5c8deb3886a5901f21cc` (V4 stable, branch `v4-candidate-integration`, surface `beta`, API `v4.wave0`). See [CHECKPOINT-2026-08-27-V4-STABLE.md](CHECKPOINT-2026-08-27-V4-STABLE.md) and [RELEASE-STABLE-V4.md](../../RELEASE-STABLE-V4.md).
+- Outcome-gate closeout: **NOT_PROVEN** (pending `t_fc541b39` + `t_7c2f0dd`) — unchanged from 2026-08-21; the V4 stable cutover is **independent** of the outcome-gate closeout (the DAG soft-retire contract [DAG-SOFT-RETIRE-CONTRACT.md](DAG-SOFT-RETIRE-CONTRACT.md) is the contract; the `4ae5060` runtime is **edge_state-aware**, so the `PROJECTION_RUNTIME_P0` blocker is closed; the outcome-gate closeout is the next milestone, not a V4 stable prerequisite).
+- G1: **closed in `4ae5060`** (connector-side; outcome-gate chain still pending as a separate concern).
+- Release authorization: **RECEIVED 2026-08-27** via parent `t_1e84eb11` ACCEPT (all 8 prerequisites PASS, all Human Gates YES on exact `4ae5060`).
 - All canonical UNSAFE_TO_TEST items remain unresolved by safety classification.
+- V4 stable residuals (F-DOGFOOD-01, W0 Low init, ephemeral worker venv, `deployed_at` semantics, no stable checkout dir, 8791 dormant) are documented and non-blocking — see [CHECKPOINT-2026-08-27-V4-STABLE.md §6](CHECKPOINT-2026-08-27-V4-STABLE.md).
+
+---
+
+## 9. 2026-08-27 V4 Stable Truth-Sync — Residual Register (supplemental)
+
+This section records the **known residuals** explicitly preserved by the V4 stable acceptance. These are not blockers; they are accepted as documented limitations of the current V4 stable cutover and are durable evidence in the V4 stable release provenance.
+
+| # | Residual | Severity | Source | Why retained |
+|---|----------|----------|--------|---------------|
+| 1 | **F-DOGFOOD-01** `bounded_log` cursor `BACKEND_ERROR` — additive convenience only; `tail_bytes`, `get_activity`, `runtime_status`, `diagnostics` cover the observability acceptance | LOW, fail-closed | `t_45647dc7` extended dogfood (88/1) | Fix would require a new connector release + its own E2E + dogfood chain; out of scope for V4 stable cutover |
+| 2 | **W0 Low** `initialize` 1999-01-01 negotiates 2025-11-25 — no security impact | LOW | `t_068740be` independent review | Historical carry; no functional or security impact; deferred to a future wave |
+| 3 | **Ephemeral worker venv** `hermes_cli` `ModuleNotFoundError` — isolated to canary venv, bounded non-leak, not reproduced in retest, does not affect stable 8789 | LOW | canary-side observation | Bounded to canary venv; stable 8789 unaffected |
+| 4 | **`deployed_at` semantics** — `build.json` reports `2026-08-26T14:34:00Z` which is the canary's original deploy time, not the 2026-08-27 R2 cutover time | Informational | `t_a47fd88f` POST_SWITCH_REPORT residual note | No contract violation; downstream consumers reading `deployed_at` may interpret it as "stable cutover time" — documented for clarity |
+| 5 | **No `/opt/hermes-chatgpt-mcp` (stable checkout dir)** — stable venv exists at `/opt/venvs/hermes-chatgpt-mcp`; the corresponding checkout dir does not exist on this host; rollback uses the venv only | Informational | `t_1e84eb11` parent handoff | Rollback path documented; no checkout needed |
+| 6 | **Pre-V4 `hermes-chatgpt-mcp-beta.service` (8791) not running** in the V4 stable topology; pre-V4 `8791` deployment unit and `/var/lib/hermes-chatgpt-mcp-beta` state dir still exist on disk | Informational | live readback (no process on 8791) | Resurrecting 8791 requires fresh authorization; out of scope for V4 stable cutover |
+
+See [CHECKPOINT-2026-08-27-V4-STABLE.md §6](CHECKPOINT-2026-08-27-V4-STABLE.md) for the full residual register, including the F-DOGFOOD-01 chain (DIAGNOSE→FIX→REVIEW→REGRESSION→RETEST) and how each residual is bounded.

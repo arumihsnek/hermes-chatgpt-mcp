@@ -1,5 +1,7 @@
 # OCI deployment
 
+**Status:** V0.4 DEPLOYMENT CONTRACT (dated 2026-08-16; **SUPERSEDED for current runtime by the 2026-08-27 V4 stable cutover**). See [## V4 stable runtime (2026-08-27)](#v4-stable-runtime-2026-08-27) below for the current runtime truth. The v0.4 deployment procedure (systemd unit, root-owned OpenResty location include, env file, state directory, OAuth signing key) remains the **operational procedure** for the 8791 beta deployment unit when it is resurrected; the V4 stable cutover uses the canary + 8789 override model (see §V4 stable runtime below).
+
 The OCI host runs HermesKanban and terminates TLS in the existing 1Panel
 OpenResty container. `hermes-chatgpt-mcp` remains an independent systemd
 service on `127.0.0.1:8789`; OpenResty forwards only the MCP/OAuth/health
@@ -264,3 +266,56 @@ sudo journalctl -u hermes-chatgpt-mcp.service -g hermes_oauth_diagnostic --since
 Do not copy general Uvicorn access logs into evidence. The server disables
 Uvicorn access logging because OAuth query strings can contain PKCE and
 authorization state values. Never record token values or the OAuth state file.
+
+---
+
+## V4 stable runtime (2026-08-27)
+
+**This is the current runtime truth.** The v0.4 deployment procedure above remains the **operational procedure** (systemd unit, root-owned OpenResty location include, env file, state directory, OAuth signing key) for the `8791` beta deployment unit when it is resurrected. The V4 stable cutover uses a **canary + 8789 override** model: the same `4ae5060` candidate image is served at `127.0.0.1:8789` (public, via override) and at `127.0.0.1:8792` (canary, isolated), with `8791` dormant.
+
+### Topology
+
+| Surface | Loopback | Process | Working dir | Public route | Identity |
+|---------|----------|---------|-------------|---------------|----------|
+| Stable (public) | `127.0.0.1:8789` | `hermes-chatgpt-mcp.service` (MainPID 2505228) | `/opt/hermes-chatgpt-mcp-canary` (override-redirected; see `/etc/systemd/system/hermes-chatgpt-mcp.service.d/override.conf`) | OpenResty `hermes-chatgpt-mcp.locations` (SHA-256 `27caf874…0816`, unchanged) | `4ae5060931a64741185c5c8deb3886a5901f21cc` / `beta` / `v4.wave0` |
+| Canary (isolated) | `127.0.0.1:8792` | `hermes-chatgpt-mcp-canary.service` (MainPID 2506251) | `/opt/hermes-chatgpt-mcp-canary` | none (systemd disabled; no public route) | `4ae5060931a64741185c5c8deb3886a5901f21cc` / `beta` / `v4.wave0` |
+| Pre-V4 `8791` beta | **not running** | `hermes-chatgpt-mcp-beta.service` (dormant; unit + `/var/lib/hermes-chatgpt-mcp-beta` state dir still on disk) | n/a | n/a (pre-V4 v0.4 topology) | n/a — superseded by the canary + 8789 override model |
+
+### Public origin (current)
+
+- `https://kanban.hermesinthenight.duckdns.org/mcp` (MCP)
+- `https://kanban.hermesinthenight.duckdns.org/healthz` (healthz; identity headers: `x-v4-provenance: 4ae5060931a6/d7eba25/beta`, `x-api-version: v4.wave0`, `x-baseline-branch: v4/baseline-post-update-885e9ef`, `x-baseline-mcp: d7eba25ea8f6`)
+- `https://kanban.hermesinthenight.duckdns.org/.well-known/oauth-authorization-server` (OAuth discovery)
+- `https://kanban.hermesinthenight.duckdns.org/.well-known/oauth-protected-resource` (OAuth protected-resource metadata)
+
+### Rollback path (executable, byte-anchored, no installer run)
+
+The V4 stable rollback is **three reversible mutations only**:
+
+1. **Delete the override drop-in** at `/etc/systemd/system/hermes-chatgpt-mcp.service.d/override.conf` (SHA-256 `d8d87c59…1d90a`).
+2. **Restore the prior-good `build.json`** from the in-place backup `/var/lib/hermes-chatgpt-mcp/build.json.pre-surface-rectification-20260826T103951Z.bak` (commit `d7eba25ea8f6`, surface `stable`, deployed_at `2026-08-25T15:13:56Z`).
+3. **One bounded `systemctl restart hermes-chatgpt-mcp.service`** (the only restart; no daemon-reload, no OpenResty reload).
+
+No installer run, no wheel re-hash, no OAuth state rewrite, no credential rotation, no OpenResty mutation, no schema migration. The pre-promotion venv `/opt/venvs/hermes-chatgpt-mcp` is on disk (mtime 2026-08-17) and is reused. The pre-promotion env file `/home/ubuntu/.hermes/hermes-chatgpt-mcp.env` is on disk and is reused.
+
+### V4 stable identity (durable binding)
+
+- Connector: `4ae5060931a64741185c5c8deb3886a5901f21cc` (branch `v4-candidate-integration`)
+- Phase-S source bundle: `9a8410b4e883e27a4e0572951ee00f9faf4f3d19` (branch `release/source-bundle-phase-s`)
+- Hermes Core MCP baseline: `d7eba25ea8f692d2d0b65d7e5044df79e94c8a92` (header short `d7eba25ea8f6`; branch `v4/baseline-post-update-885e9ef`)
+- Surface: `beta` (controller classifies as STABLE; `Kanban_Beta` discovery label is stale naming metadata)
+- API version: `v4.wave0`
+- Live raw MCP `tools/list` tool count (reproducible 2026-08-28): **66** distinct names — the historical post-switch smoke `t_a47fd88f` (2026-08-26 14:34 UTC) reported **71**; the 5-tool delta is transient / not reproducible against the same `4ae5060` today. The ChatGPT-visible / invocable surface is **11** (frozen by `t_01200e57`) and is **not** equal to raw `tools/list`. Full reconciliation: [CHECKPOINT-2026-08-27-V4-STABLE.md §5.1](v4/CHECKPOINT-2026-08-27-V4-STABLE.md) + `t_f30cf660` §3.1.
+- v4.wave0 required tools (all 6 present, subset of the 11-tool ChatGPT contract): `list_boards`, `get_board`, `list_tasks`, `get_task`, `create_task`, `add_comment`
+
+### Authoritative references
+
+- **[RELEASE-STABLE-V4.md](../RELEASE-STABLE-V4.md)** — durable release anchor.
+- **[CHECKPOINT-2026-08-27-V4-STABLE.md](v4/CHECKPOINT-2026-08-27-V4-STABLE.md)** — full truth-sync checkpoint, including live readback, topology narrative, rollback path, residuals register, dogfood lessons.
+- **[CURRENT_STATE.md](v4/CURRENT_STATE.md) §17** — V4 stable reconciliation summary in the canonical source-of-truth doc.
+- **[EVIDENCE_AND_OPEN_QUESTIONS.md](v4/EVIDENCE_AND_OPEN_QUESTIONS.md) §2 + §9** — `STILL_NOT_PROVEN` register + V4 stable residual register.
+- **[STALE_DOCS.md](v4/STALE_DOCS.md)** — explicit classification of the v0.4 `8791` topology descriptions as **RETAIN / LINK; SUPERSEDE for current runtime**.
+
+### Historical context (preserved)
+
+The pre-V4 `8791` beta deployment procedure (systemd unit `hermes-chatgpt-mcp-beta.service`, env file `/home/ubuntu/.hermes/hermes-chatgpt-mcp-beta.env`, state dir `/var/lib/hermes-chatgpt-mcp-beta`, OpenResty include, etc.) is **preserved unchanged** in the v0.4 section above. The v0.4 procedure is the operational procedure to use when the `8791` beta is resurrected; it is **not** the current runtime. The 2026-08-27 V4 stable cutover chose the canary + 8789 override model (one candidate image at `4ae5060`, served both at 8792 isolated and at 8789 via override) rather than a parallel stable/beta dual-deployment.
