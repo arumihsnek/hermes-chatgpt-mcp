@@ -2,6 +2,8 @@
 
 Status: architecture selected for MCP v0.4 (2026-08-16)
 
+Related conductor architecture candidate: [`CONDUCTOR-COGNITIVE-ROUTING-R2.md`](./CONDUCTOR-COGNITIVE-ROUTING-R2.md). R2 treats Chat ↔ Work Cloud as the leading procedural-routing hypothesis while retaining Work Local and programmable Codex variants as comparison/fallback surfaces. It does not alter the canonical Hermes control-plane or authority rules in this integration.
+
 ## Hermes repository
 
 The canonical Hermes Agent source checkout is:
