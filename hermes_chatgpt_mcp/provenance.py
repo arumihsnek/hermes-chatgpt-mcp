@@ -2,6 +2,9 @@
 # Candidate: wt/t_78ac0513 — Wave-4 control-plane differential (carries forward W0 contract).
 from __future__ import annotations
 
+import json
+import os
+import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -70,8 +73,54 @@ def _git_head() -> tuple[str | None, str | None]:
     return None, None
 
 
+_FULL_SHA = re.compile(r"^[0-9a-f]{7,64}$")
+_BRANCH = re.compile(r"^[^\x00-\x1f\x7f]{1,128}$")
+
+
+def _manifest_candidate() -> tuple[str | None, str | None]:
+    """Read the identity declared by the running build.
+
+    A deployed service may run from a detached worktree, where Git reports
+    ``HEAD`` and can therefore describe the wrong candidate.  Once a build
+    manifest or explicit candidate environment is configured, that source is
+    authoritative and invalid data fails closed instead of falling back to the
+    process working directory.
+    """
+    manifest_path = os.environ.get("MCP_BUILD_METADATA_FILE", "").strip()
+    sha = os.environ.get("MCP_CANDIDATE_SHA", "").strip().lower()
+    branch = os.environ.get("MCP_CANDIDATE_BRANCH", "").strip()
+
+    if manifest_path:
+        try:
+            payload = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            return None, None
+        if not isinstance(payload, dict):
+            return None, None
+        declared_sha = payload.get("build_commit")
+        if not isinstance(declared_sha, str) or not declared_sha.strip():
+            return None, None
+        sha = declared_sha.strip().lower()
+        declared_branch = payload.get("candidate_branch")
+        if isinstance(declared_branch, str) and declared_branch.strip():
+            branch = declared_branch.strip()
+
+    if not _FULL_SHA.fullmatch(sha) or not _BRANCH.fullmatch(branch):
+        return None, None
+    return sha, branch
+
+
 def get_candidate_provenance(surface: str = "stable") -> CandidateProvenance:
-    sha, branch = _git_head()
+    configured = any(
+        os.environ.get(name, "").strip()
+        for name in ("MCP_BUILD_METADATA_FILE", "MCP_CANDIDATE_SHA", "MCP_CANDIDATE_BRANCH")
+    )
+    if configured:
+        # Never fall back to an unrelated Git cwd after deployment declares
+        # its identity source; that is the exact failure this projection fixes.
+        sha, branch = _manifest_candidate()
+    else:
+        sha, branch = _git_head()
     return CandidateProvenance(candidate_sha=sha, candidate_branch=branch, baseline=V4Baseline())
 
 

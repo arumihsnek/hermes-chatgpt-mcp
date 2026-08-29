@@ -26,7 +26,12 @@ from hermes_chatgpt_mcp.control_plane import (
     verify_canary_manifest,
 )
 from hermes_chatgpt_mcp.hermes import ReadOnlyHermesStore
-from hermes_chatgpt_mcp.provenance import API_VERSION, BASELINE_BRANCH, BASELINE_MCP_SHA
+from hermes_chatgpt_mcp.provenance import (
+    API_VERSION,
+    BASELINE_BRANCH,
+    BASELINE_MCP_SHA,
+    get_candidate_provenance,
+)
 
 from hermes_cli import kanban_db
 
@@ -680,3 +685,26 @@ async def _test_control_status_snapshot_is_bounded_read_only_and_partial_failure
     assert snap.notify_count is None
     assert "error" in (snap.dispatch_dry_run or {})
     assert snap.control_plane["api_version"] == API_VERSION
+
+
+def test_candidate_provenance_uses_declared_build_identity_and_fails_closed(tmp_path, monkeypatch):
+    candidate_sha = "ff15b65fcd5ef6eb9a5dafeecd3c3b1d646607b8"
+    metadata = tmp_path / "build.json"
+    metadata.write_text(
+        '{"build_commit": "' + candidate_sha + '", '
+        '"candidate_branch": "mcp-ui-forwardport-r2", "surface": "beta"}',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("MCP_BUILD_METADATA_FILE", str(metadata))
+    # A stale detached-worktree value must not override the manifest identity.
+    monkeypatch.setenv("MCP_CANDIDATE_BRANCH", "HEAD")
+
+    declared = get_candidate_provenance(surface="beta")
+    assert declared.candidate_sha == candidate_sha
+    assert declared.candidate_branch == "mcp-ui-forwardport-r2"
+    assert declared.provenance_header("beta") == candidate_sha[:12] + "/" + BASELINE_MCP_SHA[:7] + "/beta"
+
+    metadata.write_text("not-json", encoding="utf-8")
+    rejected = get_candidate_provenance(surface="beta")
+    assert rejected.candidate_sha is None
+    assert rejected.candidate_branch is None
