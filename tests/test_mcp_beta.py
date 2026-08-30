@@ -139,6 +139,34 @@ async def _test_chatgpt_compat_mode_freezes_exact_v41_tool_contract(tmp_path, mo
     }
 
 
+def test_chatgpt_compat_mode_exposes_r16_tool_only_when_interactive_ui_enabled(tmp_path, monkeypatch):
+    asyncio.run(_test_chatgpt_compat_mode_exposes_r16_tool_only_when_interactive_ui_enabled(tmp_path, monkeypatch))
+
+
+async def _test_chatgpt_compat_mode_exposes_r16_tool_only_when_interactive_ui_enabled(tmp_path, monkeypatch):
+    fixture, settings, auth, resolver, _ = _beta_app(tmp_path, monkeypatch)
+    settings = replace(settings, chatgpt_compat_mode=True, ui_interactive_r1=True)
+    app = create_app(board_resolver=resolver, settings=settings, auth_service=auth, surface="beta")
+    token = _token(auth, "compat-r16", ["hermes:read", "hermes:manage", "hermes:board:create"], board=fixture.board)
+    transport = httpx.ASGITransport(app=app)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=transport, base_url=settings.public_base_url) as client:
+            response = await client.post(
+                "/mcp",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Accept": "application/json, text/event-stream",
+                    "Content-Type": "application/json",
+                    "MCP-Protocol-Version": "2025-06-18",
+                },
+                json={"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
+            )
+    assert response.status_code == 200
+    names = {tool["name"] for tool in response.json()["result"]["tools"]}
+    assert "get_board_interactive_r16" in names
+    assert "get_board_interactive_r14" not in names
+
+
 def test_stateless_chatgpt_matrix_does_not_require_session_replay(tmp_path, monkeypatch):
     asyncio.run(_test_stateless_chatgpt_matrix_does_not_require_session_replay(tmp_path, monkeypatch))
 

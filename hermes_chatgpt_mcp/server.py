@@ -1677,6 +1677,12 @@ def create_app(
             "runtime_status", "attachments", "control-status", "canary",
             "diagnostics", "update_task",
         }
+        # The interactive MCP App is opt-in. When the deployment explicitly
+        # enables it, expose only the fresh R1.6 render tool through the
+        # otherwise frozen ChatGPT compatibility projection. Keeping this
+        # conditional preserves the exact legacy contract when the flag is off.
+        if settings.ui_interactive_r1:
+            allowed_tools.add("get_board_interactive_r16")
         mcp._tool_manager._tools = {  # type: ignore[attr-defined]
             name: tool
             for name, tool in mcp._tool_manager._tools.items()  # type: ignore[attr-defined]
