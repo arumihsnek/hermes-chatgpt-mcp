@@ -61,6 +61,29 @@ def _build_primary_kanban_ui(*, interactive: bool) -> str:
     return build_kanban_ui_interactive_r1_html() if interactive else build_kanban_ui_html()
 
 
+def _widget_resource_meta(*, public_base_url: str, version: str) -> dict[str, object]:
+    """Return MCP Apps template metadata required by ChatGPT.
+
+    The Kanban widgets are self-contained: they use the MCP Apps postMessage
+    bridge for tool calls and load no external scripts, styles, images, frames,
+    or fetch/XHR endpoints.  Therefore both CSP allowlists are intentionally
+    empty.  The widget domain is the deployment's own HTTPS origin so stable
+    and canary remain isolated without hard-coding either environment.
+    """
+    parsed = urlparse(public_base_url)
+    domain = f"{parsed.scheme}://{parsed.netloc}"
+    return {
+        "ui": {
+            "domain": domain,
+            "csp": {
+                "connectDomains": [],
+                "resourceDomains": [],
+            },
+        },
+        "version": version,
+    }
+
+
 from .schemas import (
     AddCommentInput,
     AddCommentResult,
@@ -825,7 +848,7 @@ def create_app(
     @mcp.resource(
         KANBAN_UI_RESOURCE_URI, name="hermes_kanban_ui", title="Hermes Kanban board",
         description="Read-only Hermes Kanban board view.", mime_type=KANBAN_UI_MIME_TYPE,
-        meta={"ui": {}},
+        meta=_widget_resource_meta(public_base_url=settings.public_base_url, version="v1"),
     )
     def kanban_ui() -> str:
         # ChatGPT may cache the original get_board -> resource URI binding for
@@ -841,7 +864,8 @@ def create_app(
     @mcp.resource(
         HUMAN_GATE_RESOURCE_URI, name="hermes_human_gate_ui", title="Hermes Human Gate readback",
         description="Non-authoritative Human Gate evidence and dashboard handoff.",
-        mime_type=KANBAN_UI_MIME_TYPE, meta={"ui": {}, "version": "v1"},
+        mime_type=KANBAN_UI_MIME_TYPE,
+        meta=_widget_resource_meta(public_base_url=settings.public_base_url, version="v1"),
     )
     def human_gate_ui() -> str:
         html = build_human_gate_ui_html()
@@ -856,7 +880,10 @@ def create_app(
             title="Hermes Kanban board (interactive R1)",
             description="Shared human+ChatGPT canonical Kanban controls with bounded reconciliation.",
             mime_type=KANBAN_UI_MIME_TYPE,
-            meta={"ui": {}, "version": "interactive-r1"},
+            meta=_widget_resource_meta(
+                public_base_url=settings.public_base_url,
+                version="interactive-r1",
+            ),
         )
         def kanban_ui_interactive_r1() -> str:
             return build_kanban_ui_interactive_r1_html()
@@ -867,7 +894,10 @@ def create_app(
             title="Hermes Kanban board (interactive R1.1 fresh binding)",
             description="Fresh-cache Interactive R1.1 binding for ChatGPT MCP Apps sessions.",
             mime_type=KANBAN_UI_MIME_TYPE,
-            meta={"ui": {}, "version": "interactive-r1.1-r14"},
+            meta=_widget_resource_meta(
+                public_base_url=settings.public_base_url,
+                version="interactive-r1.1-r14",
+            ),
         )
         def kanban_ui_interactive_r14() -> str:
             return build_kanban_ui_interactive_r1_html()
@@ -877,7 +907,8 @@ def create_app(
             KANBAN_UI_RESOURCE_URI_V2, name="hermes_kanban_ui_v2",
             title="Hermes Kanban board (create)",
             description="Bounded create-task view; canonical readback is required.",
-            mime_type=KANBAN_UI_MIME_TYPE, meta={"ui": {}, "version": "v2"},
+            mime_type=KANBAN_UI_MIME_TYPE,
+            meta=_widget_resource_meta(public_base_url=settings.public_base_url, version="v2"),
         )
         def kanban_ui_v2() -> str:
             return build_kanban_ui_v2_html()

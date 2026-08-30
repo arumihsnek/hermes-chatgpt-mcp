@@ -3,13 +3,30 @@ from __future__ import annotations
 from pathlib import Path
 
 from hermes_chatgpt_mcp.config import Settings
-from hermes_chatgpt_mcp.server import _build_primary_kanban_ui
+from hermes_chatgpt_mcp.server import _build_primary_kanban_ui, _widget_resource_meta
 from hermes_chatgpt_mcp.ui import (
     KANBAN_UI_HTML_INTERACTIVE_R1,
     KANBAN_UI_RESOURCE_URI_INTERACTIVE_R1,
     KANBAN_UI_RESOURCE_URI_INTERACTIVE_R14,
     build_kanban_ui_interactive_r1_html,
 )
+
+
+def test_widget_resource_meta_declares_domain_and_empty_inline_csp():
+    meta = _widget_resource_meta(
+        public_base_url="https://kanban-canary.hermesinthenight.duckdns.org/path/ignored",
+        version="interactive-r1.1-r15",
+    )
+    assert meta == {
+        "ui": {
+            "domain": "https://kanban-canary.hermesinthenight.duckdns.org",
+            "csp": {
+                "connectDomains": [],
+                "resourceDomains": [],
+            },
+        },
+        "version": "interactive-r1.1-r15",
+    }
 
 
 def test_primary_cached_uri_keeps_legacy_ui_when_interactive_flag_is_off():
