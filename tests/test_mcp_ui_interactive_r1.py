@@ -1,11 +1,25 @@
 from __future__ import annotations
 
 from hermes_chatgpt_mcp.config import Settings
+from hermes_chatgpt_mcp.server import _build_primary_kanban_ui
 from hermes_chatgpt_mcp.ui import (
     KANBAN_UI_HTML_INTERACTIVE_R1,
     KANBAN_UI_RESOURCE_URI_INTERACTIVE_R1,
     build_kanban_ui_interactive_r1_html,
 )
+
+
+def test_primary_cached_uri_keeps_legacy_ui_when_interactive_flag_is_off():
+    html = _build_primary_kanban_ui(interactive=False)
+    assert 'data-ui-version="interactive-r1.1"' not in html
+
+
+def test_primary_cached_uri_serves_interactive_ui_when_flag_is_on():
+    html = _build_primary_kanban_ui(interactive=True)
+    assert 'data-ui-version="interactive-r1.1"' in html
+    assert 'id="status-strip"' in html
+    assert 'id="confirm-bar"' in html
+    assert 'function renderColumns()' in html
 
 
 def test_interactive_r1_resource_is_bounded_and_named():

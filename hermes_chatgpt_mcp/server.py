@@ -48,6 +48,18 @@ from .ui import (
     build_kanban_ui_v2_html,
     build_kanban_ui_interactive_r1_html,
 )
+
+
+def _build_primary_kanban_ui(*, interactive: bool) -> str:
+    """Return the UI served at the original cache-stable Kanban resource URI.
+
+    Existing ChatGPT connector sessions can retain the original get_board ->
+    resource URI binding.  Keeping the primary URI mode-aware lets those
+    sessions receive Interactive R1 without requiring connector rediscovery.
+    """
+    return build_kanban_ui_interactive_r1_html() if interactive else build_kanban_ui_html()
+
+
 from .schemas import (
     AddCommentInput,
     AddCommentResult,
@@ -789,7 +801,12 @@ def create_app(
         meta={"ui": {}},
     )
     def kanban_ui() -> str:
-        html = build_kanban_ui_html()
+        # ChatGPT may cache the original get_board -> resource URI binding for
+        # the lifetime of a connector session.  When Interactive R1 is enabled,
+        # keep that legacy URI as an alias for the interactive resource so an
+        # already-connected client receives the upgraded UI without requiring a
+        # connector rediscovery/reconnect.
+        html = _build_primary_kanban_ui(interactive=settings.ui_interactive_r1)
         if len(html.encode("utf-8")) > KANBAN_UI_MAX_BYTES:
             raise ValueError("Kanban UI resource exceeds size limit")
         return html
