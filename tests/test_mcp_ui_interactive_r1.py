@@ -81,3 +81,50 @@ def test_interactive_r1_flag_parses_from_env(monkeypatch):
     monkeypatch.setenv("MCP_OAUTH_SIGNING_KEY", "b" * 48)
     monkeypatch.setenv("UI_INTERACTIVE_R1", "true")
     assert Settings.from_env().ui_interactive_r1 is True
+
+
+def test_interactive_r11_defaults_to_todo_ready_running_columns():
+    html = KANBAN_UI_HTML_INTERACTIVE_R1
+    assert 'data-ui-version="interactive-r1.1"' in html
+    assert 'visible:{todo:true,ready:true,running:true}' in html
+    assert 'running:"In progress"' in html
+    assert 'id="status-strip"' in html
+    assert 'white-space:nowrap' in html
+    assert 'overflow-x:auto' in html
+    assert 'toggle-count' in html
+
+
+def test_interactive_r11_stages_actions_before_confirming():
+    html = KANBAN_UI_HTML_INTERACTIVE_R1
+    assert 'id="confirm-bar"' in html
+    assert 'id="confirm-all"' in html
+    assert 'id="undo-all"' in html
+    assert 'function stageAction(action)' in html
+    assert 'function confirmStaged()' in html
+    assert 'Action marked — confirm to apply canonical mutation.' in html
+    assert 'class="pending-badge"' not in html  # created dynamically, never trusted as static success
+    assert 'pending-badge' in html
+    assert 'pending-incoming' in html
+    assert 'state.staged' in html
+
+
+def test_interactive_r11_dependency_highlights_visible_and_hidden_columns():
+    html = KANBAN_UI_HTML_INTERACTIVE_R1
+    assert '"get_task_graph"' in html
+    assert 'depth:1,max_nodes:64' in html
+    assert 'pointerenter' in html
+    assert 'touchstart' in html
+    assert 'dep-highlight' in html
+    assert 'dep-hidden' in html
+    assert 'dep-visible' in html
+    assert '↗' in html
+    assert 'state.graphs' in html
+
+
+def test_interactive_r11_renders_cards_inside_status_columns():
+    html = KANBAN_UI_HTML_INTERACTIVE_R1
+    assert 'id="board-columns"' in html
+    assert 'tasksByStatus' in html
+    assert 'function loadStatus(k)' in html
+    assert 'function renderColumns()' in html
+    assert 'grid-auto-columns:minmax(82vw,1fr)' in html
