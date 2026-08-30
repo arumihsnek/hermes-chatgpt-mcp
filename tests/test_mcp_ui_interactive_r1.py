@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from hermes_chatgpt_mcp.config import Settings
 from hermes_chatgpt_mcp.server import _build_primary_kanban_ui
 from hermes_chatgpt_mcp.ui import (
     KANBAN_UI_HTML_INTERACTIVE_R1,
     KANBAN_UI_RESOURCE_URI_INTERACTIVE_R1,
+    KANBAN_UI_RESOURCE_URI_INTERACTIVE_R14,
     build_kanban_ui_interactive_r1_html,
 )
 
@@ -27,6 +30,15 @@ def test_interactive_r1_resource_is_bounded_and_named():
     assert KANBAN_UI_RESOURCE_URI_INTERACTIVE_R1 == "ui://hermes/kanban/interactive-r1"
     assert html == KANBAN_UI_HTML_INTERACTIVE_R1
     assert len(html.encode("utf-8")) <= 262_144
+
+
+def test_interactive_r14_uses_fresh_tool_and_fresh_resource_binding():
+    assert KANBAN_UI_RESOURCE_URI_INTERACTIVE_R14 == "ui://hermes/kanban/interactive-r14-fresh-tool"
+    source = (Path(__file__).parents[1] / "hermes_chatgpt_mcp" / "server.py").read_text(encoding="utf-8")
+    assert 'name="get_board_interactive_r14"' in source
+    assert 'resourceUri": KANBAN_UI_RESOURCE_URI_INTERACTIVE_R14' in source
+    assert 'name="hermes_kanban_ui_interactive_r14"' in source
+    assert 'return build_kanban_ui_interactive_r1_html()' in source
 
 
 def test_interactive_r1_uses_only_allowlisted_canonical_mutations():

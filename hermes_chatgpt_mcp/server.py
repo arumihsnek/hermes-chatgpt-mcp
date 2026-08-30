@@ -44,6 +44,7 @@ from .ui import (
     KANBAN_UI_RESOURCE_URI,
     KANBAN_UI_RESOURCE_URI_V2,
     KANBAN_UI_RESOURCE_URI_INTERACTIVE_R1,
+    KANBAN_UI_RESOURCE_URI_INTERACTIVE_R14,
     build_kanban_ui_html,
     build_kanban_ui_v2_html,
     build_kanban_ui_interactive_r1_html,
@@ -600,6 +601,32 @@ def create_app(
         )
         return view
 
+    if settings.ui_interactive_r1:
+        @mcp.tool(
+            name="get_board_interactive_r14",
+            description="Read the configured Hermes Kanban board and render the fresh Interactive R1.1 MCP App binding.",
+            annotations=readonly,
+            structured_output=True,
+            meta={"ui": {"resourceUri": KANBAN_UI_RESOURCE_URI_INTERACTIVE_R14}, "ui_version": "interactive-r1.1-r14"},
+        )
+        async def get_board_interactive_r14(request: BoardQuery) -> BoardView:
+            handle = resolve_board(request.board, operation="read")
+            view = await run_query(board_resolver.query_adapter(handle).get_board)
+            can_create = (
+                has_command_scope(auth_service.create_scope, handle.slug)
+                and board_resolver.create_allowed(handle.slug)
+            )
+            view.capabilities = BetaBoardCapabilities(
+                read=True,
+                create=can_create,
+                manage=(
+                    has_command_scope(auth_service.manage_scope, handle.slug)
+                    if beta
+                    else False
+                ),
+            )
+            return view
+
     @mcp.tool(
         name="list_tasks",
         description="List bounded Hermes tasks using canonical status, assignee, tenant, and session filters.",
@@ -832,6 +859,17 @@ def create_app(
             meta={"ui": {}, "version": "interactive-r1"},
         )
         def kanban_ui_interactive_r1() -> str:
+            return build_kanban_ui_interactive_r1_html()
+
+        @mcp.resource(
+            KANBAN_UI_RESOURCE_URI_INTERACTIVE_R14,
+            name="hermes_kanban_ui_interactive_r14",
+            title="Hermes Kanban board (interactive R1.1 fresh binding)",
+            description="Fresh-cache Interactive R1.1 binding for ChatGPT MCP Apps sessions.",
+            mime_type=KANBAN_UI_MIME_TYPE,
+            meta={"ui": {}, "version": "interactive-r1.1-r14"},
+        )
+        def kanban_ui_interactive_r14() -> str:
             return build_kanban_ui_interactive_r1_html()
 
     if settings.ui_write_enabled_v2:

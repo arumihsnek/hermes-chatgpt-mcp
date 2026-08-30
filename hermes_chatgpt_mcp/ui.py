@@ -5,6 +5,7 @@ KANBAN_UI_MIME_TYPE = "text/html;profile=mcp-app"
 KANBAN_UI_MAX_BYTES = 262_144
 KANBAN_UI_RESOURCE_URI_V2 = "ui://hermes/kanban/v2"
 KANBAN_UI_RESOURCE_URI_INTERACTIVE_R1 = "ui://hermes/kanban/interactive-r1"
+KANBAN_UI_RESOURCE_URI_INTERACTIVE_R14 = "ui://hermes/kanban/interactive-r14-fresh-tool"
 HUMAN_GATE_RESOURCE_URI = "ui://hermes/human-gate/v1"
 
 KANBAN_UI_HTML_V1 = r'''<!DOCTYPE html>
