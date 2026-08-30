@@ -66,6 +66,8 @@ The widget should publish compact selection context to the model when the host s
 
 ChatGPT must not rely exclusively on host-retained widget context. The MCP must also expose a bounded session-scoped selection read/write surface so that the assistant can recover the active proposal and selection after refresh, reconnect, or context loss.
 
+Selection state must carry `updated_at` and a bounded TTL. R1 SHOULD default to a short recoverability window (for example 30 minutes) and MUST treat expired selection as absent. A selection write should include the exact proposal revision it refers to; if that revision is no longer current, the server returns a stale-selection signal rather than silently rebinding the same refs.
+
 Natural-language references such as "estas dos", "la rama que he seleccionado", or "las tres de arriba" may resolve only when the selection token is current and unambiguous. Otherwise the assistant must read the active selection rather than guess.
 
 Selection conveys reference, not authority. Selecting a task never authorizes mutation.
@@ -106,6 +108,8 @@ A revision contains a bounded set of operations such as:
 
 Every mutation uses optimistic concurrency through `expected_revision`.
 
+`proposal_apply` MUST be bounded. R1 should define explicit maxima for operations per call, draft cards/edges per proposal, payload bytes, and readback items. Oversized batches fail before mutation; they are never silently truncated. Every successful apply returns the new exact revision and a bounded readback of changed draft entities.
+
 Concurrent stale writes fail with `CONFLICT`; the server does not silently merge semantically conflicting edits.
 
 ### 4.3 Draft identity
@@ -127,16 +131,18 @@ On commit the server returns an exact mapping:
 
 Draft edge references are rewritten through this mapping transactionally or through a validated bounded sequence with compensating failure semantics.
 
+Committed revisions MUST persist an audit fingerprint over the exact proposal revision, canonical materialization mapping, and commit outcome. The fingerprint is evidence for later review/debugging; it does not replace canonical task/edge readback.
+
 ## 5. Base-state and stale-plan protection
 
 Proposal commit must bind to the canonical state the user actually reviewed.
 
-Do not depend solely on `board_revision` until the runtime proves it is meaningful and monotonic. A valid `base_snapshot` may combine:
+Do not depend solely on `board_revision` until the runtime proves it is meaningful and monotonic. R1 MUST define a minimum evidence set for `base_snapshot`: exact IDs plus stable fingerprints of every canonical task/edge the proposal reads or proposes to change. A monotonic board revision and/or ledger cursor may strengthen that evidence but cannot substitute for the affected-set fingerprints until independently proven reliable. A valid `base_snapshot` may therefore include:
 
+- required stable fingerprints of canonical tasks/edges touched by the proposal;
+- exact task IDs + relevant fields + dependency edges used to compute those fingerprints;
 - canonical board revision when reliable;
-- ledger/event cursor;
-- stable fingerprints of canonical tasks touched by the proposal;
-- exact task IDs + relevant fields + dependency edges.
+- ledger/event cursor when reliable.
 
 At commit, canonical items referenced or modified by the proposal are re-read.
 
@@ -186,6 +192,7 @@ By default, newly materialized tasks must be created in a non-dispatchable plann
    - proposed patches;
    - new/removed dependency edges;
    - skipped/invalid items;
+   - exact canonical scopes/capabilities required by each operation;
    - expected post-commit non-dispatchable states.
 6. Require explicit user confirmation of that exact revision/preview.
 7. Execute a bounded canonical mutation sequence.
@@ -199,7 +206,7 @@ No optimistic UI success before canonical readback.
 
 Partial commit is a first-class use case.
 
-The user may select a subset of draft cards/branches and commit only that subset if the dependency closure is valid.
+The user may select a subset of draft cards/branches and commit only that subset if the dependency closure is valid. R1 defines valid closure as the selected draft set plus every unresolved draft ancestor required for those selected nodes to be well-formed at materialization time. Already-canonical ancestors satisfy the closure without adding draft work. Draft descendants are never pulled in automatically. If a required draft ancestor is explicitly excluded by the user, the partial commit fails rather than widening the subset silently.
 
 The server must compute and display:
 
