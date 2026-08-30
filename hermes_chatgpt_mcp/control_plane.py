@@ -9,7 +9,7 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any, Literal
 
-from .provenance import API_VERSION, get_baseline, get_candidate_provenance
+from .provenance import API_VERSION, bind_candidate_provenance_to_task, get_baseline, get_candidate_provenance
 from .release import BuildMetadataError, canary_manifest
 
 # ── Clean-architecture boundaries ──────────────────────────────────────────
@@ -209,8 +209,23 @@ def build_gate_context(
     surface: Literal["stable", "beta"] = "stable",
     residual_risk: list[str] | None = None,
 ) -> HumanGateContext:
-    prov = provenance_bundle(surface)
     task = read_adapter.get_task(task_id)
+    task_bound = bind_candidate_provenance_to_task(getattr(task, "body", "") or "")
+    if task_bound is None:
+        prov = provenance_bundle(surface)
+    else:
+        base = task_bound.baseline
+        prov = GateCandidateProvenance(
+            candidate_sha=task_bound.candidate_sha,
+            candidate_branch=task_bound.candidate_branch,
+            baseline_branch=base.branch,
+            baseline_mcp_sha=base.mcp_sha,
+            baseline_hermes_sha=base.hermes_sha,
+            baseline_phase_s_sha=base.phase_s_sha,
+            api_version=base.api_version,
+            surface=surface,
+            provenance_header=task_bound.provenance_header(surface),
+        )
     activity = read_adapter.get_activity(task_id, max_items=20, log_bytes=0)
     dispatch = read_adapter.get_dispatch(task_id)
 
