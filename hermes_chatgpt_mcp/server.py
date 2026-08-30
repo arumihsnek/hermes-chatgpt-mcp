@@ -43,8 +43,10 @@ from .ui import (
     KANBAN_UI_MAX_BYTES,
     KANBAN_UI_RESOURCE_URI,
     KANBAN_UI_RESOURCE_URI_V2,
+    KANBAN_UI_RESOURCE_URI_INTERACTIVE_R1,
     build_kanban_ui_html,
     build_kanban_ui_v2_html,
+    build_kanban_ui_interactive_r1_html,
 )
 from .schemas import (
     AddCommentInput,
@@ -566,7 +568,7 @@ def create_app(
         description="Read the configured Hermes Kanban board summary and status counts.",
         annotations=readonly,
         structured_output=True,
-        meta={"ui": {"resourceUri": KANBAN_UI_RESOURCE_URI}},
+        meta={"ui": {"resourceUri": (KANBAN_UI_RESOURCE_URI_INTERACTIVE_R1 if settings.ui_interactive_r1 else KANBAN_UI_RESOURCE_URI)}},
     )
     async def get_board(request: BoardQuery) -> BoardView:
         handle = resolve_board(request.board, operation="read")
@@ -802,6 +804,18 @@ def create_app(
         if len(html.encode("utf-8")) > KANBAN_UI_MAX_BYTES:
             raise ValueError("Human Gate UI resource exceeds size limit")
         return html
+
+    if settings.ui_interactive_r1:
+        @mcp.resource(
+            KANBAN_UI_RESOURCE_URI_INTERACTIVE_R1,
+            name="hermes_kanban_ui_interactive_r1",
+            title="Hermes Kanban board (interactive R1)",
+            description="Shared human+ChatGPT canonical Kanban controls with bounded reconciliation.",
+            mime_type=KANBAN_UI_MIME_TYPE,
+            meta={"ui": {}, "version": "interactive-r1"},
+        )
+        def kanban_ui_interactive_r1() -> str:
+            return build_kanban_ui_interactive_r1_html()
 
     if settings.ui_write_enabled_v2:
         @mcp.resource(

@@ -25,9 +25,11 @@ import pytest
 from hermes_chatgpt_mcp.ui import (
     KANBAN_UI_HTML_V1,
     KANBAN_UI_HTML_V2,
+    KANBAN_UI_HTML_INTERACTIVE_R1,
     build_human_gate_ui_html,
     build_kanban_ui_html,
     build_kanban_ui_v2_html,
+    build_kanban_ui_interactive_r1_html,
 )
 from hermes_chatgpt_mcp.human_gate_ui import build_human_gate_ui_html as _hg_html
 
@@ -46,6 +48,7 @@ def _script_bodies(html: str) -> list[str]:
     [
         ("V1", KANBAN_UI_HTML_V1),
         ("V2", KANBAN_UI_HTML_V2),
+        ("INTERACTIVE_R1", KANBAN_UI_HTML_INTERACTIVE_R1),
         ("HG", _hg_html()),
     ],
 )
@@ -74,6 +77,7 @@ def test_html_no_literal_backslash_n_in_scripts(html_name, html):
     [
         ("V1", KANBAN_UI_HTML_V1),
         ("V2", KANBAN_UI_HTML_V2),
+        ("INTERACTIVE_R1", KANBAN_UI_HTML_INTERACTIVE_R1),
         ("HG", _hg_html()),
     ],
 )

@@ -4,6 +4,7 @@ KANBAN_UI_RESOURCE_URI = "ui://hermes/kanban/v1"
 KANBAN_UI_MIME_TYPE = "text/html;profile=mcp-app"
 KANBAN_UI_MAX_BYTES = 262_144
 KANBAN_UI_RESOURCE_URI_V2 = "ui://hermes/kanban/v2"
+KANBAN_UI_RESOURCE_URI_INTERACTIVE_R1 = "ui://hermes/kanban/interactive-r1"
 HUMAN_GATE_RESOURCE_URI = "ui://hermes/human-gate/v1"
 
 KANBAN_UI_HTML_V1 = r'''<!DOCTYPE html>
@@ -120,6 +121,61 @@ postCall("tools/call",{name:"get_board",arguments:{request:{}}},state.pendingRea
 def build_kanban_ui_v2_html() -> str:
     """Minimal write-capable shell; all authority stays in the host bridge."""
     html = KANBAN_UI_HTML_V2
+    if len(html.encode("utf-8")) > KANBAN_UI_MAX_BYTES:
+        raise ValueError("Kanban UI resource exceeds size limit")
+    return html
+
+
+KANBAN_UI_HTML_INTERACTIVE_R1 = r'''<!DOCTYPE html>
+<html lang="en" data-ui-version="interactive-r1">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"><meta name="referrer" content="no-referrer"><meta http-equiv="X-Frame-Options" content="DENY">
+<title>Hermes Kanban interactive</title>
+<style>
+:root{color-scheme:light dark;font:14px system-ui,sans-serif}*{box-sizing:border-box}body{margin:0;padding:12px;color:#202124;background:#fff}header{display:flex;align-items:center;gap:8px;flex-wrap:wrap;border-bottom:1px solid #ccd0d5;padding-bottom:10px}h1{font-size:18px;margin:0;flex:1}button,select,input,textarea{font:inherit;border:1px solid #9aa0a6;border-radius:6px;background:#fff;color:inherit}button,select,input{padding:6px 9px}button[disabled]{opacity:.45}textarea{padding:8px;width:100%;min-height:72px}.columns{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin:12px 0}.column{padding:8px;border:1px solid #d7dbe0;border-radius:8px;background:#f7f8f9}.column h2{font-size:12px;margin:0;text-transform:capitalize}.count{font-size:22px}.layout{display:grid;grid-template-columns:minmax(220px,1fr) minmax(260px,1fr);gap:10px}.cards,.panel{display:grid;gap:6px}.card,.panel{padding:9px;border:1px solid #d7dbe0;border-radius:8px}.card{cursor:pointer}.card[aria-selected="true"]{outline:2px solid currentColor}.row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.row>*{min-width:0}.grow{flex:1}.muted{color:#687078;font-size:12px}.error{color:#a61b1b}.ok{color:#176b32}.banner{padding:7px;border:1px solid #d7dbe0;border-radius:6px;margin:10px 0}.hidden{display:none}@media(max-width:720px){.layout{grid-template-columns:1fr}}
+</style></head>
+<body>
+<header><h1>Hermes Kanban</h1><select id="board-picker" aria-label="Board"></select><button id="refresh" type="button">Refresh</button><button id="live" type="button">Live sync (60s)</button><button id="create-toggle" type="button">Create card</button></header>
+<div id="status" class="banner muted">Loading canonical board…</div>
+<section id="create-panel" class="panel hidden"><strong>Create card</strong><label>Title <input id="create-title" maxlength="512"></label><label>Body <textarea id="create-body" maxlength="64000"></textarea></label><div class="row"><button id="create-submit" type="button">Create</button><button id="create-cancel" type="button">Cancel</button></div></section>
+<section id="columns" class="columns" aria-label="Status counts"></section>
+<div class="layout"><section id="cards" class="cards" aria-label="Cards"></section><aside id="inspector" class="panel"><strong>Inspector</strong><p class="muted">Select a card.</p></aside></div>
+<script>
+(function(){
+"use strict";
+var LIVE_INTERVAL_MS=3000,MAX_LIVE_CYCLES=20,LIVE_MAX_MS=60000;
+var state={board:null,boards:[],tasks:[],selected:null,request:0,pending:{},inflightMutation:false,liveTimer:null,liveCycles:0,liveDeadline:0};
+var picker=document.getElementById("board-picker"),columns=document.getElementById("columns"),cards=document.getElementById("cards"),inspector=document.getElementById("inspector"),status=document.getElementById("status"),liveBtn=document.getElementById("live"),createPanel=document.getElementById("create-panel");
+function text(n,v){n.textContent=v==null?"":String(v)}
+function node(tag,cls,value){var e=document.createElement(tag);if(cls)e.className=cls;if(value!=null)text(e,value);return e}
+function setStatus(v,kind){status.className="banner "+(kind||"muted");text(status,v)}
+function selectedBoard(){return picker.value||state.board||null}
+function nextId(){return ++state.request}
+function call(name,args,kind){var id=nextId();state.pending[id]={name:name,kind:kind||name};window.parent.postMessage({jsonrpc:"2.0",id:id,method:"tools/call",params:{name:name,arguments:args||{}}},"*");return id}
+function resultOf(m){var r=m.result||m.params||m;return r.structuredContent||r.data||r}
+function refresh(includeTask){var b=selectedBoard();call("get_board",{request:{board:b}},"board");call("list_tasks",{request:{board:b,limit:100,order_by:"priority"}},"tasks");if(includeTask&&state.selected)call("get_task",{request:{board:b,task_id:state.selected}},"task")}
+function renderBoards(d){var items=(d&&d.items)||[];state.boards=items;while(picker.firstChild)picker.removeChild(picker.firstChild);items.forEach(function(it){var o=node("option",null,it.name||it.slug);o.value=it.slug;picker.appendChild(o)});var wanted=state.board||(d&&d.default_board)||(items[0]&&items[0].slug);if(wanted){picker.value=wanted;state.board=wanted}}
+function renderBoard(d){state.board=(d&&d.slug)||selectedBoard()||state.board;while(columns.firstChild)columns.removeChild(columns.firstChild);var counts=(d&&d.task_counts)||{};["triage","todo","ready","running","blocked","review","done"].forEach(function(k){var c=node("article","column"),h=node("h2",null,k),n=node("div","count",counts[k]||0);c.appendChild(h);c.appendChild(n);columns.appendChild(c)});setStatus("Canonical board refreshed · "+new Date().toLocaleTimeString(),"ok")}
+function renderTasks(d){state.tasks=(d&&d.items)||[];while(cards.firstChild)cards.removeChild(cards.firstChild);state.tasks.forEach(function(it){var id=it.task_id||it.id,card=node("article","card"),title=node("strong",null,it.title||id),meta=node("div","muted",id+" · "+(it.status||"")+" · "+(it.assignee||"unassigned"));card.dataset.id=id;card.setAttribute("aria-selected",String(id===state.selected));card.appendChild(title);card.appendChild(meta);card.addEventListener("click",function(){state.selected=id;renderTasks({items:state.tasks});call("get_task",{request:{board:selectedBoard(),task_id:id}},"task")});cards.appendChild(card)})}
+function actionButton(label,fn,disabled){var b=node("button",null,label);b.type="button";b.disabled=!!disabled;b.addEventListener("click",fn);return b}
+function mutate(name,args,taskId){if(state.inflightMutation){setStatus("Another mutation is in flight.","error");return}state.inflightMutation=true;setStatus("Action in flight — canonical readback required…","muted");call(name,args,"mutation:"+(taskId||""))}
+function renderTask(t){while(inspector.firstChild)inspector.removeChild(inspector.firstChild);if(!t){inspector.appendChild(node("p","muted","Task readback unavailable."));return}state.selected=t.id||t.task_id||state.selected;inspector.appendChild(node("strong",null,t.title||state.selected));inspector.appendChild(node("div","muted",state.selected+" · "+(t.status||"")+" · "+(t.assignee||"unassigned")));if(t.body)inspector.appendChild(node("p",null,t.body));var comment=node("textarea");comment.placeholder="Comment";inspector.appendChild(comment);inspector.appendChild(actionButton("Add comment",function(){var v=comment.value.trim();if(!v)return;mutate("add_comment",{request:{board:selectedBoard(),task_id:state.selected,body:v}},state.selected)}));var assignRow=node("div","row"),assignee=node("input","grow");assignee.placeholder="Assignee profile";assignRow.appendChild(assignee);assignRow.appendChild(actionButton("Assign",function(){var v=assignee.value.trim();if(!v)return;mutate("assign_task",{request:{board:selectedBoard(),task_id:state.selected,assignee:v}},state.selected)}));inspector.appendChild(assignRow);var reason=node("input","grow");reason.placeholder="Reason (optional except changes)";inspector.appendChild(reason);var actions=node("div","row"),st=t.status||"";if(st==="blocked")actions.appendChild(actionButton("Unblock",function(){mutate("unblock_tasks",{request:{board:selectedBoard(),task_ids:[state.selected],reason:reason.value||"Unblocked from MCP Apps UI"}},state.selected)}));else actions.appendChild(actionButton("Block",function(){mutate("block_tasks",{request:{board:selectedBoard(),task_ids:[state.selected],kind:"manual",reason:reason.value||"Blocked from MCP Apps UI"}},state.selected)},st==="done"));actions.appendChild(actionButton("Request review",function(){mutate("request_review",{request:{board:selectedBoard(),task_id:state.selected,summary:reason.value||"Requested from MCP Apps UI",reviewer:"reviewer"}},state.selected)},st==="done"||st==="review"));actions.appendChild(actionButton("Request changes",function(){var r=reason.value.trim();if(!r){setStatus("Request changes requires a reason.","error");return}mutate("request_changes",{request:{board:selectedBoard(),task_id:state.selected,reason:r}},state.selected)},st!=="review"));actions.appendChild(actionButton("Reopen review",function(){mutate("reopen_review",{request:{board:selectedBoard(),task_ids:[state.selected],reason:reason.value||"Reopened from MCP Apps UI"}},state.selected)},st!=="review"));inspector.appendChild(actions);inspector.appendChild(node("p","muted","No complete/archive/delete/Human-Gate decision controls are exposed in Interactive R1."))}
+function reconcile(taskId){state.inflightMutation=false;refresh(false);if(taskId)call("get_task",{request:{board:selectedBoard(),task_id:taskId}},"task");setStatus("Tool returned; reconciling canonical state…","muted")}
+function stopLive(){if(state.liveTimer){clearInterval(state.liveTimer);state.liveTimer=null}state.liveCycles=0;liveBtn.textContent="Live sync (60s)"}
+function liveTick(){if(document.hidden)return;if(Date.now()>state.liveDeadline||state.liveCycles>=MAX_LIVE_CYCLES){stopLive();return}state.liveCycles++;refresh(true)}
+function startLive(){if(state.liveTimer){stopLive();return}state.liveCycles=0;state.liveDeadline=Date.now()+LIVE_MAX_MS;liveBtn.textContent="Stop live sync";liveTick();state.liveTimer=setInterval(liveTick,LIVE_INTERVAL_MS)}
+picker.addEventListener("change",function(){state.board=selectedBoard();state.selected=null;refresh(false);renderTask(null)});document.getElementById("refresh").addEventListener("click",function(){refresh(true)});liveBtn.addEventListener("click",startLive);document.addEventListener("visibilitychange",function(){if(document.hidden)stopLive()});window.addEventListener("unload",stopLive);
+document.getElementById("create-toggle").addEventListener("click",function(){createPanel.classList.remove("hidden")});document.getElementById("create-cancel").addEventListener("click",function(){createPanel.classList.add("hidden")});document.getElementById("create-submit").addEventListener("click",function(){var title=document.getElementById("create-title").value.trim(),body=document.getElementById("create-body").value;if(!title){setStatus("Title is required.","error");return}mutate("create_task",{request:{board:selectedBoard(),title:title,body:body||null,idempotency_key:"ui-"+crypto.randomUUID()}},null)});
+window.addEventListener("message",function(e){var m=e.data||{};if(m.method==="ui/notifications/tool-result"&&m.params)m=m.params;var p=state.pending[m.id];if(!p)return;delete state.pending[m.id];if(m.error){if(p.kind.indexOf("mutation:")===0)state.inflightMutation=false;setStatus((p.name||"Tool")+" failed: "+(m.error.message||"host error"),"error");refresh(true);return}var d=resultOf(m);if(p.kind==="boards")renderBoards(d);else if(p.kind==="board")renderBoard(d);else if(p.kind==="tasks")renderTasks(d);else if(p.kind==="task")renderTask(d);else if(p.kind.indexOf("mutation:")===0)reconcile(p.kind.slice(9));});
+window.parent.postMessage({jsonrpc:"2.0",id:0,method:"ui/initialize",params:{protocolVersion:"2025-06-18"}},"*");call("list_boards",{},"boards");refresh(false);
+}());
+</script></body></html>'''
+
+
+def build_kanban_ui_interactive_r1_html() -> str:
+    """Bounded shared-control UI using only canonical host-bridged Hermes tools."""
+    html = KANBAN_UI_HTML_INTERACTIVE_R1
     if len(html.encode("utf-8")) > KANBAN_UI_MAX_BYTES:
         raise ValueError("Kanban UI resource exceeds size limit")
     return html

@@ -109,6 +109,7 @@ class Settings:
     board_create_enabled: bool = False
     chatgpt_compat_mode: bool = False
     ui_write_enabled_v2: bool = False
+    ui_interactive_r1: bool = False
     build_metadata_file: Path | None = None
 
     @classmethod
@@ -161,6 +162,7 @@ class Settings:
             board_create_enabled=_boolean("MCP_BOARD_CREATE_ENABLED"),
             chatgpt_compat_mode=_boolean("MCP_CHATGPT_COMPAT_MODE"),
             ui_write_enabled_v2=_boolean("UI_WRITE_ENABLED_V2"),
+            ui_interactive_r1=_boolean("UI_INTERACTIVE_R1"),
             build_metadata_file=(
                 Path(value).expanduser()
                 if (value := _env("MCP_BUILD_METADATA_FILE"))
