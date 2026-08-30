@@ -124,5 +124,65 @@ def get_candidate_provenance(surface: str = "stable") -> CandidateProvenance:
     return CandidateProvenance(candidate_sha=sha, candidate_branch=branch, baseline=V4Baseline())
 
 
+_EXACT_CANDIDATE_RE = re.compile(r"\bexact\s+candidate\s+([0-9a-f]{40})\b", re.IGNORECASE)
+_CANDIDATE_SHA_FIELD_RE = re.compile(r"[\"']candidate_sha[\"']?\s*[:=]\s*[\"']([0-9a-f]{40})[\"']", re.IGNORECASE)
+_BRANCH_RE = re.compile(r"\bon\s+branch\s+([A-Za-z0-9._/-]{1,128})\b", re.IGNORECASE)
+_CANDIDATE_BRANCH_FIELD_RE = re.compile(r"[\"']candidate_branch[\"']?\s*[:=]\s*[\"']([^\"'\s,]{1,128})[\"']", re.IGNORECASE)
+
+
+def extract_exact_candidate_from_task_body(body: str) -> tuple[str | None, str | None]:
+    """Extract an explicit exact candidate declaration from a task body.
+
+    This intentionally ignores vague references such as short SHAs or prose like
+    "candidate build". Human-gate binding requires a full SHA and explicit branch.
+    """
+    if not body:
+        return None, None
+    sha_match = _EXACT_CANDIDATE_RE.search(body) or _CANDIDATE_SHA_FIELD_RE.search(body)
+    branch_match = _BRANCH_RE.search(body) or _CANDIDATE_BRANCH_FIELD_RE.search(body)
+    sha = sha_match.group(1).lower() if sha_match else None
+    branch = branch_match.group(1) if branch_match else None
+    return sha, branch
+
+
+def _verify_remote_candidate(sha: str, branch: str, remote_name: str = "origin") -> bool:
+    """Verify the declared branch resolves to the exact candidate SHA remotely."""
+    try:
+        output = subprocess.check_output(
+            ["git", "ls-remote", remote_name, f"refs/heads/{branch}"],
+            text=True,
+            timeout=5,
+        ).strip()
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
+        return False
+    if not output:
+        return False
+    remote_sha = output.split()[0].lower()
+    return remote_sha == sha.lower()
+
+
+def bind_candidate_provenance_to_task(
+    body: str,
+    *,
+    remote_name: str = "origin",
+) -> CandidateProvenance | None:
+    """Return task-bound provenance or fail closed for an invalid declaration.
+
+    A task with no exact-candidate declaration may use the normal running-build
+    provenance. Once either exact SHA or branch is declared, both are mandatory
+    and remote identity must match exactly; otherwise no Human Gate may be built.
+    """
+    sha, branch = extract_exact_candidate_from_task_body(body)
+    if sha is None and branch is None:
+        return None
+    if sha is None or branch is None:
+        raise ValueError("task exact-candidate declaration is incomplete")
+    if not _FULL_SHA.fullmatch(sha) or not _BRANCH.fullmatch(branch):
+        raise ValueError("task exact-candidate declaration is invalid")
+    if not _verify_remote_candidate(sha, branch, remote_name=remote_name):
+        raise ValueError("task exact candidate could not be verified against remote branch")
+    return CandidateProvenance(candidate_sha=sha, candidate_branch=branch, baseline=V4Baseline())
+
+
 def get_baseline() -> V4Baseline:
     return V4Baseline()
