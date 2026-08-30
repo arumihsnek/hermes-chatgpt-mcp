@@ -691,8 +691,14 @@ class HermesCardManagementAdapter:
             # Read the persisted values through the canonical API before the
             # primitive runs so the result can report the fields it actually
             # changed (accurate provenance), not merely those requested.
+            from .canonical import update_task_fields
+
+            def field(value, name, default=None):
+                return value.get(name, default) if isinstance(value, dict) else getattr(value, name, default)
+
             before = self.hermes.get_task(conn, task_id)
-            changed = self.hermes.edit_task_fields(
+            changed_fields = update_task_fields(
+                self.hermes,
                 conn,
                 task_id,
                 title=title,
@@ -700,12 +706,12 @@ class HermesCardManagementAdapter:
                 priority=priority,
                 author=self.provenance,
             )
-            if not changed:
+            if not changed_fields:
                 # Distinguish a true idempotent replay (task exists, is
                 # non-triage, and every provided value already matches) from
                 # missing/uneditable tasks, which stay hard errors.
                 task = self.hermes.get_task(conn, task_id)
-                if task is None or str(getattr(task, "status", "")) == "triage":
+                if task is None or str(field(task, "status", "")) == "triage":
                     raise ValueError(f"unknown task {task_id} or task is not editable")
                 # Idempotent replay: the primitive applied nothing because
                 # every provided value already matches persisted state.
@@ -721,7 +727,7 @@ class HermesCardManagementAdapter:
             actual_changed_fields = [
                 name
                 for name in ("title", "body", "priority")
-                if getattr(after, name) != getattr(before, name)
+                if field(after, name) != field(before, name)
             ]
             return UpdateTaskResult(
                 board=self.handle.slug,

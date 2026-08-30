@@ -6,6 +6,7 @@ KANBAN_UI_MAX_BYTES = 262_144
 KANBAN_UI_RESOURCE_URI_V2 = "ui://hermes/kanban/v2"
 KANBAN_UI_RESOURCE_URI_INTERACTIVE_R1 = "ui://hermes/kanban/interactive-r1"
 KANBAN_UI_RESOURCE_URI_INTERACTIVE_R14 = "ui://hermes/kanban/interactive-r14-fresh-tool"
+KANBAN_UI_RESOURCE_URI_INTERACTIVE_R16 = "ui://hermes/kanban/interactive-r16-ux"
 HUMAN_GATE_RESOURCE_URI = "ui://hermes/human-gate/v1"
 
 KANBAN_UI_HTML_V1 = r'''<!DOCTYPE html>
@@ -194,9 +195,18 @@ window.parent.postMessage({jsonrpc:"2.0",id:0,method:"ui/initialize",params:{pro
 </script></body></html>'''
 
 
+from .interactive_ui import (  # noqa: E402
+    KANBAN_UI_HTML_INTERACTIVE_R16,
+    build_kanban_ui_interactive_r16_html,
+)
+
+# Preserve the existing public symbol while advancing the interactive component.
+KANBAN_UI_HTML_INTERACTIVE_R1 = KANBAN_UI_HTML_INTERACTIVE_R16
+
+
 def build_kanban_ui_interactive_r1_html() -> str:
-    """Bounded shared-control UI using only canonical host-bridged Hermes tools."""
-    html = KANBAN_UI_HTML_INTERACTIVE_R1
+    """Return the current bounded shared-control MCP App UI."""
+    html = build_kanban_ui_interactive_r16_html()
     if len(html.encode("utf-8")) > KANBAN_UI_MAX_BYTES:
         raise ValueError("Kanban UI resource exceeds size limit")
     return html

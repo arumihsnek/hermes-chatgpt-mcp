@@ -45,6 +45,7 @@ from .ui import (
     KANBAN_UI_RESOURCE_URI_V2,
     KANBAN_UI_RESOURCE_URI_INTERACTIVE_R1,
     KANBAN_UI_RESOURCE_URI_INTERACTIVE_R14,
+    KANBAN_UI_RESOURCE_URI_INTERACTIVE_R16,
     build_kanban_ui_html,
     build_kanban_ui_v2_html,
     build_kanban_ui_interactive_r1_html,
@@ -480,6 +481,8 @@ def create_app(
             logger.error("Hermes beta command failed: %s", type(exc).__name__)
             raise tool_error("BACKEND_ERROR", "Hermes command failed") from exc
         except (FileNotFoundError, LookupError) as exc:
+            if isinstance(exc, LookupError) and "unknown task" in str(exc).lower():
+                raise tool_error("TASK_NOT_FOUND", str(exc)) from exc
             raise tool_error("CONFLICT", "Hermes rejected the command request") from exc
         except Exception as exc:  # pragma: no cover - exercised by integration failures
             logger.error("Hermes beta command failed: %s", type(exc).__name__)
@@ -633,6 +636,31 @@ def create_app(
             meta={"ui": {"resourceUri": KANBAN_UI_RESOURCE_URI_INTERACTIVE_R14}, "ui_version": "interactive-r1.1-r14"},
         )
         async def get_board_interactive_r14(request: BoardQuery) -> BoardView:
+            handle = resolve_board(request.board, operation="read")
+            view = await run_query(board_resolver.query_adapter(handle).get_board)
+            can_create = (
+                has_command_scope(auth_service.create_scope, handle.slug)
+                and board_resolver.create_allowed(handle.slug)
+            )
+            view.capabilities = BetaBoardCapabilities(
+                read=True,
+                create=can_create,
+                manage=(
+                    has_command_scope(auth_service.manage_scope, handle.slug)
+                    if beta
+                    else False
+                ),
+            )
+            return view
+
+        @mcp.tool(
+            name="get_board_interactive_r16",
+            description="Render the R1.6 interactive Hermes Kanban board with staged drag/drop and modal card management.",
+            annotations=readonly,
+            structured_output=True,
+            meta={"ui": {"resourceUri": KANBAN_UI_RESOURCE_URI_INTERACTIVE_R16}, "ui_version": "interactive-r1.6-r16"},
+        )
+        async def get_board_interactive_r16(request: BoardQuery) -> BoardView:
             handle = resolve_board(request.board, operation="read")
             view = await run_query(board_resolver.query_adapter(handle).get_board)
             can_create = (
@@ -902,6 +930,20 @@ def create_app(
         def kanban_ui_interactive_r14() -> str:
             return build_kanban_ui_interactive_r1_html()
 
+        @mcp.resource(
+            KANBAN_UI_RESOURCE_URI_INTERACTIVE_R16,
+            name="hermes_kanban_ui_interactive_r16",
+            title="Hermes Kanban board (interactive R1.6)",
+            description="R1.6 shared-control board with staged drag/drop, modal inspector, and full-width state toggles.",
+            mime_type=KANBAN_UI_MIME_TYPE,
+            meta=_widget_resource_meta(
+                public_base_url=settings.public_base_url,
+                version="interactive-r1.6-r16",
+            ),
+        )
+        def kanban_ui_interactive_r16() -> str:
+            return build_kanban_ui_interactive_r1_html()
+
     if settings.ui_write_enabled_v2:
         @mcp.resource(
             KANBAN_UI_RESOURCE_URI_V2, name="hermes_kanban_ui_v2",
@@ -996,7 +1038,7 @@ def create_app(
             handle = resolve_board(request.board, operation="manage")
             # Probe enforcement runs after scope + resolution and before side effect.
             enforce_probe_safe(request, method_name)
-            return await run_beta_command(getattr(board_resolver.management_adapter(handle), method_name), *args, task_command=True, **kwargs)
+            return await run_beta_command(getattr(board_resolver.management_adapter(handle), method_name), *args, task_command=False, **kwargs)
 
         @mcp.tool(name="link_tasks", description="Add parent dependencies.", annotations=manage_annotations, structured_output=True)
         async def link_tasks(request: LinkTasksInput) -> LinkTasksResult:

@@ -8,6 +8,7 @@ from hermes_chatgpt_mcp.ui import (
     KANBAN_UI_HTML_INTERACTIVE_R1,
     KANBAN_UI_RESOURCE_URI_INTERACTIVE_R1,
     KANBAN_UI_RESOURCE_URI_INTERACTIVE_R14,
+    KANBAN_UI_RESOURCE_URI_INTERACTIVE_R16,
     build_kanban_ui_interactive_r1_html,
 )
 
@@ -15,34 +16,32 @@ from hermes_chatgpt_mcp.ui import (
 def test_widget_resource_meta_declares_domain_and_empty_inline_csp():
     meta = _widget_resource_meta(
         public_base_url="https://kanban-canary.hermesinthenight.duckdns.org/path/ignored",
-        version="interactive-r1.1-r15",
+        version="interactive-r1.6",
     )
     assert meta == {
         "ui": {
             "domain": "https://kanban-canary.hermesinthenight.duckdns.org",
-            "csp": {
-                "connectDomains": [],
-                "resourceDomains": [],
-            },
+            "csp": {"connectDomains": [], "resourceDomains": []},
         },
-        "version": "interactive-r1.1-r15",
+        "version": "interactive-r1.6",
     }
 
 
-def test_primary_cached_uri_keeps_legacy_ui_when_interactive_flag_is_off():
+def test_primary_cached_uri_keeps_legacy_ui_when_flag_is_off():
     html = _build_primary_kanban_ui(interactive=False)
-    assert 'data-ui-version="interactive-r1.1"' not in html
+    assert 'data-ui-version="interactive-r1.6"' not in html
 
 
-def test_primary_cached_uri_serves_interactive_ui_when_flag_is_on():
+def test_primary_cached_uri_serves_current_interactive_ui_when_flag_is_on():
     html = _build_primary_kanban_ui(interactive=True)
-    assert 'data-ui-version="interactive-r1.1"' in html
+    assert 'data-ui-version="interactive-r1.6"' in html
     assert 'id="status-strip"' in html
-    assert 'id="confirm-bar"' in html
-    assert 'function renderColumns()' in html
+    assert 'id="board-viewport"' in html
+    assert 'id="inspector-dialog"' in html
+    assert 'id="pending-bar"' in html
 
 
-def test_interactive_r1_resource_is_bounded_and_named():
+def test_interactive_resource_is_bounded_and_named():
     html = build_kanban_ui_interactive_r1_html()
     assert KANBAN_UI_RESOURCE_URI_INTERACTIVE_R1 == "ui://hermes/kanban/interactive-r1"
     assert html == KANBAN_UI_HTML_INTERACTIVE_R1
@@ -58,7 +57,16 @@ def test_interactive_r14_uses_fresh_tool_and_fresh_resource_binding():
     assert 'return build_kanban_ui_interactive_r1_html()' in source
 
 
-def test_interactive_r1_uses_only_allowlisted_canonical_mutations():
+def test_interactive_r16_has_its_own_fresh_tool_and_resource_binding():
+    assert KANBAN_UI_RESOURCE_URI_INTERACTIVE_R16 == "ui://hermes/kanban/interactive-r16-ux"
+    source = (Path(__file__).parents[1] / "hermes_chatgpt_mcp" / "server.py").read_text(encoding="utf-8")
+    assert 'name="get_board_interactive_r16"' in source
+    assert 'resourceUri": KANBAN_UI_RESOURCE_URI_INTERACTIVE_R16' in source
+    assert 'name="hermes_kanban_ui_interactive_r16"' in source
+    assert 'version="interactive-r1.6-r16"' in source
+
+
+def test_interactive_r16_uses_only_allowlisted_canonical_mutations():
     html = KANBAN_UI_HTML_INTERACTIVE_R1
     for tool in (
         "create_task",
@@ -70,10 +78,12 @@ def test_interactive_r1_uses_only_allowlisted_canonical_mutations():
         "request_changes",
         "reopen_review",
         "get_board",
+        "list_boards",
         "list_tasks",
         "get_task",
+        "get_task_graph",
     ):
-        assert f'"{tool}"' in html
+        assert f"'{tool}'" in html
 
     for forbidden in (
         "human-gate-decide",
@@ -89,33 +99,127 @@ def test_interactive_r1_uses_only_allowlisted_canonical_mutations():
         "oauth_revoke",
         "gateway_restart",
     ):
-        assert f'"{forbidden}"' not in html
+        assert forbidden not in html
 
 
-def test_interactive_r1_has_bounded_external_reconciliation():
+def test_interactive_r16_bridge_matches_mcp_apps_request_response_pattern():
+    html = KANBAN_UI_HTML_INTERACTIVE_R1
+    assert "const pendingRequests=new Map()" in html
+    assert "window.parent.postMessage({jsonrpc:'2.0',id,method,params},'*')" in html
+    assert "event.source!==window.parent" in html
+    assert "message.jsonrpc!=='2.0'" in html
+    assert "message.id!==undefined&&pendingRequests.has(message.id)" in html
+    assert "pending.resolve(message.result)" in html
+    assert "request('tools/call',{name,arguments:args||{}})" in html
+    assert "timed out waiting for MCP Apps host" in html
+
+
+def test_interactive_r16_has_bounded_external_reconciliation():
     html = KANBAN_UI_HTML_INTERACTIVE_R1
     assert "LIVE_INTERVAL_MS=3000" in html
     assert "MAX_LIVE_CYCLES=20" in html
     assert "LIVE_MAX_MS=60000" in html
     assert "document.hidden" in html
-    assert 'visibilitychange' in html
-    assert 'unload' in html
+    assert "visibilitychange" in html
+    assert "unload" in html
     assert "clearInterval" in html
 
 
-def test_interactive_r1_never_renders_optimistic_mutation_success():
+def test_interactive_r16_never_treats_staging_as_canonical_success():
     html = KANBAN_UI_HTML_INTERACTIVE_R1
-    assert "canonical readback required" in html.lower()
-    assert "reconcile(" in html
-    assert 'call("get_task"' in html
-    assert 'call("get_board"' in html
-    assert 'call("list_tasks"' in html
-    assert "Another mutation is in flight" in html
+    assert "Nothing mutates Hermes until Confirm." in html
+    assert "staged · Confirm to mutate Hermes." in html
+    assert "await tool(a.tool,a.args)" in html
+    assert "await refreshBoard()" in html
+    assert "Confirmed actions reconciled from canonical board." in html
+
+
+def test_interactive_r16_status_toggles_are_full_width_and_columns_scroll_separately():
+    html = KANBAN_UI_HTML_INTERACTIVE_R1
+    assert ".status-strip{display:grid;grid-template-columns:repeat(8,minmax(0,1fr))" in html
+    assert ".status-strip" in html and "overflow:visible" in html
+    assert ".board-viewport{width:100%;overflow-x:auto" in html
+    assert 'id="board-viewport"' in html
+    assert 'id="board-columns"' in html
+    assert "visible:{todo:true,ready:true,running:true}" in html
+
+
+def test_interactive_r16_inspector_is_modal_not_bottom_panel():
+    html = KANBAN_UI_HTML_INTERACTIVE_R1
+    assert '<dialog id="inspector-dialog">' in html
+    assert "dialog.showModal()" in html
+    assert "dialog.close()" in html
+    assert 'class="modal-body"' in html
+    assert ".layout{" not in html
+
+
+def test_interactive_r16_drag_drop_stages_before_confirm():
+    html = KANBAN_UI_HTML_INTERACTIVE_R1
+    assert "card.draggable=true" in html
+    assert "card.ondragstart" in html
+    assert "col.ondragover" in html
+    assert "col.ondrop" in html
+    assert "function canDrop(task,target)" in html
+    assert "function transitionAction(task,target)" in html
+    assert "target==='blocked'" in html
+    assert "target==='review'" in html
+    assert "stage(a);clearDropTargets()" in html
+
+
+def test_interactive_r16_staged_move_projects_card_into_destination_column():
+    html = KANBAN_UI_HTML_INTERACTIVE_R1
+    assert "function projectedTasks()" in html
+    assert "out[k].splice(ix,1)[0]" in html
+    assert "out[a.targetStatus]" in html
+    assert "Pending → " in html
+    assert "from '+LABEL[t._origin]" in html
+
+
+def test_interactive_r16_parent_and_child_dependencies_are_distinct():
+    html = KANBAN_UI_HTML_INTERACTIVE_R1
+    assert "kind:'parent'" in html
+    assert "kind:'child'" in html
+    assert "dep-parent" in html
+    assert "dep-child" in html
+    assert "'↑'+v.parent" in html
+    assert "'↓'+v.child" in html
+
+
+
+
+def test_interactive_r16_regresses_scroll_refresh_and_dependency_badges():
+    html = KANBAN_UI_HTML_INTERACTIVE_R1
+    assert "let boardScrollLeft" in html
+    assert "saveBoardScroll();" in html
+    assert "restoreBoardScroll()" in html
+    assert "refreshing:false" in html
+    assert "Refreshing canonical board" in html
+    assert "refreshButton.disabled=true" in html
+    assert "dep-parent-badge" in html and "dep-child-badge" in html
+    assert "Parent dependencies" in html and "Child dependencies" in html
+    assert "dependencyCounts(t)" in html
+
+
+def test_interactive_r16_columns_have_semantic_status_tints():
+    html = KANBAN_UI_HTML_INTERACTIVE_R1
+    assert "background:var(--status-bg,var(--soft))" in html
+    for status_name in ("triage", "todo", "ready", "running", "blocked", "review", "scheduled", "done"):
+        assert f"status-{status_name}" in html
+    assert "--parent" in html and "--child" in html
+
+
+def test_interactive_r16_preserves_create_comment_assign_and_review_controls():
+    html = KANBAN_UI_HTML_INTERACTIVE_R1
+    for text in (
+        "New card", "Stage create", "Stage comment", "Stage assign",
+        "Stage block", "Stage review", "Stage unblock", "Stage changes",
+        "Stage reopen review",
+    ):
+        assert text in html
 
 
 def test_interactive_r1_flag_defaults_off():
     assert Settings.__dataclass_fields__["ui_interactive_r1"].default is False
-
 
 def test_interactive_r1_flag_parses_from_env(monkeypatch):
     monkeypatch.setenv("HERMES_AGENT_ROOT", "/home/ubuntu/hermes-agent")
@@ -124,50 +228,3 @@ def test_interactive_r1_flag_parses_from_env(monkeypatch):
     monkeypatch.setenv("MCP_OAUTH_SIGNING_KEY", "b" * 48)
     monkeypatch.setenv("UI_INTERACTIVE_R1", "true")
     assert Settings.from_env().ui_interactive_r1 is True
-
-
-def test_interactive_r11_defaults_to_todo_ready_running_columns():
-    html = KANBAN_UI_HTML_INTERACTIVE_R1
-    assert 'data-ui-version="interactive-r1.1"' in html
-    assert 'visible:{todo:true,ready:true,running:true}' in html
-    assert 'running:"In progress"' in html
-    assert 'id="status-strip"' in html
-    assert 'white-space:nowrap' in html
-    assert 'overflow-x:auto' in html
-    assert 'toggle-count' in html
-
-
-def test_interactive_r11_stages_actions_before_confirming():
-    html = KANBAN_UI_HTML_INTERACTIVE_R1
-    assert 'id="confirm-bar"' in html
-    assert 'id="confirm-all"' in html
-    assert 'id="undo-all"' in html
-    assert 'function stageAction(action)' in html
-    assert 'function confirmStaged()' in html
-    assert 'Action marked — confirm to apply canonical mutation.' in html
-    assert 'class="pending-badge"' not in html  # created dynamically, never trusted as static success
-    assert 'pending-badge' in html
-    assert 'pending-incoming' in html
-    assert 'state.staged' in html
-
-
-def test_interactive_r11_dependency_highlights_visible_and_hidden_columns():
-    html = KANBAN_UI_HTML_INTERACTIVE_R1
-    assert '"get_task_graph"' in html
-    assert 'depth:1,max_nodes:64' in html
-    assert 'pointerenter' in html
-    assert 'touchstart' in html
-    assert 'dep-highlight' in html
-    assert 'dep-hidden' in html
-    assert 'dep-visible' in html
-    assert '↗' in html
-    assert 'state.graphs' in html
-
-
-def test_interactive_r11_renders_cards_inside_status_columns():
-    html = KANBAN_UI_HTML_INTERACTIVE_R1
-    assert 'id="board-columns"' in html
-    assert 'tasksByStatus' in html
-    assert 'function loadStatus(k)' in html
-    assert 'function renderColumns()' in html
-    assert 'grid-auto-columns:minmax(82vw,1fr)' in html
