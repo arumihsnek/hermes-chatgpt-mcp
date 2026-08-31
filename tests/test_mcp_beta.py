@@ -163,7 +163,8 @@ async def _test_chatgpt_compat_mode_exposes_r16_tool_only_when_interactive_ui_en
             )
     assert response.status_code == 200
     names = {tool["name"] for tool in response.json()["result"]["tools"]}
-    assert "get_board_interactive_r16" in names
+    assert "get_board_interactive_r162" in names
+    assert "get_board_interactive_r16" not in names
     assert "get_board_interactive_r14" not in names
 
 

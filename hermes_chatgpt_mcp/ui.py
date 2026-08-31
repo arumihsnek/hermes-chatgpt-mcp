@@ -7,6 +7,7 @@ KANBAN_UI_RESOURCE_URI_V2 = "ui://hermes/kanban/v2"
 KANBAN_UI_RESOURCE_URI_INTERACTIVE_R1 = "ui://hermes/kanban/interactive-r1"
 KANBAN_UI_RESOURCE_URI_INTERACTIVE_R14 = "ui://hermes/kanban/interactive-r14-fresh-tool"
 KANBAN_UI_RESOURCE_URI_INTERACTIVE_R16 = "ui://hermes/kanban/interactive-r16-ux"
+KANBAN_UI_RESOURCE_URI_INTERACTIVE_R162 = "ui://hermes/kanban/interactive-r162-mobile-workbench"
 HUMAN_GATE_RESOURCE_URI = "ui://hermes/human-gate/v1"
 
 KANBAN_UI_HTML_V1 = r'''<!DOCTYPE html>

@@ -9,6 +9,7 @@ from hermes_chatgpt_mcp.ui import (
     KANBAN_UI_RESOURCE_URI_INTERACTIVE_R1,
     KANBAN_UI_RESOURCE_URI_INTERACTIVE_R14,
     KANBAN_UI_RESOURCE_URI_INTERACTIVE_R16,
+    KANBAN_UI_RESOURCE_URI_INTERACTIVE_R162,
     build_kanban_ui_interactive_r1_html,
 )
 
@@ -211,9 +212,9 @@ def test_interactive_r16_columns_have_semantic_status_tints():
 def test_interactive_r16_preserves_create_comment_assign_and_review_controls():
     html = KANBAN_UI_HTML_INTERACTIVE_R1
     for text in (
-        "New card", "Stage create", "Stage comment", "Stage assign",
-        "Stage block", "Stage review", "Stage unblock", "Stage changes",
-        "Stage reopen review",
+        "New card", "Create", "Comment", "Assign",
+        "Block", "Review", "Unblock", "Changes",
+        "Reopen review",
     ):
         assert text in html
 
@@ -228,3 +229,29 @@ def test_interactive_r1_flag_parses_from_env(monkeypatch):
     monkeypatch.setenv("MCP_OAUTH_SIGNING_KEY", "b" * 48)
     monkeypatch.setenv("UI_INTERACTIVE_R1", "true")
     assert Settings.from_env().ui_interactive_r1 is True
+
+
+def test_interactive_r162_has_fresh_binding_and_mobile_workbench_contract():
+    assert KANBAN_UI_RESOURCE_URI_INTERACTIVE_R162 == "ui://hermes/kanban/interactive-r162-mobile-workbench"
+    source = (Path(__file__).parents[1] / "hermes_chatgpt_mcp" / "server.py").read_text(encoding="utf-8")
+    assert 'name="get_board_interactive_r162"' in source
+    assert 'resourceUri": KANBAN_UI_RESOURCE_URI_INTERACTIVE_R162' in source
+    assert 'name="hermes_kanban_ui_interactive_r162"' in source
+    assert 'interactive-r1.6.2-r162' in source
+    html = KANBAN_UI_HTML_INTERACTIVE_R1
+    for marker in ("pointerdown", "pointermove", "pointerup", "pointercancel", "setPointerCapture", "420", "dist>10", "dist>8", "edge=36,step=18"):
+        assert marker in html
+    assert "window.addEventListener('blur'" in html
+    assert "e.key==='Escape'" in html
+    assert "eligible '+eligible.length+' / skipped '+skipped" in html
+    assert "state.multiSelected" in html and "Clear selection" in html
+    assert "applyDependencyHighlight(state.selected)" in html
+    assert "kind:'manual'" not in html
+    assert "kind:'needs_input'" in html
+
+
+def test_interactive_r162_toggle_contrast_is_explicit_in_light_and_dark():
+    html = KANBAN_UI_HTML_INTERACTIVE_R1
+    for marker in ("--toggle-bg", "--toggle-fg", "--toggle-active-bg", "--toggle-active-fg"):
+        assert marker in html
+    assert "@media(prefers-color-scheme:dark)" in html

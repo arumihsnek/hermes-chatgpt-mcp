@@ -46,6 +46,7 @@ from .ui import (
     KANBAN_UI_RESOURCE_URI_INTERACTIVE_R1,
     KANBAN_UI_RESOURCE_URI_INTERACTIVE_R14,
     KANBAN_UI_RESOURCE_URI_INTERACTIVE_R16,
+    KANBAN_UI_RESOURCE_URI_INTERACTIVE_R162,
     build_kanban_ui_html,
     build_kanban_ui_v2_html,
     build_kanban_ui_interactive_r1_html,
@@ -677,6 +678,30 @@ def create_app(
                 ),
             )
             return view
+        @mcp.tool(
+            name="get_board_interactive_r162",
+            description="Render the R1.6.2 mobile workbench with staged touch drag, persistent multi-selection, and mobile inspector.",
+            annotations=readonly,
+            structured_output=True,
+            meta={"ui": {"resourceUri": KANBAN_UI_RESOURCE_URI_INTERACTIVE_R162}, "ui_version": "interactive-r1.6.2-r162"},
+        )
+        async def get_board_interactive_r162(request: BoardQuery) -> BoardView:
+            handle = resolve_board(request.board, operation="read")
+            view = await run_query(board_resolver.query_adapter(handle).get_board)
+            can_create = (
+                has_command_scope(auth_service.create_scope, handle.slug)
+                and board_resolver.create_allowed(handle.slug)
+            )
+            view.capabilities = BetaBoardCapabilities(
+                read=True,
+                create=can_create,
+                manage=(
+                    has_command_scope(auth_service.manage_scope, handle.slug)
+                    if beta
+                    else False
+                ),
+            )
+            return view
 
     @mcp.tool(
         name="list_tasks",
@@ -942,6 +967,19 @@ def create_app(
             ),
         )
         def kanban_ui_interactive_r16() -> str:
+            return build_kanban_ui_interactive_r1_html()
+        @mcp.resource(
+            KANBAN_UI_RESOURCE_URI_INTERACTIVE_R162,
+            name="hermes_kanban_ui_interactive_r162",
+            title="Hermes Kanban board (interactive R1.6.2 mobile workbench)",
+            description="R1.6.2 mobile workbench with touch drag, persistent multi-selection, dependency focus, and staged confirmation.",
+            mime_type=KANBAN_UI_MIME_TYPE,
+            meta=_widget_resource_meta(
+                public_base_url=settings.public_base_url,
+                version="interactive-r1.6.2-r162",
+            ),
+        )
+        def kanban_ui_interactive_r162() -> str:
             return build_kanban_ui_interactive_r1_html()
 
     if settings.ui_write_enabled_v2:
@@ -1682,7 +1720,7 @@ def create_app(
         # otherwise frozen ChatGPT compatibility projection. Keeping this
         # conditional preserves the exact legacy contract when the flag is off.
         if settings.ui_interactive_r1:
-            allowed_tools.add("get_board_interactive_r16")
+            allowed_tools.add("get_board_interactive_r162")
         mcp._tool_manager._tools = {  # type: ignore[attr-defined]
             name: tool
             for name, tool in mcp._tool_manager._tools.items()  # type: ignore[attr-defined]
