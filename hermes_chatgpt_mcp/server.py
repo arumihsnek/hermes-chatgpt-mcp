@@ -608,7 +608,7 @@ def create_app(
         description="Read the configured Hermes Kanban board summary and status counts.",
         annotations=readonly,
         structured_output=True,
-        meta={"ui": {"resourceUri": (KANBAN_UI_RESOURCE_URI_INTERACTIVE_R1 if settings.ui_interactive_r1 else KANBAN_UI_RESOURCE_URI)}},
+        meta={"ui": {"resourceUri": (KANBAN_UI_RESOURCE_URI_INTERACTIVE_R162 if (settings.ui_interactive_r1 and settings.chatgpt_compat_mode) else (KANBAN_UI_RESOURCE_URI_INTERACTIVE_R1 if settings.ui_interactive_r1 else KANBAN_UI_RESOURCE_URI))}},
     )
     async def get_board(request: BoardQuery) -> BoardView:
         handle = resolve_board(request.board, operation="read")

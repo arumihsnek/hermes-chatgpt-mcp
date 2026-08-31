@@ -30,12 +30,12 @@ def test_widget_resource_meta_declares_domain_and_empty_inline_csp():
 
 def test_primary_cached_uri_keeps_legacy_ui_when_flag_is_off():
     html = _build_primary_kanban_ui(interactive=False)
-    assert 'data-ui-version="interactive-r1.6"' not in html
+    assert 'data-ui-version="interactive-r1.6.2"' not in html
 
 
 def test_primary_cached_uri_serves_current_interactive_ui_when_flag_is_on():
     html = _build_primary_kanban_ui(interactive=True)
-    assert 'data-ui-version="interactive-r1.6"' in html
+    assert 'data-ui-version="interactive-r1.6.2"' in html
     assert 'id="status-strip"' in html
     assert 'id="board-viewport"' in html
     assert 'id="inspector-dialog"' in html
@@ -164,7 +164,8 @@ def test_interactive_r16_drag_drop_stages_before_confirm():
     assert "function transitionAction(task,target)" in html
     assert "target==='blocked'" in html
     assert "target==='review'" in html
-    assert "stage(a);clearDropTargets()" in html
+    assert "stageTouchDrop(state.dragTask,k);clearDropTargets()" in html
+    assert "canDropDrag(state.dragTask,k)" in html
 
 
 def test_interactive_r16_staged_move_projects_card_into_destination_column():
@@ -239,7 +240,7 @@ def test_interactive_r162_has_fresh_binding_and_mobile_workbench_contract():
     assert 'name="hermes_kanban_ui_interactive_r162"' in source
     assert 'interactive-r1.6.2-r162' in source
     html = KANBAN_UI_HTML_INTERACTIVE_R1
-    for marker in ("pointerdown", "pointermove", "pointerup", "pointercancel", "setPointerCapture", "420", "dist>10", "dist>8", "edge=36,step=18"):
+    for marker in ("pointerdown", "pointermove", "pointerup", "pointercancel", "setPointerCapture", "420", "dist>10", "dist>8", "requestAnimationFrame", "const step=16"):
         assert marker in html
     assert "window.addEventListener('blur'" in html
     assert "e.key==='Escape'" in html
@@ -248,6 +249,13 @@ def test_interactive_r162_has_fresh_binding_and_mobile_workbench_contract():
     assert "applyDependencyHighlight(state.selected)" in html
     assert "kind:'manual'" not in html
     assert "kind:'needs_input'" in html
+    assert 'data-ui-version="interactive-r1.6.2"' in html
+    assert "applyDependencyHighlight(state.selected||id)" in html
+    assert "function canDropDrag(task,target)" in html and "tasks.every(x=>canDrop(x,target))" in html
+    assert "const skipped=ids.length-eligible.length" in html
+    assert "cancelAnimationFrame" in html and "touchAutoScrollFrame" in html
+    assert "card.draggable=false" in html and "card.draggable=true" in html
+    assert "KANBAN_UI_RESOURCE_URI_INTERACTIVE_R162 if (settings.ui_interactive_r1 and settings.chatgpt_compat_mode)" in source
 
 
 def test_interactive_r162_toggle_contrast_is_explicit_in_light_and_dark():
@@ -255,3 +263,6 @@ def test_interactive_r162_toggle_contrast_is_explicit_in_light_and_dark():
     for marker in ("--toggle-bg", "--toggle-fg", "--toggle-active-bg", "--toggle-active-fg"):
         assert marker in html
     assert "@media(prefers-color-scheme:dark)" in html
+    for status_name in ("triage", "todo", "ready", "running", "blocked", "review", "scheduled", "done"):
+        assert f".kanban-column.status-{status_name}" in html
+    assert "background:var(--status-bg,#202124)" in html
