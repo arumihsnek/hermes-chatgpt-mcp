@@ -3,16 +3,19 @@
 Status: **CANDIDATE SPECIFICATION**  
 Scope: `hermes-chatgpt-mcp` MCP Apps UI + read/write control-plane primitives  
 Activation: **NOT ACTIVE**. This document defines a candidate feature and does not change authority, release, or canonical-source semantics by itself.
+Revision note: this revision adds the non-dispatchable `ATTENTION_REQUEST` / conductor handoff path and binds it to the existing Proposal Workspace context bridge.
 
 ## 1. Objective
 
-Turn the Hermes MCP App from a board viewer/controller into a shared planning workspace where ChatGPT and the human can collaboratively shape a plan before any canonical Kanban mutation occurs.
+Turn the Hermes MCP App from a board viewer/controller into a shared planning workspace where ChatGPT and the human can collaboratively shape a plan before any canonical Kanban mutation occurs, while also giving workers a durable way to elevate evidence or decisions to the human/ChatGPT conductor without abusing executable Kanban tasks.
 
-The core invariant is:
+The core invariants are:
 
-> A proposal is not a Hermes task set until an explicit commit operation succeeds against the expected canonical board revision.
+> A proposal is not a Hermes task set until an explicit commit operation succeeds against the expected canonical board state.
 
-The UI must make proposed state visually and semantically distinct from canonical state at all times.
+> An attention request is not executable work and never becomes dispatchable merely because a worker wants ChatGPT or the human to inspect it.
+
+The UI must make proposed state, attention state, and canonical state visually and semantically distinct at all times.
 
 ## 2. User outcomes
 
@@ -27,6 +30,9 @@ The user should be able to:
 7. See a deterministic preview/diff of what the commit will create/change before confirmation.
 8. Recover the current proposal and selection context if the widget/model context is lost or the conversation is resumed.
 9. Detect stale proposals safely if the canonical board changed materially while the draft was being edited.
+10. See worker/system attention requests in a dedicated non-dispatchable surface.
+11. Open a request in ChatGPT with one explicit user action, then have ChatGPT rehydrate the exact current evidence from MCP rather than copy the whole payload into chat.
+12. Turn an attention request into a proposal or explicit task only through a visible, deliberate transition.
 
 ## 3. Non-goals
 
@@ -34,13 +40,50 @@ R1.7 does not:
 
 - silently create canonical tasks while a proposal is being edited;
 - grant additional mutation authority because a card is selected;
+- treat an attention request as a special READY/TODO task or assignee convention;
+- assume a background worker can wake ChatGPT asynchronously;
 - bypass Human Gates or protected release/deploy rules;
 - infer missing execution provenance or model history;
 - treat UI state as canonical board state;
-- make direct destructive/admin actions available from the proposal surface;
-- require the entire proposal body to be injected into every model turn.
+- make direct destructive/admin actions available from the proposal or attention surface;
+- require the entire proposal, request, or evidence body to be injected into every model turn.
 
 ## 4. Core model
+
+R1.7 distinguishes three interaction objects that must never be conflated:
+
+| Object | Meaning | Dispatchable | Canonical Kanban state | Authority |
+|---|---|---:|---:|---|
+| `TASK` | Work Hermes may route to a worker | yes, subject to normal workflow | yes | normal task/workflow authority only |
+| `ATTENTION_REQUEST` | A worker/system asks the human or ChatGPT conductor to inspect, discuss, decide, or transform referenced evidence | **no** | no | **none**; reference and intent only |
+| `PROPOSAL` | Editable, revisioned plan/delta that may later materialize into canonical tasks after explicit commit | no | no | draft mutation only until canonical commit |
+
+An `ATTENTION_REQUEST` MUST NOT be represented as a READY/TODO task merely to make ChatGPT notice it. Doing so pollutes dispatch state and confuses evidence handoff with executable work.
+
+### 4.0 Attention request identity
+
+An attention request is a bounded durable handoff envelope, not a worker job and not a Human Gate. It SHOULD contain at least:
+
+```text
+request_id: ar_<opaque-id>
+revision: monotonically increasing integer
+board: hermes-chatgpt-mcp
+kind: review_verdict | decision_needed | blocked_escalation | evidence_ready | proposal_feedback | ...
+target: conductor | human | both
+status: open | acknowledged | resolved | expired | superseded
+created_by: authenticated principal / worker identity
+summary: bounded text
+source_refs: bounded exact references
+suggested_actions: optional bounded UI hints
+created_at / updated_at / expires_at
+supersedes_request_id: optional
+```
+
+`source_refs` may bind exact task IDs, run IDs, proposal ID/revision, candidate SHA, evidence/comment IDs, incident IDs, or other canonical provenance references.
+
+Requests that depend on a material candidate/evidence identity MUST bind that identity exactly. If the candidate or material evidence changes, the request becomes stale/superseded rather than carrying decision authority forward.
+
+Implementations SHOULD first consider whether the existing Hermes event/notification substrate can mechanically enforce these semantics before adding a separate persistence subsystem. The semantic boundary is mandatory; a new database is not.
 
 ### 4.1 Proposal identity
 
@@ -121,9 +164,23 @@ Selection is first-class UI state:
 
 Selection does **not** authorize mutation.
 
+### 5.4 Needs attention surface
+
+Open attention requests render outside normal Kanban work columns in a compact **Needs attention** surface. They may be grouped or filtered by kind, age, source, or urgency, but they never contribute to READY/TODO dispatch counts.
+
+A request should expose bounded actions such as:
+
+- **Discuss in ChatGPT**;
+- **Open evidence**;
+- **Turn into proposal**;
+- **Acknowledge**;
+- **Resolve / Dismiss**.
+
+If a request is stale or superseded, the UI must say so and prevent any stale decision affordance from being presented as current authority.
+
 ## 6. ChatGPT ↔ widget context contract
 
-The widget should publish compact semantic context rather than copying full card bodies into the model context.
+The widget should publish compact semantic context rather than copying full card bodies or request evidence into the model context.
 
 Suggested context payload:
 
@@ -131,9 +188,11 @@ Suggested context payload:
 {
   "board": "hermes-chatgpt-mcp",
   "active_proposal": {"id": "p_123", "revision": 7},
+  "attention_request": {"id": "ar_42", "revision": 3},
   "selected_refs": ["d_03", "d_07", "t_abc"],
   "view": "dependencies",
-  "focus_ref": "d_03"
+  "focus_ref": "d_03",
+  "intent": "discuss"
 }
 ```
 
@@ -145,7 +204,29 @@ The MCP must expose a recovery read such as:
 get_active_proposal_context(session_id?)
 ```
 
-so ChatGPT can rehydrate the active proposal/selection state after reconnect, cache loss, or a new turn.
+so ChatGPT can rehydrate the active proposal/selection/request state after reconnect, cache loss, or a new turn.
+
+### 6.1 Attention-to-chat bridge
+
+Baseline MCP Apps behavior should use standard bridge facilities such as `ui/update-model-context` for compact semantic context and `ui/message` when the host supports a user-initiated conversational handoff.
+
+ChatGPT-specific `window.openai.sendFollowUpMessage(...)` may be used as an additive convenience only after feature detection. It is not a correctness dependency and does not redefine MCP authority.
+
+The handoff is explicitly **user-initiated**:
+
+```text
+worker/system -> persist ATTENTION_REQUEST
+             -> workbench shows Needs attention
+user         -> taps Discuss in ChatGPT
+widget       -> sends request_id + selected refs + compact intent
+ChatGPT      -> reads request + referenced canonical evidence through MCP
+             -> reconstructs live state
+             -> discusses / proposes / performs only separately authorized actions
+```
+
+A background worker completion or asynchronous tool callback MUST NOT assume it can autonomously wake ChatGPT. If host messaging/context facilities are absent or fail, the request remains visible and recoverable through MCP.
+
+This means the durable object is the request, not the chat message. The chat message is merely a transport hint telling ChatGPT which live object to retrieve.
 
 ## 7. Proposed MCP primitives
 
@@ -160,13 +241,15 @@ proposal_diff(proposal_id, from_revision?, to_revision?, against_canonical=true)
 proposal_validate(proposal_id, revision)
 proposal_commit_preview(proposal_id, revision, selected_refs?)
 proposal_context_get(session_id?)
+attention_request_get(request_id)
+attention_request_list(board?, status="open", target?, limit?)
 ```
 
 All reads must be bounded.
 
-### 7.2 Draft mutation
+### 7.2 Draft and attention mutation
 
-Draft mutations affect only proposal storage:
+Proposal mutations affect only proposal storage. Attention mutations affect only non-dispatchable attention state:
 
 ```text
 proposal_create(board, base_board_revision, initial_plan?)
@@ -177,9 +260,15 @@ proposal_edge_add(...)
 proposal_edge_remove(...)
 proposal_selection_set(selected_refs, focus_ref?)
 proposal_discard(proposal_id, expected_revision)
+
+attention_request_create(kind, summary, source_refs[], target?, suggested_actions?, expires_at?)
+attention_request_ack(request_id, expected_revision)
+attention_request_resolve(request_id, expected_revision, resolution?)
 ```
 
-Every mutation requires `expected_revision` and returns a new revision. Stale revision writes fail closed with conflict information.
+Proposal mutations require `expected_revision` and return a new proposal revision. Attention-request updates use their own optimistic request revision/version. Stale writes fail closed with conflict information.
+
+`attention_request_create` MUST reject attempts to encode dispatch semantics, Human Gate decisions, unbounded worker logs, or direct dangerous actions. Suggested actions are UI hints, never executable authority.
 
 ### 7.3 Canonical commit
 
@@ -210,6 +299,8 @@ A commit must:
 
 The implementation must not fake transactionality if Hermes cannot provide an atomic multi-card transaction. If atomic commit is unavailable, the response must explicitly expose partial success and remaining unapplied draft operations.
 
+An attention request may lead to a proposal or explicit task creation, but only through those normal explicit paths. Resolving or discussing a request never materializes canonical work by itself.
+
 ## 8. Partial commit
 
 The user may commit only a selected subset.
@@ -239,6 +330,8 @@ A proposal can become stale while the canonical board evolves.
 
 Material conflict must fail closed and require rebase/review. A proposal must never silently overwrite canonical changes.
 
+Attention requests have a parallel stale-evidence rule: when a request binds a material candidate/evidence identity and that identity changes, the request becomes `superseded` or is explicitly rebased to a new request revision. It must never silently inherit a new candidate.
+
 ## 10. Proposal rebase
 
 Candidate flow:
@@ -250,6 +343,8 @@ proposal_rebase(proposal_id, revision, target_board_revision)
 Rebase produces a **new proposal revision** and a visible conflict/delta report. It never mutates canonical tasks.
 
 ## 11. Chat interaction examples
+
+### 11.1 Selection-driven proposal interaction
 
 With UI selection context present, the following should be resolvable without the user copying task IDs:
 
@@ -263,9 +358,26 @@ With UI selection context present, the following should be resolvable without th
 
 ChatGPT must resolve pronouns/referents through proposal/selection context, then read the referenced objects from MCP before answering or mutating.
 
+### 11.2 Worker-to-conductor attention interaction
+
+A worker may persist an attention request such as:
+
+```text
+Reviewer -> Attention ar_42
+kind=review_verdict
+source_refs=[task:t_review, candidate:47642b8..., comment:1628]
+summary="Review passed; two non-blocking risks need conductor disposition."
+```
+
+The workbench renders the request in **Needs attention** rather than a Kanban work column.
+
+On **Discuss in ChatGPT**, the widget sends a compact user-initiated follow-up containing `request_id` plus selected refs. ChatGPT reads `attention_request_get` and the referenced canonical evidence, reconstructs current state, and then discusses or prepares a proposal. The request itself neither creates work nor authorizes mutation.
+
+On **Turn into proposal**, ChatGPT or the widget creates/revises a `PROPOSAL`; it MUST NOT silently translate the request directly into canonical tasks.
+
 ## 12. Context economy
 
-Do not inject complete proposal contents into every turn.
+Do not inject complete proposal or attention contents into every turn.
 
 Default conversational context should contain only:
 
@@ -273,9 +385,10 @@ Default conversational context should contain only:
 - selected/focused refs;
 - board id;
 - view mode;
-- compact dirty/conflict indicators.
+- compact dirty/conflict indicators;
+- optional active `attention_request` id/revision and intent.
 
-Detailed card bodies, graph neighborhoods, validation results and commit previews are fetched on demand.
+Detailed card bodies, request evidence, graph neighborhoods, validation results and commit previews are fetched on demand.
 
 ## 13. Authority and safety invariants
 
@@ -286,7 +399,11 @@ Detailed card bodies, graph neighborhoods, validation results and commit preview
 5. A proposal cannot contain an instruction that causes automatic deploy/restart/protected merge on commit.
 6. Any card that would trigger authority-sensitive work is created according to normal workflow and remains subject to its own gates.
 7. Candidate/evidence identity changes invalidate material gates exactly as today.
-8. Proposal persistence must not contain OAuth tokens, secrets or unbounded worker logs.
+8. Proposal/attention persistence must not contain credentials or unbounded worker logs.
+9. Attention requests grant zero mutation, dispatch, review, Human Gate, release, deploy or approval authority.
+10. Attention requests are excluded from normal READY/TODO dispatch queues; turning one into work requires an explicit task/proposal materialization path.
+11. A user-initiated chat handoff conveys referents and intent only; ChatGPT must re-read live evidence before material decisions.
+12. A request targeted at `human`, `conductor`, or both does not redefine who may perform the eventual action.
 
 ## 14. Audit/provenance
 
@@ -304,15 +421,23 @@ proposal_operation_failed
 proposal_commit_completed
 proposal_rebased
 proposal_discarded
+attention_request_created
+attention_request_acknowledged
+attention_request_resolved
+attention_request_expired
+attention_request_superseded
+attention_request_opened_in_chat (bounded telemetry; no transcript copy)
 ```
 
 For canonical mutations, provenance must identify both proposal revision and resulting Hermes task IDs.
 
+For attention requests, provenance must preserve exact creator/source identity and bounded source references. `created_by` is provenance, not assignee semantics.
+
 ## 15. Storage and lifecycle
 
-Proposal state is operational state, not canonical Kanban state.
+Proposal state and attention state are operational state, not canonical Kanban state.
 
-Recommended lifecycle:
+Recommended proposal lifecycle:
 
 ```text
 DRAFT -> PARTIALLY_COMMITTED -> COMMITTED
@@ -322,7 +447,16 @@ DRAFT -> PARTIALLY_COMMITTED -> COMMITTED
    +-----------> CONFLICTED -> DRAFT (via explicit rebase)
 ```
 
-Retention should be bounded and configurable. Expired drafts should be archived/expired, never silently committed.
+Recommended attention lifecycle:
+
+```text
+OPEN -> ACKNOWLEDGED -> RESOLVED
+  |          |
+  |          +-------> SUPERSEDED
+  +------------------> EXPIRED
+```
+
+Retention should be bounded and configurable. Expired drafts should be archived/expired, never silently committed. Expired attention requests should disappear from default attention UI while remaining available as bounded historical evidence when policy permits.
 
 ## 16. Dependencies view integration
 
@@ -333,6 +467,8 @@ The R1.6.3 DAG view should later render proposal nodes and edges using the same 
 - removed edge: explicit strike/removed visual in diff mode;
 - draft node: ghost/dashed card;
 - selected branch: persistent upstream/downstream emphasis.
+
+Attention requests may visually badge referenced nodes/branches, but the badge must not create dependency edges or alter DAG readiness.
 
 This avoids separate planning and execution visual models.
 
@@ -349,10 +485,15 @@ Proposal and canonical cards should respect the current presentation-only sort s
 
 Sorting never mutates canonical task priority/order.
 
+Attention requests use their own presentation ordering and are never mixed into normal Kanban status sorting as pseudo-tasks.
+
 ## 18. E2E acceptance plan
 
 ### Phase A — MCP primitives
 
+- create/read/ack/resolve a bounded non-dispatchable attention request;
+- attention request binds exact source/candidate/evidence refs and becomes superseded on material identity drift;
+- attention requests never appear as READY/TODO work;
 - create/read/revise proposal;
 - stale revision rejection;
 - draft card/edge CRUD;
@@ -365,6 +506,9 @@ Sorting never mutates canonical task priority/order.
 
 ### Phase B — MCP Apps UI
 
+- open attention requests render in a compact **Needs attention** surface distinct from Kanban work columns;
+- **Discuss in ChatGPT** is explicit user action and sends only bounded request/selection context;
+- absence/failure of host chat bridge leaves the request recoverable through MCP;
 - ChatGPT proposes cards and they render as DRAFT;
 - user edits/adds/removes cards and edges;
 - selection survives refresh/view switch;
@@ -382,9 +526,12 @@ Real ChatGPT-side dogfood must prove:
 4. ChatGPT modifies the proposal, not canonical Kanban;
 5. UI refreshes to the new proposal revision;
 6. explicit commit creates the intended canonical cards with exact readback;
-7. reconnect/new turn can recover active proposal state.
+7. reconnect/new turn can recover active proposal state;
+8. a worker-generated attention request can be opened from the widget into chat, ChatGPT rehydrates its exact evidence via MCP, and no canonical task is created merely by the handoff;
+9. an asynchronous/background request remains durable without assuming autonomous ChatGPT wake-up;
+10. stale/superseded request evidence is surfaced as stale and cannot masquerade as a current decision input.
 
-Host-specific model-context behavior must be classified as VERIFIED/PARTIAL/UNVERIFIED rather than assumed from SDK support.
+Host-specific model-context/message behavior must be classified as VERIFIED/PARTIAL/UNVERIFIED rather than assumed from SDK support.
 
 ## 19. Implementation slices
 
@@ -402,17 +549,17 @@ Ghost cards/edges, add/edit/remove, selection context, proposal revision indicat
 
 Exact validation, optimistic board revision check, partial commit evidence, draft→task mapping.
 
-### P3 — ChatGPT context bridge
+### P3 — Attention + ChatGPT context bridge
 
-Compact model-context updates plus MCP recovery primitive; selection-based conversational references.
+First add the bounded non-dispatchable `ATTENTION_REQUEST` IR/read path and workbench surface. Then add compact model-context updates, explicit user-initiated chat handoff, MCP recovery primitives, and selection/request-based conversational references. Do not make autonomous ChatGPT wake-up a dependency.
 
 ### P4 — Dependencies view parity
 
-Proposal overlay in DAG/tree view, branch revision, focus and partial commit.
+Proposal overlay in DAG/tree view, branch revision, focus, attention badges and partial commit.
 
 ### P5 — Independent real-host E2E
 
-ChatGPT Web/mobile dogfood with reconnect/context recovery and stale conflict scenarios.
+ChatGPT Web/mobile dogfood with attention handoff, reconnect/context recovery and stale conflict scenarios.
 
 ## 20. Falsifiable success criteria
 
@@ -421,9 +568,12 @@ R1.7 is successful only if real dogfood demonstrates all of the following:
 - planning can be performed and substantially edited without creating canonical cards;
 - ChatGPT can correctly refer to UI-selected cards after a user returns to chat;
 - proposal context can be recovered without copying the full draft into every turn;
+- a worker can raise a durable attention request without creating dispatchable Kanban work;
+- the user can open that request in ChatGPT and ChatGPT resolves exact live evidence from MCP rather than trusting a copied prompt payload;
 - explicit commit produces the exact reviewed plan or fails closed on stale/conflict;
 - partial commit does not corrupt remaining draft graph state;
 - proposal workflow reduces accidental card creation/rework compared with direct plan→create flow;
+- attention workflow reduces fake/coordinator-assigned evidence cards compared with task-based handoff;
 - no authority or Human Gate invariant is weakened.
 
 ## 21. Open design questions for independent review
@@ -435,9 +585,23 @@ R1.7 is successful only if real dogfood demonstrates all of the following:
 5. How to represent edits to existing canonical cards in a proposal without conflating them with new draft cards.
 6. How much proposal state may be safely exposed through MCP Apps model context versus fetched by tools.
 7. Whether multi-user/cross-session proposal ownership is needed before the first dogfood release.
+8. Whether `ATTENTION_REQUEST` can be enforced by the existing Hermes event/notification substrate or needs a dedicated minimal store.
+9. Whether baseline MCP Apps `ui/message` is sufficient across target hosts or ChatGPT should additionally expose `sendFollowUpMessage` behind capability detection; real-host E2E must decide, not documentation assumptions.
+10. Exact TTL/deduplication rules for repeated worker requests that bind the same root cause/evidence generation.
+11. Whether request acknowledgement is user-specific or global when more than one human/conductor session can observe the same board.
 
 ## 22. Recommended next decision
 
 Do not implement R1.7 until R1.6.2 mobile workbench and R1.6.3 dependency/sorting view have passed their own independent reviews and real ChatGPT-side dogfood.
 
-After that, start with **P0 Proposal IR + persistence** and an independent architecture review. Do not begin with UI-only mock drafts: the proposal identity/revision/conflict contract must be real first.
+After that, start with **P0 Proposal IR + persistence** and an independent architecture review. The `ATTENTION_REQUEST` path belongs in the same shared interaction/context architecture but should be implemented at the narrowest enforceable layer, preferably reusing Hermes notification/event primitives if they can preserve non-dispatchability, provenance, boundedness and revision semantics.
+
+Do not begin with UI-only mock drafts or a fake “assignee=chatgpt” convention: proposal identity/revision/conflict and attention identity/non-dispatchability must be real first.
+
+## 23. Dogfood motivation and design consequence
+
+Observed dogfood exposed the missing semantic primitive: a reviewer created a child card containing a completed review verdict and targeted it at the ChatGPT conductor. The intent was useful — elevate verified evidence for interactive disposition — but representing that handoff as a READY task made completed evidence look like executable backlog.
+
+R1.7 therefore treats the desired behavior as an `ATTENTION_REQUEST`, not as a special assignee convention. The UI should make requests first-class and actionable while the canonical Kanban remains reserved for executable work. This is a workflow/observability correction, not a weakening of task provenance or review authority.
+
+Current host-capability assumption (to be revalidated in real E2E): the MCP Apps bridge provides standard message/model-context mechanisms, while ChatGPT exposes additional `window.openai` conveniences such as `sendFollowUpMessage`. These capabilities are transport conveniences only; durable MCP state and explicit user action remain the correctness boundary.
