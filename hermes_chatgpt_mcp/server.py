@@ -1290,6 +1290,8 @@ def create_app(
                     "api_version": p.api_version,
                     "surface": p.surface,
                     "provenance_header": p.provenance_header,
+                    "binding": p.binding.as_dict() if p.binding is not None else None,
+                    "binding_fingerprint": p.binding_fingerprint,
                 },
                 evidence={
                     "task_title": e.task_title,
@@ -1312,7 +1314,7 @@ def create_app(
         register_canonical("human-gate", HumanGateInput, _human_gate, scope=auth_service.read_scope, result_model=HumanGateView)
 
         def _human_gate_decide(handle, request):
-            from .control_plane import validate_gate_actor, validate_gate_requester
+            from .control_plane import revalidate_gate_context, validate_gate_actor, validate_gate_requester
 
             # Stale-candidate policy: a decision naming a superseded/retired
             # requester would approve evidence from a dead candidate — reject
@@ -1325,6 +1327,13 @@ def create_app(
             raw_subject = claims.get("sub") if isinstance(claims, dict) else None
             actor = raw_subject if isinstance(raw_subject, str) else None
             validate_gate_actor(requester=request.requester, actor=actor)
+            revalidate_gate_context(
+                read_adapter=board_resolver.query_adapter(handle),
+                board=handle.slug,
+                task_id=request.task_id,
+                surface="beta" if beta else "stable",
+                expected_binding_fingerprint=request.binding_fingerprint,
+            )
             # Auditable: the decision is a canonical task comment on the gate task,
             # not an implicit FK flip.  The human's YES/NO stays in task_events.
             body = f"HUMAN_GATE {request.decision}: {request.task_id} on {handle.slug}"

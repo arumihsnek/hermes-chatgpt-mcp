@@ -9,7 +9,15 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any, Literal
 
-from .provenance import API_VERSION, bind_candidate_provenance_to_task, get_baseline, get_candidate_provenance
+from .provenance import (
+    API_VERSION,
+    ArtifactCandidateBinding,
+    CandidateBinding,
+    GitCandidateBinding,
+    bind_candidate_provenance_to_task,
+    get_baseline,
+    get_candidate_provenance,
+)
 from .release import BuildMetadataError, canary_manifest
 
 # ── Clean-architecture boundaries ──────────────────────────────────────────
@@ -41,6 +49,15 @@ class GateCandidateProvenance:
     api_version: str
     surface: str
     provenance_header: str
+    binding: CandidateBinding | None = None
+
+    @property
+    def binding_fingerprint(self) -> str | None:
+        if self.binding is None:
+            return None
+        from .provenance import candidate_binding_fingerprint
+
+        return candidate_binding_fingerprint(self.binding)
 
 
 @dataclass(frozen=True)
@@ -80,6 +97,7 @@ class HumanGateContext:
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
+        d["provenance"]["binding_fingerprint"] = self.provenance.binding_fingerprint
         d["residual_risk"] = list(self.residual_risk)
         d["decision_options"] = list(self.decision_options)
         return d
@@ -125,6 +143,7 @@ def provenance_bundle(surface: Literal["stable", "beta"] = "stable") -> GateCand
         api_version=base.api_version,
         surface=surface,
         provenance_header=prov.provenance_header(surface),
+        binding=prov.binding,
     )
 
 
@@ -210,7 +229,11 @@ def build_gate_context(
     residual_risk: list[str] | None = None,
 ) -> HumanGateContext:
     task = read_adapter.get_task(task_id)
-    task_bound = bind_candidate_provenance_to_task(getattr(task, "body", "") or "")
+    task_bound = bind_candidate_provenance_to_task(
+        getattr(task, "body", "") or "",
+        task_reader=read_adapter.get_task,
+        attachment_reader=getattr(read_adapter, "read_attachment_bytes", None),
+    )
     if task_bound is None:
         prov = provenance_bundle(surface)
     else:
@@ -225,6 +248,7 @@ def build_gate_context(
             api_version=base.api_version,
             surface=surface,
             provenance_header=task_bound.provenance_header(surface),
+            binding=task_bound.binding,
         )
     activity = read_adapter.get_activity(task_id, max_items=20, log_bytes=0)
     dispatch = read_adapter.get_dispatch(task_id)
@@ -263,12 +287,55 @@ def build_gate_context(
             api_version=prov.api_version,
             surface=prov.surface,
             provenance_header=prov.provenance_header,
+            binding=prov.binding,
         ),
         evidence=evidence,
         residual_risk=risks,
         rollback=rollback,
         generated_at=int(time.time()),
     )
+
+
+def revalidate_gate_context(
+    *,
+    read_adapter: Any,
+    board: str,
+    task_id: str,
+    surface: Literal["stable", "beta"] = "stable",
+    expected_binding_fingerprint: str | None,
+) -> HumanGateContext:
+    """Rebuild a gate and reject any candidate/review drift before a decision."""
+    ctx = build_gate_context(
+        read_adapter=read_adapter,
+        board=board,
+        task_id=task_id,
+        surface=surface,
+    )
+    if ctx.provenance.binding_fingerprint != expected_binding_fingerprint:
+        raise ValueError("human gate binding fingerprint is stale or missing")
+    return ctx
+
+
+def _binding_markdown(provenance: GateCandidateProvenance) -> str:
+    binding = provenance.binding
+    if isinstance(binding, ArtifactCandidateBinding):
+        candidate = (
+            f"kind `artifact` · task `{binding.candidate_task_id}` · "
+            f"attachment `{binding.candidate_attachment_id}`"
+            f" · SHA-256 `{binding.candidate_digest}` · source `{binding.source_ref}`"
+        )
+        review = (
+            f"review task `{binding.review.task_id}` · attachment `{binding.review.attachment_id}` · "
+            f"SHA-256 `{binding.review.digest}` · reviewed candidate "
+            f"`{binding.review.reviewed_candidate_task_id}/{binding.review.reviewed_candidate_attachment_id}`"
+        )
+        return f"**Candidate binding** {candidate}\n**Review binding** {review}"
+    if isinstance(binding, GitCandidateBinding):
+        return (
+            f"**Candidate binding** kind `git` · SHA `{binding.candidate_sha}` · "
+            f"branch `{binding.branch}` · source `{binding.source_ref}`"
+        )
+    return "**Candidate binding** legacy running-build provenance"
 
 
 def format_gate_markdown(ctx: HumanGateContext) -> str:
@@ -279,6 +346,8 @@ def format_gate_markdown(ctx: HumanGateContext) -> str:
         f"# Human Gate — {ctx.task_id} on {ctx.board}\n\n"
         f"**Provenance** `{p.provenance_header}` · API `{p.api_version}` · "
         f"baseline `{p.baseline_branch}@{p.baseline_mcp_sha[:7]}` · surface `{p.surface}`\n\n"
+        f"{_binding_markdown(p)}\n"
+        f"**Binding fingerprint** `{p.binding_fingerprint or '(legacy)'}`\n\n"
         f"**Task** `{e.task_title}` — status `{e.task_status}` · dispatch `{e.dispatch_state}`\n"
         f"Reasons: {', '.join(e.dispatch_reasons) or '(none)'}\n\n"
         f"**Latest summary**\n{(e.latest_summary or '(none)')[:800]}\n\n"

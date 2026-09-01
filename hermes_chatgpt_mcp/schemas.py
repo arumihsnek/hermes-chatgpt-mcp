@@ -1044,6 +1044,12 @@ class HumanGateDecisionInput(BoardQuery):
     decision: Literal["YES", "NO"]
     reason: str | None = Field(default=None, max_length=8_000)
     requester: str | None = Field(default=None, max_length=256)
+    binding_fingerprint: str | None = Field(
+        default=None,
+        min_length=64,
+        max_length=64,
+        pattern=r"^[0-9a-f]{64}$",
+    )
     probe: bool = False
 
 
