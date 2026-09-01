@@ -240,6 +240,30 @@ class HermesReadOnlyAdapter:
             created_at=int(getattr(attachment, "created_at", 0) or 0),
         )
 
+    def read_attachment_bytes(self, task_id: str, attachment_id: int) -> bytes:
+        """Read an owned attachment through the canonical read-only surface."""
+        with self.store.connect() as conn:
+            self._get_task(conn, task_id)
+            attachment = self.hermes.get_attachment(conn, int(attachment_id))
+        if attachment is None or str(getattr(attachment, "task_id", "")) != str(task_id):
+            raise ValueError("attachment is not bound to the requested task")
+
+        attachments_root = getattr(self.hermes, "attachments_root", None)
+        if not callable(attachments_root):
+            raise RuntimeError("canonical attachment root is unavailable")
+        root = Path(attachments_root(board=self.store.board)).expanduser().resolve()
+        path = Path(str(attachment.stored_path)).expanduser().resolve()
+        try:
+            path.relative_to(root)
+        except ValueError as exc:
+            raise ValueError("attachment is outside the canonical attachment store") from exc
+        if not path.is_file():
+            raise FileNotFoundError("attachment bytes are unavailable")
+        data = path.read_bytes()
+        if len(data) != int(getattr(attachment, "size", 0) or 0):
+            raise ValueError("attachment size does not match canonical metadata")
+        return data
+
     def get_task(self, task_id: str) -> TaskDetail:
         with self.store.connect() as conn:
             task = self._get_task(conn, task_id)
