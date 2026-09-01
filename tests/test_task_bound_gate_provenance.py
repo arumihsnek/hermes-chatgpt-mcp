@@ -317,6 +317,17 @@ def test_decision_revalidation_requires_the_prepared_binding_fingerprint():
     fingerprint = prepared.provenance.binding_fingerprint
     assert fingerprint
 
+    # Artifact-bound decisions must carry the fingerprint the human actually
+    # saw.  Omission must never auto-resolve to the current binding.
+    with pytest.raises(ValueError, match="binding fingerprint"):
+        revalidate_gate_context(
+            read_adapter=adapter,
+            board="hermes-chatgpt-mcp",
+            task_id="t_gate",
+            surface="beta",
+            expected_binding_fingerprint=None,
+        )
+
     with pytest.raises(ValueError, match="binding fingerprint"):
         revalidate_gate_context(
             read_adapter=adapter,
@@ -334,3 +345,49 @@ def test_decision_revalidation_requires_the_prepared_binding_fingerprint():
         expected_binding_fingerprint=fingerprint,
     )
     assert revalidated.provenance.binding_fingerprint == fingerprint
+
+
+def test_decision_revalidation_rejects_a_previous_but_well_formed_binding():
+    first_adapter = _ArtifactReadAdapter(_artifact_body())
+    prepared = build_gate_context(
+        read_adapter=first_adapter,
+        board="hermes-chatgpt-mcp",
+        task_id="t_gate",
+        surface="beta",
+    )
+    old_fingerprint = prepared.provenance.binding_fingerprint
+    assert old_fingerprint
+
+    new_candidate_bytes = b"candidate artifact bytes v2\n"
+    new_candidate_digest = hashlib.sha256(new_candidate_bytes).hexdigest()
+    new_review_bytes = (
+        f"**Candidate SHA-256:** {new_candidate_digest}\n"
+        f"**Parent Task:** {ARTIFACT_TASK_ID} (attachment id {ARTIFACT_ATTACHMENT_ID})\n"
+    ).encode()
+    new_review_digest = hashlib.sha256(new_review_bytes).hexdigest()
+    current_adapter = _ArtifactReadAdapter(
+        _artifact_body(
+            candidate_digest=new_candidate_digest,
+            review_digest=new_review_digest,
+        ),
+        review_bytes=new_review_bytes,
+    )
+    current_adapter.attachments[(ARTIFACT_TASK_ID, ARTIFACT_ATTACHMENT_ID)] = new_candidate_bytes
+
+    current = build_gate_context(
+        read_adapter=current_adapter,
+        board="hermes-chatgpt-mcp",
+        task_id="t_gate",
+        surface="beta",
+    )
+    assert current.provenance.binding_fingerprint
+    assert current.provenance.binding_fingerprint != old_fingerprint
+
+    with pytest.raises(ValueError, match="binding fingerprint"):
+        revalidate_gate_context(
+            read_adapter=current_adapter,
+            board="hermes-chatgpt-mcp",
+            task_id="t_gate",
+            surface="beta",
+            expected_binding_fingerprint=old_fingerprint,
+        )
