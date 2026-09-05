@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 
 import pytest
 from hermes_cli import kanban_db
@@ -69,3 +70,25 @@ def test_unknown_task_is_a_stable_not_found_error(tmp_path):
 
     with pytest.raises(TaskNotFoundError):
         _adapter(fixture).get_task("missing")
+
+
+def test_read_attachment_bytes_uses_owned_canonical_attachment_store(tmp_path, monkeypatch):
+    fixture = make_hermes_fixture(tmp_path)
+    attachment_root = tmp_path / "attachments"
+    attachment_path = attachment_root / "review-task" / "evidence.txt"
+    attachment_path.parent.mkdir(parents=True)
+    payload = b"canonical evidence\n"
+    attachment_path.write_bytes(payload)
+    monkeypatch.setenv("HERMES_KANBAN_ATTACHMENTS_ROOT", str(attachment_root))
+
+    with pytest.raises(ValueError, match="not bound"):
+        _adapter(fixture).read_attachment_bytes("child-ready", 1)
+
+    with sqlite3.connect(fixture.db_path) as conn:
+        conn.execute(
+            "UPDATE task_attachments SET stored_path = ?, size = ? WHERE id = ?",
+            (str(attachment_path), len(payload), 1),
+        )
+        conn.commit()
+
+    assert _adapter(fixture).read_attachment_bytes("review-task", 1) == payload
