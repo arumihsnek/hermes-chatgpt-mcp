@@ -345,6 +345,31 @@ class HermesBoardAdminAdapter:
         return dict(self.hermes.write_board_metadata(normalized, default_workdir=str(root)))
 
 
+class _HumanGateDagReadAdapter:
+    """Duck-typed read surface for the Human-Gate DAG guard (adapter -> domain).
+
+    The domain guard in ``control_plane`` needs a read adapter exposing
+    ``get_task``/``store``/``hermes``; this shim builds that surface from the
+    management adapter's own handle and canonical module without importing the
+    read adapter (which would invert the clean-architecture boundary).
+    """
+
+    def __init__(self, handle: Any, hermes: Any) -> None:
+        self.handle = handle
+        self.hermes = hermes
+        self.store = self
+
+    def connect(self):  # matches the store's connect() context-manager port
+        return self.hermes.connect_closing(db_path=self.handle.db_path, board=self.handle.slug)
+
+    def get_task(self, task_id: str) -> Any:
+        with self.hermes.connect_closing(db_path=self.handle.db_path, board=self.handle.slug) as conn:
+            task = self.hermes.get_task(conn, task_id)
+        if task is None:
+            raise LookupError(f"unknown task {task_id}")
+        return task
+
+
 class HermesCardManagementAdapter:
     """Narrow boundary for canonical Hermes comment and assignment commands."""
 
@@ -409,6 +434,18 @@ class HermesCardManagementAdapter:
         return self._with_conn(op)
 
     def link(self, parent_id: str, child_id: str) -> LinkTasksResult:
+        from .control_plane import assert_human_gate_dag_direction
+
+        # Fail closed BEFORE any write: a post-gate task must never become an
+        # ancestor/parent of its own authorizing gate. Decompose needs no
+        # equivalent check — its children are brand-new tasks, so they cannot
+        # be an ancestor gate of anything (GATE -> POST-GATE by construction).
+        assert_human_gate_dag_direction(
+            read_adapter=_HumanGateDagReadAdapter(self.handle, self.hermes),
+            parent_id=parent_id,
+            child_id=child_id,
+        )
+
         def op(conn):
             self.hermes.link_tasks(conn, parent_id, child_id)
             return LinkTasksResult(parent_id=parent_id, child_id=child_id, board=self.handle.slug,
