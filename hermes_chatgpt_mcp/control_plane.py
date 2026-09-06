@@ -2,12 +2,14 @@
 # Candidate: wt/t_78ac0513 — Wave-4 control-plane differential (portable, bounded, auditable).
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import re
 import time
 from dataclasses import dataclass, asdict
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Iterable, Literal
 
 from .provenance import (
     API_VERSION,
@@ -185,6 +187,173 @@ def validate_gate_actor(*, requester: str | None, actor: str | None) -> None:
 _STALE_REQUESTER_MARKERS = ("superseded", "retired", "stale", "archived")
 
 
+class HumanGateDagViolation(ValueError):
+    """Raised when a link/decompose would reverse Human-Gate authority direction.
+
+    Canonical ordering is PRE-GATE evidence -> GATE -> POST-GATE mutation/review.
+    A post-gate task (a descendant of its authorizing gate) must never become an
+    ancestor/parent of that gate, nor of any ancestor gate, otherwise the gate's
+    authority is bypassed and the human decision loses provenance.
+    """
+
+
+class HumanGateAuthorityDrift(ValueError):
+    """Raised when a retained local verifier disagrees with canonical state.
+
+    Canonical Human Gate/binding readback is authoritative. A locally retained
+    fingerprint that does not match the canonical binding fingerprint is an
+    incident — it fails closed here and must never silently override canonical
+    state or authorize against it.
+    """
+
+
+@dataclass(frozen=True)
+class GateDecisionRecord:
+    """One parsed HUMAN_GATE comment: the exact decision plus the binding it authorized.
+
+    ``binding_fingerprint`` is None for legacy comments recorded without a
+    binding line. Legacy records can never authorize an exact canonical
+    binding; only an exact fingerprint match preserves a decision.
+    """
+
+    decision: Literal["YES", "NO"]
+    binding_fingerprint: str | None
+
+
+def binding_fingerprint(
+    *,
+    candidate_sha: str | None,
+    candidate_branch: str | None,
+    baseline_mcp_sha: str,
+    baseline_hermes_sha: str,
+    baseline_phase_s_sha: str,
+    api_version: str,
+) -> str | None:
+    """Return the canonical 8-hex binding fingerprint, or None for legacy provenance.
+
+    Only an exact candidate binding (full SHA + explicit branch, as verified by
+    ``bind_candidate_provenance_to_task``) yields a fingerprint. Running-build
+    fallback provenance has no stable identity to authorize against, so it
+    yields None and can never match a recorded YES. The 8-hex shape matches the
+    ``binding_fingerprint`` slot rendered by the readback surface.
+    """
+    if not candidate_sha or not candidate_branch:
+        return None
+    material = "|".join(
+        (
+            candidate_sha.strip().lower(),
+            candidate_branch.strip(),
+            baseline_mcp_sha,
+            baseline_hermes_sha,
+            baseline_phase_s_sha,
+            api_version,
+        )
+    )
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()[:8]
+
+
+_DECISION_HEAD_RE = re.compile(r"^HUMAN_GATE\s+(YES|NO)\b")
+_BINDING_LINE_RE = re.compile(r"^Binding:\s*([0-9a-f]{8}|legacy)\s*$", re.IGNORECASE | re.MULTILINE)
+
+
+def format_gate_decision_body(
+    *,
+    decision: Literal["YES", "NO"],
+    task_id: str,
+    board: str,
+    reason: str | None = None,
+    requester: str | None = None,
+    binding_fingerprint: str | None = None,
+) -> str:
+    """Format the append-only HUMAN_GATE comment, binding the decision to a fingerprint.
+
+    The trailing ``Binding:`` line is what lets a later reprepare/readback prove
+    the recorded YES authorized *this* exact binding. ``None`` records
+    ``Binding: legacy`` for decisions taken against running-build provenance.
+    """
+    body = f"HUMAN_GATE {decision}: {task_id} on {board}"
+    if reason:
+        body += f"\nReason: {reason[:2000]}"
+    if requester:
+        body += f"\nRequester: {requester[:200]}"
+    body += f"\nBinding: {binding_fingerprint if binding_fingerprint else 'legacy'}"
+    return body
+
+
+def parse_recorded_gate_decisions(comments: Iterable[Any]) -> list[GateDecisionRecord]:
+    """Parse HUMAN_GATE comments (records or dicts) into decision records.
+
+    Non-gate comments are ignored. A gate comment without a parseable binding
+    line is treated as legacy (``binding_fingerprint=None``) and can therefore
+    never authorize an exact canonical binding.
+    """
+    records: list[GateDecisionRecord] = []
+    for comment in comments:
+        body = comment.get("body") if isinstance(comment, dict) else getattr(comment, "body", None)
+        if not isinstance(body, str):
+            continue
+        head = _DECISION_HEAD_RE.search(body.strip())
+        if head is None:
+            continue
+        match = _BINDING_LINE_RE.search(body)
+        fingerprint: str | None = None
+        if match is not None and match.group(1).lower() != "legacy":
+            fingerprint = match.group(1).lower()
+        records.append(
+            GateDecisionRecord(
+                decision="YES" if head.group(1) == "YES" else "NO",
+                binding_fingerprint=fingerprint,
+            )
+        )
+    return records
+
+
+def resolve_gate_authority(
+    *,
+    canonical_fingerprint: str | None,
+    decisions: Iterable[GateDecisionRecord],
+) -> Literal["authorized", "denied", "needs_input"]:
+    """Deterministically reprepare/read back the recorded human decision.
+
+    A same unchanged ``binding_fingerprint`` preserves the already-recorded
+    exact decision (YES -> authorized, NO -> denied; latest match wins). A
+    changed fingerprint — or legacy provenance with no stable identity — always
+    yields ``needs_input``: fresh human authority is required and approval is
+    never automatic.
+    """
+    if canonical_fingerprint is None:
+        return "needs_input"
+    outcome: Literal["authorized", "denied", "needs_input"] = "needs_input"
+    for record in decisions:
+        if record.binding_fingerprint != canonical_fingerprint:
+            continue
+        outcome = "authorized" if record.decision == "YES" else "denied"
+    return outcome
+
+
+def assert_binding_parity(
+    local_fingerprint: str | None,
+    canonical_fingerprint: str | None,
+) -> None:
+    """Fail closed when a retained local verifier disagrees with canonical readback.
+
+    Any disagreement — including a locally claimed exact fingerprint against
+    legacy canonical provenance — raises :class:`HumanGateAuthorityDrift`
+    instead of silently overriding canonical state.
+    """
+    if local_fingerprint != canonical_fingerprint:
+        raise HumanGateAuthorityDrift(
+            "human-gate binding parity failure: local verifier "
+            f"({local_fingerprint or 'legacy'}) disagrees with canonical "
+            f"readback ({canonical_fingerprint or 'legacy'})"
+        )
+
+
+def _task_body_text(task: Any) -> str:
+    body = getattr(task, "body", None) or ""
+    return str(body)
+
+
 def validate_gate_requester(requester: str | None) -> None:
     """Reject decisions bound to a stale/superseded candidate requester.
 
@@ -336,6 +505,127 @@ def _binding_markdown(provenance: GateCandidateProvenance) -> str:
             f"branch `{binding.branch}` · source `{binding.source_ref}`"
         )
     return "**Candidate binding** legacy running-build provenance"
+
+
+def detect_human_gate_tasks(read_adapter: Any, candidate_task_ids: Iterable[str]) -> list[str]:
+    """Return the subset of ``candidate_task_ids`` that are authorizing Human Gates.
+
+    A task is treated as an authorizing gate when its body declares an exact
+    candidate provenance (``bind_candidate_provenance_to_task`` succeeds with a
+    full SHA), which is the canonical gate binding.  This is the same primitive
+    ``build_gate_context`` relies on, so gate identity cannot drift between
+    readback surfaces (item 2: canonical readback is authoritative).
+
+    Only task bodies are inspected; no summary text, comment prose, or external
+    provenance marker is trusted as a gate signal, so a crafted body cannot make
+    an arbitrary task signable.
+    """
+    from .provenance import bind_candidate_provenance_to_task as _bind
+
+    gates: list[str] = []
+    for task_id in candidate_task_ids:
+        try:
+            body = getattr(read_adapter.get_task(task_id), "body", "") or ""
+        except (LookupError, ValueError, RuntimeError):
+            continue
+        try:
+            bound = _bind(body)
+        except ValueError:
+            # A body that declares an incomplete/invalid candidate is not an
+            # authorizing gate; build_gate_context enforces strictness for the
+            # gate context itself. Treating a non-binding body as non-gate keeps
+            # the DAG direction guard read-only and fail-open at the identity
+            # surface (authority is never granted by a failed declaration).
+            bound = None
+        if bound is not None:
+            gates.append(str(task_id))
+    return gates
+
+
+def _descendants_of(conn: Any, hermes: Any, task_id: str, *, limit: int = 1024) -> set[str]:
+    """Walk all descendants of ``task_id`` via the canonical ``child_ids`` port."""
+    seen: set[str] = set()
+    stack = [task_id]
+    while stack:
+        node = stack.pop()
+        for child in hermes.child_ids(conn, node):
+            if child in seen:
+                continue
+            seen.add(child)
+            stack.append(child)
+            if len(seen) >= limit:  # bounded safety valve
+                return seen
+    return seen
+
+
+def assert_human_gate_dag_direction(
+    *,
+    read_adapter: Any,
+    parent_id: str,
+    child_id: str,
+) -> None:
+    """Fail-closed guard against reversing Human-Gate authority direction.
+
+    Enforces PRE-GATE evidence -> GATE -> POST-GATE mutation/review. Linking
+    ``parent_id -> child_id`` makes the parent an ancestor of the child and of
+    everything below the child. That inverts gate authority exactly when some
+    gate ``G`` at-or-below the child (``G`` is the child itself or one of its
+    descendants) has the parent as its post-gate descendant: the post-gate task
+    would become an ancestor of the authority that approved it — an authority
+    cycle and a bypass of the recorded human decision.
+
+    The legitimate direction is unaffected: linking a gate to its post-gate
+    task, or pre-gate evidence to a gate, never matches the rule above and is
+    allowed. A parent that is already downstream of the child is a plain
+    authority cycle and is rejected as well; generic non-gate cycles remain the
+    canonical layer's job.
+
+    The check is structural and read-only: it inspects only the existing
+    parent/child graph and gate identity. It raises
+    :class:`HumanGateDagViolation` on any edge that would invert gate
+    authority.
+    """
+    if parent_id == child_id:
+        raise HumanGateDagViolation("a task cannot depend on itself")
+    store = getattr(read_adapter, "store", None)
+    hermes = getattr(read_adapter, "hermes", None)
+    if store is None or hermes is None:
+        # Without a read surface we cannot evaluate direction; fail closed.
+        raise HumanGateDagViolation("human-gate DAG direction cannot be verified without a read adapter")
+    with store.connect() as connection:
+        descendants_of_child = _descendants_of(connection, hermes, child_id)
+        gates = set(detect_human_gate_tasks(read_adapter, [child_id, *descendants_of_child]))
+        for gate_id in gates:
+            if parent_id in _descendants_of(connection, hermes, gate_id):
+                raise HumanGateDagViolation(
+                    f"linking parent {parent_id} -> child {child_id} reverses Human-Gate "
+                    f"DAG direction: {parent_id} is post-gate of authorizing gate {gate_id} "
+                    f"at-or-below {child_id} (post-gate task cannot become an ancestor of "
+                    f"its authorizing gate)"
+                )
+        if parent_id in descendants_of_child:
+            raise HumanGateDagViolation(
+                f"linking parent {parent_id} -> child {child_id} creates an authority cycle: "
+                f"{parent_id} is already downstream of {child_id}"
+            )
+
+
+def _all_ancestors(conn: Any, hermes: Any, task_id: str) -> list[str]:
+    parents: list[str] = []
+    frontier = [task_id]
+    seen: set[str] = set()
+    while frontier:
+        next_frontier: list[str] = []
+        for node in frontier:
+            node_parents = list(hermes.parent_ids(conn, node))
+            for parent in node_parents:
+                if parent in seen:
+                    continue
+                seen.add(parent)
+                parents.append(parent)
+                next_frontier.append(parent)
+        frontier = next_frontier
+    return parents
 
 
 def format_gate_markdown(ctx: HumanGateContext) -> str:

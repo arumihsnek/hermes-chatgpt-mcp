@@ -202,6 +202,10 @@ async def _test_wave4_leaves_are_scoped_auditable_and_bounded(tmp_path: Path, mo
             assert gate["decision_options"] == ["YES", "NO"]
             assert gate["provenance"]["baseline_mcp_sha"] == BASELINE_MCP_SHA
             assert gate["provenance"]["api_version"] == API_VERSION
+            # This fixture has no explicit candidate declaration.  Preserve the
+            # genuine legacy path: no binding fingerprint is required and the
+            # existing decision call below remains compatible.
+            assert gate["provenance"]["binding_fingerprint"] is None
             assert gate["evidence"]["task_title"] == "Review task"
             assert "# Human Gate" in gate["markdown"]
 
@@ -708,3 +712,81 @@ def test_candidate_provenance_uses_declared_build_identity_and_fails_closed(tmp_
     rejected = get_candidate_provenance(surface="beta")
     assert rejected.candidate_sha is None
     assert rejected.candidate_branch is None
+
+
+def test_human_gate_decide_discovery_and_transport_bind_fingerprint(tmp_path: Path, monkeypatch):
+    asyncio.run(_test_human_gate_decide_discovery_and_transport_bind_fingerprint(tmp_path, monkeypatch))
+
+
+async def _test_human_gate_decide_discovery_and_transport_bind_fingerprint(
+    tmp_path: Path, monkeypatch
+):
+    fixture, _board_b, settings, auth, app = _beta_fixture(tmp_path, monkeypatch)
+    manager = _token(
+        auth,
+        "schema-manager",
+        ["hermes:read", "hermes:manage"],
+        board=fixture.board,
+    )
+    expected = "ab" * 32
+    seen: dict[str, str | None] = {}
+
+    def capture_revalidation(
+        *,
+        read_adapter,
+        board,
+        task_id,
+        surface,
+        expected_binding_fingerprint,
+    ):
+        seen["fingerprint"] = expected_binding_fingerprint
+        assert board == fixture.board
+        assert task_id == "review-task"
+        assert surface == "beta"
+        return None
+
+    monkeypatch.setattr(
+        "hermes_chatgpt_mcp.control_plane.revalidate_gate_context",
+        capture_revalidation,
+    )
+    transport = httpx.ASGITransport(app=app)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=transport, base_url=settings.public_base_url) as client:
+            listed = await _rpc(client, manager, "tools/list", request_id=91)
+            tool = next(
+                item for item in listed["result"]["tools"] if item["name"] == "human-gate-decide"
+            )
+            request_schema = tool["inputSchema"]["$defs"]["HumanGateDecisionInput"]
+            fingerprint_schema = request_schema["properties"]["binding_fingerprint"]
+            string_schema = next(
+                option for option in fingerprint_schema["anyOf"] if option.get("type") == "string"
+            )
+            assert request_schema["additionalProperties"] is False
+            assert string_schema["minLength"] == 64
+            assert string_schema["maxLength"] == 64
+            assert string_schema["pattern"] == "^[0-9a-f]{64}$"
+
+            decided = _assert_success(
+                await _rpc(
+                    client,
+                    manager,
+                    "tools/call",
+                    {
+                        "name": "human-gate-decide",
+                        "arguments": {
+                            "request": {
+                                "board": fixture.board,
+                                "task_id": "review-task",
+                                "decision": "NO",
+                                "reason": "schema transport fixture",
+                                "binding_fingerprint": expected,
+                            }
+                        },
+                    },
+                    92,
+                )
+            )
+
+    assert decided["recorded"] is True
+    assert decided["decision"] == "NO"
+    assert seen["fingerprint"] == expected

@@ -1314,7 +1314,14 @@ def create_app(
         register_canonical("human-gate", HumanGateInput, _human_gate, scope=auth_service.read_scope, result_model=HumanGateView)
 
         def _human_gate_decide(handle, request):
-            from .control_plane import revalidate_gate_context, validate_gate_actor, validate_gate_requester
+            from .control_plane import (
+                binding_fingerprint,
+                format_gate_decision_body,
+                revalidate_gate_context,
+                validate_gate_actor,
+                validate_gate_requester,
+            )
+            from .provenance import bind_candidate_provenance_to_task
 
             # Stale-candidate policy: a decision naming a superseded/retired
             # requester would approve evidence from a dead candidate — reject
@@ -1336,11 +1343,39 @@ def create_app(
             )
             # Auditable: the decision is a canonical task comment on the gate task,
             # not an implicit FK flip.  The human's YES/NO stays in task_events.
-            body = f"HUMAN_GATE {request.decision}: {request.task_id} on {handle.slug}"
-            if request.reason:
-                body += f"\nReason: {request.reason[:2000]}"
-            if request.requester:
-                body += f"\nRequester: {request.requester[:200]}"
+            # The comment binds the decision to the canonical binding
+            # fingerprint read back at decide time, so a later reprepare with
+            # the same unchanged fingerprint can surface the recorded YES
+            # deterministically — while a changed fingerprint requires fresh
+            # human authority. Recording never blocks: an unreadable or legacy
+            # binding simply records ``Binding: legacy``, which can never
+            # authorize an exact canonical binding.
+            try:
+                gate_body = getattr(
+                    board_resolver.query_adapter(handle).get_task(request.task_id), "body", ""
+                ) or ""
+                bound = bind_candidate_provenance_to_task(gate_body)
+            except (LookupError, ValueError, RuntimeError):
+                bound = None
+            fingerprint: str | None = None
+            if bound is not None:
+                base = bound.baseline
+                fingerprint = binding_fingerprint(
+                    candidate_sha=bound.candidate_sha,
+                    candidate_branch=bound.candidate_branch,
+                    baseline_mcp_sha=base.mcp_sha,
+                    baseline_hermes_sha=base.hermes_sha,
+                    baseline_phase_s_sha=base.phase_s_sha,
+                    api_version=base.api_version,
+                )
+            body = format_gate_decision_body(
+                decision=request.decision,
+                task_id=request.task_id,
+                board=handle.slug,
+                reason=request.reason,
+                requester=request.requester,
+                binding_fingerprint=fingerprint,
+            )
             row = board_resolver.management_adapter(handle).add_comment(
                 request.task_id, body
             )
