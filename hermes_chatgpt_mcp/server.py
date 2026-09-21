@@ -608,7 +608,11 @@ def create_app(
         description="Read the configured Hermes Kanban board summary and status counts.",
         annotations=readonly,
         structured_output=True,
-        meta={"ui": {"resourceUri": (KANBAN_UI_RESOURCE_URI_INTERACTIVE_R162 if (settings.ui_interactive_r1 and settings.chatgpt_compat_mode) else (KANBAN_UI_RESOURCE_URI_INTERACTIVE_R1 if settings.ui_interactive_r1 else KANBAN_UI_RESOURCE_URI))}},
+        meta=(
+            {"ui": {"resourceUri": (KANBAN_UI_RESOURCE_URI_INTERACTIVE_R162 if (settings.ui_interactive_r1 and settings.chatgpt_compat_mode) else (KANBAN_UI_RESOURCE_URI_INTERACTIVE_R1 if settings.ui_interactive_r1 else KANBAN_UI_RESOURCE_URI))}}
+            if settings.mcp_apps_enabled
+            else None
+        ),
     )
     async def get_board(request: BoardQuery) -> BoardView:
         handle = resolve_board(request.board, operation="read")
@@ -628,7 +632,7 @@ def create_app(
         )
         return view
 
-    if settings.ui_interactive_r1:
+    if settings.mcp_apps_enabled and settings.ui_interactive_r1:
         @mcp.tool(
             name="get_board_interactive_r14",
             description="Read the configured Hermes Kanban board and render the fresh Interactive R1.1 MCP App binding.",
@@ -898,35 +902,36 @@ def create_app(
                 goal_max_turns=request.goal_max_turns,
             )
 
-    @mcp.resource(
-        KANBAN_UI_RESOURCE_URI, name="hermes_kanban_ui", title="Hermes Kanban board",
-        description="Read-only Hermes Kanban board view.", mime_type=KANBAN_UI_MIME_TYPE,
-        meta=_widget_resource_meta(public_base_url=settings.public_base_url, version="v1"),
-    )
-    def kanban_ui() -> str:
-        # ChatGPT may cache the original get_board -> resource URI binding for
-        # the lifetime of a connector session.  When Interactive R1 is enabled,
-        # keep that legacy URI as an alias for the interactive resource so an
-        # already-connected client receives the upgraded UI without requiring a
-        # connector rediscovery/reconnect.
-        html = _build_primary_kanban_ui(interactive=settings.ui_interactive_r1)
-        if len(html.encode("utf-8")) > KANBAN_UI_MAX_BYTES:
-            raise ValueError("Kanban UI resource exceeds size limit")
-        return html
+    if settings.mcp_apps_enabled:
+        @mcp.resource(
+            KANBAN_UI_RESOURCE_URI, name="hermes_kanban_ui", title="Hermes Kanban board",
+            description="Read-only Hermes Kanban board view.", mime_type=KANBAN_UI_MIME_TYPE,
+            meta=_widget_resource_meta(public_base_url=settings.public_base_url, version="v1"),
+        )
+        def kanban_ui() -> str:
+            # ChatGPT may cache the original get_board -> resource URI binding for
+            # the lifetime of a connector session.  When Interactive R1 is enabled,
+            # keep that legacy URI as an alias for the interactive resource so an
+            # already-connected client receives the upgraded UI without requiring a
+            # connector rediscovery/reconnect.
+            html = _build_primary_kanban_ui(interactive=settings.ui_interactive_r1)
+            if len(html.encode("utf-8")) > KANBAN_UI_MAX_BYTES:
+                raise ValueError("Kanban UI resource exceeds size limit")
+            return html
 
-    @mcp.resource(
-        HUMAN_GATE_RESOURCE_URI, name="hermes_human_gate_ui", title="Hermes Human Gate readback",
-        description="Non-authoritative Human Gate evidence and dashboard handoff.",
-        mime_type=KANBAN_UI_MIME_TYPE,
-        meta=_widget_resource_meta(public_base_url=settings.public_base_url, version="v1"),
-    )
-    def human_gate_ui() -> str:
-        html = build_human_gate_ui_html()
-        if len(html.encode("utf-8")) > KANBAN_UI_MAX_BYTES:
-            raise ValueError("Human Gate UI resource exceeds size limit")
-        return html
+        @mcp.resource(
+            HUMAN_GATE_RESOURCE_URI, name="hermes_human_gate_ui", title="Hermes Human Gate readback",
+            description="Non-authoritative Human Gate evidence and dashboard handoff.",
+            mime_type=KANBAN_UI_MIME_TYPE,
+            meta=_widget_resource_meta(public_base_url=settings.public_base_url, version="v1"),
+        )
+        def human_gate_ui() -> str:
+            html = build_human_gate_ui_html()
+            if len(html.encode("utf-8")) > KANBAN_UI_MAX_BYTES:
+                raise ValueError("Human Gate UI resource exceeds size limit")
+            return html
 
-    if settings.ui_interactive_r1:
+    if settings.mcp_apps_enabled and settings.ui_interactive_r1:
         @mcp.resource(
             KANBAN_UI_RESOURCE_URI_INTERACTIVE_R1,
             name="hermes_kanban_ui_interactive_r1",
@@ -982,7 +987,7 @@ def create_app(
         def kanban_ui_interactive_r162() -> str:
             return build_kanban_ui_interactive_r1_html()
 
-    if settings.ui_write_enabled_v2:
+    if settings.mcp_apps_enabled and settings.ui_write_enabled_v2:
         @mcp.resource(
             KANBAN_UI_RESOURCE_URI_V2, name="hermes_kanban_ui_v2",
             title="Hermes Kanban board (create)",
@@ -1763,7 +1768,7 @@ def create_app(
         # enables it, expose only the fresh R1.6 render tool through the
         # otherwise frozen ChatGPT compatibility projection. Keeping this
         # conditional preserves the exact legacy contract when the flag is off.
-        if settings.ui_interactive_r1:
+        if settings.mcp_apps_enabled and settings.ui_interactive_r1:
             allowed_tools.add("get_board_interactive_r162")
         mcp._tool_manager._tools = {  # type: ignore[attr-defined]
             name: tool

@@ -232,6 +232,23 @@ def test_interactive_r1_flag_parses_from_env(monkeypatch):
     assert Settings.from_env().ui_interactive_r1 is True
 
 
+def test_mcp_apps_flag_defaults_on():
+    assert Settings.__dataclass_fields__["mcp_apps_enabled"].default is True
+
+
+def test_mcp_apps_flag_parses_from_env(monkeypatch):
+    monkeypatch.setenv("HERMES_AGENT_ROOT", "/home/ubuntu/hermes-agent")
+    monkeypatch.setenv("MCP_OAUTH_USERNAME", "chatgpt")
+    monkeypatch.setenv("MCP_OAUTH_PASSWORD", "a" * 24)
+    monkeypatch.setenv("MCP_OAUTH_SIGNING_KEY", "b" * 48)
+    monkeypatch.delenv("MCP_APPS_ENABLED", raising=False)
+    assert Settings.from_env().mcp_apps_enabled is True
+    monkeypatch.setenv("MCP_APPS_ENABLED", "false")
+    assert Settings.from_env().mcp_apps_enabled is False
+    monkeypatch.setenv("MCP_APPS_ENABLED", "true")
+    assert Settings.from_env().mcp_apps_enabled is True
+
+
 def test_interactive_r162_has_fresh_binding_and_mobile_workbench_contract():
     assert KANBAN_UI_RESOURCE_URI_INTERACTIVE_R162 == "ui://hermes/kanban/interactive-r162-mobile-workbench"
     source = (Path(__file__).parents[1] / "hermes_chatgpt_mcp" / "server.py").read_text(encoding="utf-8")

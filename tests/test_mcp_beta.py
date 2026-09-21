@@ -168,6 +168,88 @@ async def _test_chatgpt_compat_mode_exposes_r16_tool_only_when_interactive_ui_en
     assert "get_board_interactive_r14" not in names
 
 
+def test_mcp_apps_off_removes_every_ui_surface_and_preserves_tools_contract(tmp_path, monkeypatch):
+    asyncio.run(_test_mcp_apps_off_removes_every_ui_surface_and_preserves_tools_contract(tmp_path, monkeypatch))
+
+
+async def _test_mcp_apps_off_removes_every_ui_surface_and_preserves_tools_contract(tmp_path, monkeypatch):
+    fixture, settings, auth, resolver, app_default = _beta_app(tmp_path, monkeypatch)
+    default_token = _token(auth, "apps-default", ["hermes:read", "hermes:manage"], board=fixture.board)
+    settings_on = replace(settings, ui_interactive_r1=True, ui_write_enabled_v2=True)
+    auth_on = AuthService(settings_on)
+    app_on = create_app(board_resolver=resolver, settings=settings_on, auth_service=auth_on, surface="beta")
+    on_token = _token(auth_on, "apps-on", ["hermes:read", "hermes:manage"], board=fixture.board)
+    settings_off = replace(settings_on, mcp_apps_enabled=False)
+    auth_off = AuthService(settings_off)
+    app_off = create_app(board_resolver=resolver, settings=settings_off, auth_service=auth_off, surface="beta")
+    off_token = _token(auth_off, "apps-off", ["hermes:read", "hermes:manage"], board=fixture.board)
+
+    async with app_default.router.lifespan_context(app_default), httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app_default), base_url=settings.public_base_url
+    ) as client_default:
+        default_tools = (await _rpc(client_default, default_token, "tools/list", request_id=1))["result"]["tools"]
+        default_resources = (await _rpc(client_default, default_token, "resources/list", request_id=2))["result"]["resources"]
+    async with app_on.router.lifespan_context(app_on), app_off.router.lifespan_context(app_off):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app_on), base_url=settings_on.public_base_url
+        ) as client_on:
+            on_tools = (await _rpc(client_on, on_token, "tools/list", request_id=3))["result"]["tools"]
+            on_resources = (await _rpc(client_on, on_token, "resources/list", request_id=4))["result"]["resources"]
+            on_boards = await _rpc(
+                client_on, on_token, "tools/call", {"name": "list_boards", "arguments": {}}, request_id=5,
+            )
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app_off), base_url=settings_off.public_base_url
+        ) as client_off:
+            off_tools = (await _rpc(client_off, off_token, "tools/list", request_id=6))["result"]["tools"]
+            off_resources = (await _rpc(client_off, off_token, "resources/list", request_id=7))["result"]["resources"]
+            off_boards = await _rpc(
+                client_off, off_token, "tools/call", {"name": "list_boards", "arguments": {}}, request_id=8,
+            )
+            legacy_read = await _rpc(
+                client_off, off_token, "resources/read", {"uri": "ui://hermes/kanban/v1"}, request_id=9,
+            )
+
+    interactive_tools = {"get_board_interactive_r14", "get_board_interactive_r16", "get_board_interactive_r162"}
+    assert interactive_tools <= {tool["name"] for tool in on_tools}
+    assert interactive_tools.isdisjoint({tool["name"] for tool in off_tools})
+
+    def _contract(tools: list[dict]) -> list[dict]:
+        return [{key: value for key, value in tool.items() if key != "_meta"} for tool in tools]
+
+    assert _contract(off_tools) == [tool for tool in _contract(on_tools) if tool["name"] not in interactive_tools]
+    assert _contract(off_tools) == _contract(default_tools)
+
+    on_board_tool = next(tool for tool in on_tools if tool["name"] == "get_board")
+    off_board_tool = next(tool for tool in off_tools if tool["name"] == "get_board")
+    default_board_tool = next(tool for tool in default_tools if tool["name"] == "get_board")
+    assert on_board_tool["_meta"]["ui"]["resourceUri"] == "ui://hermes/kanban/interactive-r1"
+    assert default_board_tool["_meta"]["ui"]["resourceUri"] == "ui://hermes/kanban/v1"
+    assert "_meta" not in off_board_tool
+
+    assert {resource["uri"] for resource in default_resources} == {
+        "ui://hermes/kanban/v1",
+        "ui://hermes/human-gate/v1",
+    }
+    assert {resource["uri"] for resource in on_resources} == {
+        "ui://hermes/kanban/v1",
+        "ui://hermes/human-gate/v1",
+        "ui://hermes/kanban/interactive-r1",
+        "ui://hermes/kanban/interactive-r14-fresh-tool",
+        "ui://hermes/kanban/interactive-r16-ux",
+        "ui://hermes/kanban/interactive-r162-mobile-workbench",
+        "ui://hermes/kanban/v2",
+    }
+    assert off_resources == []
+    assert "error" in legacy_read
+    assert "text/html;profile=mcp-app" not in str(legacy_read)
+    assert "Hermes Kanban" not in str(legacy_read)
+
+    assert "error" not in on_boards, on_boards
+    assert "error" not in off_boards, off_boards
+    assert on_boards["result"]["structuredContent"] == off_boards["result"]["structuredContent"]
+
+
 def test_stateless_chatgpt_matrix_does_not_require_session_replay(tmp_path, monkeypatch):
     asyncio.run(_test_stateless_chatgpt_matrix_does_not_require_session_replay(tmp_path, monkeypatch))
 
