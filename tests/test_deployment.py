@@ -46,6 +46,44 @@ def test_systemd_unit_keeps_query_command_and_oauth_state_boundaries():
     assert "ReadWritePaths=/home/ubuntu/.hermes\n" not in unit
 
 
+def _unit_read_write_paths(unit_text: str) -> set[str]:
+    return {
+        entry
+        for line in unit_text.splitlines()
+        if line.startswith("ReadWritePaths=")
+        for entry in line.removeprefix("ReadWritePaths=").split()
+    }
+
+
+def test_boards_switch_resolution_needs_no_wider_sandbox_allowlist(monkeypatch):
+    """``boards-switch`` now writes nothing, so no unit needs a wider allowlist.
+
+    Hermes persists the active board at ``<kanban home>/kanban/current``, a
+    sibling of the boards root the units grant, so the MCP adapter resolves the
+    requested slug instead of attempting that write. This pins the deployed
+    boundary: neither unit authorizes the pointer or a parent of it.
+    """
+    monkeypatch.delenv("HERMES_HOME", raising=False)
+    monkeypatch.delenv("HERMES_KANBAN_HOME", raising=False)
+    from hermes_cli import kanban_db
+
+    boards_root = Path(str(kanban_db.boards_root())).resolve()
+    pointer = Path(str(kanban_db.current_board_path())).resolve()
+    assert pointer.parent == boards_root.parent
+    assert boards_root not in pointer.parents
+
+    for unit_path in (
+        "deploy/systemd/hermes-chatgpt-mcp.service",
+        "deploy/systemd/hermes-chatgpt-mcp-beta.service",
+    ):
+        allowlisted = _unit_read_write_paths(Path(unit_path).read_text(encoding="utf-8"))
+        assert str(boards_root) in allowlisted
+        for entry in allowlisted:
+            resolved = Path(entry).resolve()
+            assert resolved != pointer
+            assert resolved not in pointer.parents
+
+
 def test_oci_installer_preserves_private_oauth_state_configuration():
     installer = Path("scripts/install_oci.sh").read_text(encoding="utf-8")
     assert '"MCP_OAUTH_STATE_FILE": "/var/lib/hermes-chatgpt-mcp/oauth-state.json"' in installer

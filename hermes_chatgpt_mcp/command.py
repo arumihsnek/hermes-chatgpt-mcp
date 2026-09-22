@@ -331,7 +331,15 @@ class HermesBoardAdminAdapter:
 
     def switch_board(self, slug: str) -> dict[str, Any]:
         normalized = self._require_existing_board(slug)
-        self.hermes.set_current_board(normalized)
+        # Hermes persists ``kanban switch`` at ``<kanban home>/kanban/current``,
+        # a *sibling* of the boards root the deployed units grant and therefore
+        # outside every path this service may write: the canonical write can only
+        # fail inside the sandbox and would surface as an opaque BACKEND_ERROR.
+        # Board selection on this surface is already explicit per operation
+        # (``BoardHandle.db_path`` / ``board=``), so switching resolves the
+        # requested slug and returns its canonical board record instead of
+        # mutating the shared host pointer. The canonical switch stays available
+        # to the host CLI, which is not sandboxed.
         entries = self.hermes.list_boards(include_archived=False)
         return next((dict(item) for item in entries if str(item.get("slug")) == normalized), {"slug": normalized})
 

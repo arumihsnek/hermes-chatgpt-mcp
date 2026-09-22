@@ -17,7 +17,7 @@ from hermes_chatgpt_mcp.boards import BoardHandle, BoardResolutionError
 from hermes_chatgpt_mcp.command import HermesBoardAdminAdapter, HermesCardManagementAdapter
 from hermes_chatgpt_mcp.hermes import ReadOnlyHermesStore
 
-from .fixtures import make_hermes_fixture
+from .fixtures import make_hermes_fixture, tree_fingerprint
 
 
 def _handle(fixture) -> BoardHandle:
@@ -115,6 +115,65 @@ def test_board_admin_rejects_unknown_switch_and_workdir_without_mutation(tmp_pat
     assert kanban_db.get_current_board() == current_before
     assert not (fixture.root / "kanban" / "boards" / "unknown-switch-board").exists()
     assert not (fixture.root / "kanban" / "boards" / "unknown-workdir-board").exists()
+
+
+def test_board_admin_switch_resolves_the_canonical_board_without_writing_the_global_pointer(
+    tmp_path, monkeypatch
+):
+    """``boards-switch`` resolves; the global active-board pointer is never written.
+
+    Hermes keeps that pointer at ``<kanban home>/kanban/current``, a *sibling* of
+    the boards root the deployed units grant, so persisting a switch from this
+    surface could only fail inside the service sandbox and surface as an opaque
+    ``BACKEND_ERROR``. Selection on this surface is explicit per operation
+    (``BoardHandle``/``board=``), so the tool validates the slug and returns the
+    canonical board record instead of mutating shared host state.
+    """
+    from hermes_cli import kanban_db
+
+    fixture = make_hermes_fixture(tmp_path)
+    monkeypatch.setenv("HERMES_KANBAN_HOME", str(fixture.root))
+    adapter = HermesBoardAdminAdapter(kanban_db)
+    pointer_writes: list[str] = []
+    monkeypatch.setattr(
+        kanban_db, "set_current_board", lambda slug: pointer_writes.append(str(slug))
+    )
+    monkeypatch.setattr(
+        kanban_db, "clear_current_board", lambda: pointer_writes.append("clear")
+    )
+    before = tree_fingerprint(fixture.root)
+
+    result = adapter.switch_board(fixture.board)
+
+    assert pointer_writes == []
+    assert result["slug"] == fixture.board
+    assert result["name"] == "Fixture Board"
+    assert result["description"] == "Representative board"
+    assert not (fixture.root / "kanban" / "current").exists()
+    assert tree_fingerprint(fixture.root) == before
+    # The refusal to write is structural, not permission-based: Hermes keeps the
+    # active-board pointer beside the boards root the units allow, never under it.
+    assert kanban_db.current_board_path() == kanban_db.boards_root().parent / "current"
+
+
+def test_board_admin_switch_leaves_an_existing_current_board_pointer_untouched(
+    tmp_path, monkeypatch
+):
+    from hermes_cli import kanban_db
+
+    fixture = make_hermes_fixture(tmp_path)
+    monkeypatch.setenv("HERMES_KANBAN_HOME", str(fixture.root))
+    pointer = fixture.root / "kanban" / "current"
+    pointer.write_text("other-board\n", encoding="utf-8")
+    adapter = HermesBoardAdminAdapter(kanban_db)
+    before = tree_fingerprint(fixture.root)
+
+    result = adapter.switch_board(fixture.board)
+
+    assert result["slug"] == fixture.board
+    assert result["name"] == "Fixture Board"
+    assert pointer.read_text(encoding="utf-8") == "other-board\n"
+    assert tree_fingerprint(fixture.root) == before
 
 
 def test_archive_rm_deletes_only_already_archived_tasks(tmp_path, monkeypatch):

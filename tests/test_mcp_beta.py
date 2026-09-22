@@ -853,6 +853,55 @@ async def _test_beta_board_rename_unknown_slug_is_not_an_implicit_create(tmp_pat
     assert not (fixture.root / "kanban" / "boards" / target).exists()
 
 
+def test_boards_switch_leaf_resolves_without_writing_the_active_board_pointer(
+    tmp_path, monkeypatch
+):
+    asyncio.run(
+        _test_boards_switch_leaf_resolves_without_writing_the_active_board_pointer(
+            tmp_path, monkeypatch
+        )
+    )
+
+
+async def _test_boards_switch_leaf_resolves_without_writing_the_active_board_pointer(
+    tmp_path, monkeypatch
+):
+    """The served ``boards-switch`` leaf resolves; the host pointer is untouched."""
+    fixture, settings, auth, _, app = _beta_app(tmp_path, monkeypatch)
+    administrator = _token(auth, "switch-administrator", ["hermes:read", "hermes:admin"])
+    pointer = fixture.root / "kanban" / "current"
+    pointer.write_text("other-board\n", encoding="utf-8")
+    pointer_writes: list[str] = []
+    monkeypatch.setattr(
+        kanban_db, "set_current_board", lambda slug: pointer_writes.append(str(slug))
+    )
+    monkeypatch.setattr(
+        kanban_db, "clear_current_board", lambda: pointer_writes.append("clear")
+    )
+    transport = httpx.ASGITransport(app=app)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=transport, base_url=settings.public_base_url) as client:
+            before = tree_fingerprint(fixture.root)
+            switched = await _rpc(
+                client,
+                administrator,
+                "tools/call",
+                {"name": "boards-switch", "arguments": {"request": {"slug": fixture.board}}},
+                1,
+            )
+            after = tree_fingerprint(fixture.root)
+
+    assert switched["result"].get("isError") is not True, switched
+    payload = switched["result"]["structuredContent"]
+    assert payload["board"] == fixture.board
+    assert payload["action"] == "boards switch"
+    assert payload["data"]["slug"] == fixture.board
+    assert payload["data"]["name"] == "Fixture Board"
+    assert pointer_writes == []
+    assert pointer.read_text(encoding="utf-8") == "other-board\n"
+    assert after == before
+
+
 def test_management_commands_are_global_on_beta_and_return_safe_errors(tmp_path, monkeypatch):
     asyncio.run(_test_management_commands_are_global_on_beta_and_return_safe_errors(tmp_path, monkeypatch))
 
