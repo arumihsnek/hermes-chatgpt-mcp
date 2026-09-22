@@ -176,6 +176,93 @@ def test_board_admin_switch_leaves_an_existing_current_board_pointer_untouched(
     assert tree_fingerprint(fixture.root) == before
 
 
+def test_board_admin_remove_active_board_reports_the_surface_limit_without_mutation(
+    tmp_path, monkeypatch
+):
+    """Removing the active board cannot clear the out-of-scope pointer.
+
+    Hermes clears ``<kanban home>/kanban/current`` *before* it renames the board
+    directory, and that pointer is a sibling of the boards root both deployed
+    units grant, so the unlink fails inside the sandbox before anything is
+    archived. The adapter must report that limit truthfully (CONFLICT via the
+    server's ``ValueError`` mapping) instead of an opaque BACKEND_ERROR, and must
+    not mutate anything.
+    """
+    from hermes_cli import kanban_db
+
+    fixture = make_hermes_fixture(tmp_path)
+    monkeypatch.setenv("HERMES_KANBAN_HOME", str(fixture.root))
+    monkeypatch.delenv("HERMES_KANBAN_BOARD", raising=False)
+    pointer = fixture.root / "kanban" / "current"
+    pointer.write_text(f"{fixture.board}\n", encoding="utf-8")
+    adapter = HermesBoardAdminAdapter(kanban_db)
+
+    def unwritable_pointer() -> None:
+        # The sandbox may read the pointer but never unlink it.
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(kanban_db, "clear_current_board", unwritable_pointer)
+    before = tree_fingerprint(fixture.root)
+
+    with pytest.raises(ValueError, match="active board") as exc:
+        adapter.remove_board(fixture.board, confirm=True)
+
+    assert "host CLI" in str(exc.value)
+    assert tree_fingerprint(fixture.root) == before
+    assert pointer.read_text(encoding="utf-8") == f"{fixture.board}\n"
+    assert (fixture.root / "kanban" / "boards" / fixture.board / "kanban.db").is_file()
+    assert not (fixture.root / "kanban" / "boards" / "_archived").exists()
+
+
+def test_board_admin_remove_inactive_board_archives_without_touching_the_pointer(
+    tmp_path, monkeypatch
+):
+    from hermes_cli import kanban_db
+
+    fixture = make_hermes_fixture(tmp_path)
+    monkeypatch.setenv("HERMES_KANBAN_HOME", str(fixture.root))
+    monkeypatch.delenv("HERMES_KANBAN_BOARD", raising=False)
+    pointer = fixture.root / "kanban" / "current"
+    pointer.write_text(f"{fixture.board}\n", encoding="utf-8")
+    adapter = HermesBoardAdminAdapter(kanban_db)
+    adapter.create_board("other-board", name="Other Board")
+    pointer_writes: list[str] = []
+    monkeypatch.setattr(
+        kanban_db, "set_current_board", lambda slug: pointer_writes.append(str(slug))
+    )
+    monkeypatch.setattr(
+        kanban_db, "clear_current_board", lambda: pointer_writes.append("clear")
+    )
+
+    removed = adapter.remove_board("other-board", confirm=True)
+
+    scope = Path(kanban_db.boards_root()).resolve()
+    assert removed["action"] == "archived"
+    assert scope in Path(removed["new_path"]).resolve().parents
+    assert pointer_writes == []
+    assert pointer.read_text(encoding="utf-8") == f"{fixture.board}\n"
+    assert (fixture.root / "kanban" / "boards" / fixture.board / "kanban.db").is_file()
+    assert not (fixture.root / "kanban" / "boards" / "other-board").exists()
+
+
+def test_board_admin_remove_keeps_base_behaviour_for_unrelated_oserror(tmp_path, monkeypatch):
+    """The translation is narrow: only the active-board pointer case is converted."""
+    from hermes_cli import kanban_db
+
+    fixture = make_hermes_fixture(tmp_path)
+    monkeypatch.setenv("HERMES_KANBAN_HOME", str(fixture.root))
+    monkeypatch.delenv("HERMES_KANBAN_BOARD", raising=False)
+    adapter = HermesBoardAdminAdapter(kanban_db)
+
+    def failing_remove(slug, *, archive=True):
+        raise PermissionError(13, "archive rename failed")
+
+    monkeypatch.setattr(kanban_db, "remove_board", failing_remove)
+
+    with pytest.raises(PermissionError):
+        adapter.remove_board(fixture.board, confirm=True)
+
+
 def test_archive_rm_deletes_only_already_archived_tasks(tmp_path, monkeypatch):
     fixture = make_hermes_fixture(tmp_path)
     adapter = _management_adapter(fixture, monkeypatch)

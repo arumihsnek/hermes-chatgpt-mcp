@@ -879,17 +879,19 @@ async def _test_boards_switch_leaf_resolves_without_writing_the_active_board_poi
         kanban_db, "clear_current_board", lambda: pointer_writes.append("clear")
     )
     transport = httpx.ASGITransport(app=app)
-    async with app.router.lifespan_context(app):
-        async with httpx.AsyncClient(transport=transport, base_url=settings.public_base_url) as client:
-            before = tree_fingerprint(fixture.root)
-            switched = await _rpc(
-                client,
-                administrator,
-                "tools/call",
-                {"name": "boards-switch", "arguments": {"request": {"slug": fixture.board}}},
-                1,
-            )
-            after = tree_fingerprint(fixture.root)
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(transport=transport, base_url=settings.public_base_url) as client,
+    ):
+        before = tree_fingerprint(fixture.root)
+        switched = await _rpc(
+            client,
+            administrator,
+            "tools/call",
+            {"name": "boards-switch", "arguments": {"request": {"slug": fixture.board}}},
+            1,
+        )
+        after = tree_fingerprint(fixture.root)
 
     assert switched["result"].get("isError") is not True, switched
     payload = switched["result"]["structuredContent"]
@@ -900,6 +902,52 @@ async def _test_boards_switch_leaf_resolves_without_writing_the_active_board_poi
     assert pointer_writes == []
     assert pointer.read_text(encoding="utf-8") == "other-board\n"
     assert after == before
+
+
+def test_boards_rm_active_board_conflicts_without_mutation(tmp_path, monkeypatch):
+    asyncio.run(_test_boards_rm_active_board_conflicts_without_mutation(tmp_path, monkeypatch))
+
+
+async def _test_boards_rm_active_board_conflicts_without_mutation(tmp_path, monkeypatch):
+    """The served ``boards-rm`` leaf reports the sandbox limit as CONFLICT."""
+    fixture, settings, auth, _, app = _beta_app(tmp_path, monkeypatch)
+    administrator = _token(auth, "remove-administrator", ["hermes:read", "hermes:admin"])
+    # The deployed service resolves the active board from the pointer file; the
+    # ambient test environment pins it through the environment instead.
+    monkeypatch.delenv("HERMES_KANBAN_BOARD", raising=False)
+    pointer = fixture.root / "kanban" / "current"
+    pointer.write_text(f"{fixture.board}\n", encoding="utf-8")
+
+    def unwritable_pointer() -> None:
+        # The sandbox may read the pointer but never unlink it.
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(kanban_db, "clear_current_board", unwritable_pointer)
+    transport = httpx.ASGITransport(app=app)
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(transport=transport, base_url=settings.public_base_url) as client,
+    ):
+        before = tree_fingerprint(fixture.root)
+        removed = await _rpc(
+            client,
+            administrator,
+            "tools/call",
+            {
+                "name": "boards-rm",
+                "arguments": {"request": {"slug": fixture.board, "confirm": True}},
+            },
+            1,
+        )
+        after = tree_fingerprint(fixture.root)
+
+    _assert_tool_error(removed, "CONFLICT", forbidden_path=fixture.root)
+    assert "active board" in str(removed)
+    assert "BACKEND_ERROR" not in str(removed)
+    assert after == before
+    assert pointer.read_text(encoding="utf-8") == f"{fixture.board}\n"
+    assert (fixture.root / "kanban" / "boards" / fixture.board / "kanban.db").is_file()
+    assert not (fixture.root / "kanban" / "boards" / "_archived").exists()
 
 
 def test_management_commands_are_global_on_beta_and_return_safe_errors(tmp_path, monkeypatch):

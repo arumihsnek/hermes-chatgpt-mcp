@@ -327,7 +327,43 @@ class HermesBoardAdminAdapter:
         if not confirm:
             raise ValueError("board removal requires confirm=true")
         normalized = _canonical_board_slug(slug)
-        return dict(self.hermes.remove_board(normalized, archive=True))
+        try:
+            return dict(self.hermes.remove_board(normalized, archive=True))
+        except OSError as exc:
+            if not self._removal_failed_clearing_the_active_board_pointer(normalized):
+                raise
+            # Canonical removal clears the global active-board pointer
+            # (``<kanban home>/kanban/current``) *before* it renames the board
+            # directory, and that pointer is a sibling of the boards root this
+            # service may write, so inside the deployment the unlink fails first
+            # and nothing is archived. Report that surface limit truthfully
+            # (``ValueError`` -> CONFLICT) instead of an opaque BACKEND_ERROR;
+            # canonical removal stays available to the host CLI.
+            raise ValueError(
+                "cannot remove the active board on this surface: Hermes clears the "
+                "global active-board pointer before archiving, and that pointer is "
+                "outside the writable board root this service is deployed with; use "
+                "the host CLI, which is not sandboxed"
+            ) from exc
+
+    def _removal_failed_clearing_the_active_board_pointer(self, normalized: str) -> bool:
+        """True when a failed removal is attributable to the pointer unlink.
+
+        Canonical ``remove_board`` clears the active-board pointer only when the
+        removed board is the active one, and it does so *before* the archive
+        rename, so a failure raised while the pointer is still present can only
+        be that unlink. Any other ``OSError`` keeps its previous behaviour.
+        """
+        active_factory = getattr(self.hermes, "get_current_board", None)
+        pointer_factory = getattr(self.hermes, "current_board_path", None)
+        if not callable(active_factory) or not callable(pointer_factory):
+            return False
+        try:
+            if str(active_factory()) != normalized:
+                return False
+            return Path(str(pointer_factory())).exists()
+        except (OSError, TypeError, ValueError):
+            return False
 
     def switch_board(self, slug: str) -> dict[str, Any]:
         normalized = self._require_existing_board(slug)
