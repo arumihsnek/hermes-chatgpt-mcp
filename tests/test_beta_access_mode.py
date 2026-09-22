@@ -123,8 +123,12 @@ async def _test_beta_all_scopes_read_strips_command_scopes_and_stays_global(tmp_
             granted = token.json()["scope"].split()
             assert "hermes:create" not in granted
             assert "hermes:manage" not in granted
+            # R0/D4 fix: read-only consent also strips the mutating
+            # hermes:board:create scope. The global hermes:admin scope is
+            # retained by design (it carries no board claim; per-board writes
+            # additionally require a board-bound command grant).
+            assert "hermes:board:create" not in granted
             assert "hermes:read" in granted
-            assert "hermes:board:create" in granted
             assert "hermes:admin" in granted
             assert "offline_access" in granted
             claims = auth.verified_claims(token.json()["access_token"])

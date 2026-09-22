@@ -73,7 +73,7 @@ async def _test_beta_oauth_http_board_create_scope_is_global_and_can_create_a_bo
     verifier = "board-create-verifier-" + "e" * 25
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
     callback = "https://chatgpt.com/connector/oauth/callback"
-    scope = "hermes:read hermes:board:create"
+    scope = "hermes:read hermes:create"
     transport = httpx.ASGITransport(app=app)
 
     async with app.router.lifespan_context(app):
@@ -101,13 +101,19 @@ async def _test_beta_oauth_http_board_create_scope_is_global_and_can_create_a_bo
                 "code_challenge_method": "S256",
                 "resource": settings.public_base_url,
             }
+            # R0 authz fix: board:create is a mutating scope, so read-only
+            # consent strips it. A board-creation grant is obtained through
+            # write-mode consent (board-bound command grant alongside the
+            # global board:create scope).
             approved = await client.post(
                 "/oauth/authorize",
                 data={
                     **params,
                     "username": "chatgpt",
                     "password": "correct horse battery staple",
-                    "access_mode": "read",
+                    "access_mode": "write",
+                    "board": fixture.board,
+                    "scope_extra_board_create": "hermes:board:create",
                 },
             )
             assert approved.status_code == 303, approved.text
@@ -124,11 +130,11 @@ async def _test_beta_oauth_http_board_create_scope_is_global_and_can_create_a_bo
             )
             assert token.status_code == 200, token.text
             token_data = token.json()
-            assert token_data["scope"] == scope
+            assert "hermes:board:create" in token_data["scope"].split()
             claims = auth.verified_claims(token_data["access_token"])
             assert claims is not None
-            assert "board" not in claims
-            assert "board_access" not in claims
+            assert claims["board"] == fixture.board
+            assert claims["board_access"] == "write"
 
             response = await client.post(
                 "/mcp",
@@ -601,8 +607,9 @@ async def _test_beta_oauth_consent_can_escalate_manage_and_board_create(tmp_path
             assert claims_a["board"] == fixture.board
             assert claims_a["board_access"] == "write"
 
-            # Scenario B: escalate hermes:board:create at consent; token is an
-            # admin grant with no board claim and no board command scopes.
+            # Scenario B: read-only consent cannot escalate hermes:board:create
+            # (R0/D4 fix). The mutating board-creation scope is stripped in
+            # read mode even when explicitly ticked; the token is pure read.
             verifier_b, params_b = params("state-escalate-admin")
             approved_b = await client.post(
                 "/oauth/authorize",
@@ -629,8 +636,8 @@ async def _test_beta_oauth_consent_can_escalate_manage_and_board_create(tmp_path
             assert token_b.status_code == 200, token_b.text
             body_b = token_b.json()
             scope_b = body_b["scope"].split()
-            assert "hermes:board:create" in scope_b
-            assert "hermes:create" not in scope_b  # board creation does not grant task writes
+            assert "hermes:board:create" not in scope_b
+            assert body_b["scope"] == "hermes:read"
             claims_b = auth.verified_claims(body_b["access_token"])
             assert claims_b is not None
             assert "board" not in claims_b

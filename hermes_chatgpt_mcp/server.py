@@ -400,24 +400,25 @@ def create_app(
         board: str | None,
         *,
         operation: Literal["read", "create", "manage"],
+        admin_tool: bool = False,
     ) -> BoardHandle:
         try:
-            if operation in {"create", "manage"}:
+            # R0 authz fix: board-bound write grants are enforced for every
+            # non-admin tool, including callers that also hold the global
+            # hermes:admin scope (F1: an admin+command grant is itself
+            # board-bound per docs/SECURITY.md, so skipping the binding let
+            # create_task succeed on boards advertised CREATE=false).
+            # Canonical admin tools (boards-switch, boards-rm, claim, swarm,
+            # ...) keep their designed model: hermes:admin alone authorizes
+            # them and they pass admin_tool=True explicitly.
+            if operation in {"create", "manage"} and not admin_tool:
                 required_scope = auth_service.create_scope if operation == "create" else auth_service.manage_scope
-                if beta and not has_admin_scope():
-                    granted_board = write_grant_board(required_scope)
-                    if granted_board is None:
-                        raise tool_error("BOARD_WRITE_SELECTION_REQUIRED", "write access requires one explicitly authorized board")
-                    if board is not None and _canonical_board_slug(board) != granted_board:
-                        raise tool_error("BOARD_SESSION_MISMATCH", "write access is authorized for one different board")
-                    board = granted_board
-                elif not beta:
-                    granted_board = write_grant_board(required_scope)
-                    if granted_board is None:
-                        raise tool_error("BOARD_WRITE_SELECTION_REQUIRED", "write access requires one explicitly authorized board")
-                    if board is not None and _canonical_board_slug(board) != granted_board:
-                        raise tool_error("BOARD_SESSION_MISMATCH", "write access is authorized for one different board")
-                    board = granted_board
+                granted_board = write_grant_board(required_scope)
+                if granted_board is None:
+                    raise tool_error("BOARD_WRITE_SELECTION_REQUIRED", "write access requires one explicitly authorized board")
+                if board is not None and _canonical_board_slug(board) != granted_board:
+                    raise tool_error("BOARD_SESSION_MISMATCH", "write access is authorized for one different board")
+                board = granted_board
                 return board_resolver.resolve(board, operation=operation)
             return board_resolver.resolve(board, operation=operation)
         except ToolError:
@@ -1185,7 +1186,7 @@ def create_app(
             async def tool(request):
                 require_scope(required)
                 board = getattr(request, "board", None)
-                handle = resolve_board(board, operation="manage" if required != auth_service.read_scope else "read")
+                handle = resolve_board(board, operation="manage" if required != auth_service.read_scope else "read", admin_tool=admin)
                 if name not in read_scope_names:
                     from .probe_mode import enforce_probe_safe
 
@@ -1607,9 +1608,14 @@ def create_app(
             # requires a selected board bound to at least one command scope;
             # admin is retained as an independent elevated scope alongside it.
             if access_mode == "read":
+                # R0 authz fix: read-only consent strips every mutating scope,
+                # including the global board-creation scope. A read grant must
+                # never retain hermes:board:create (D4: PROBE_MODE_REFUSAL on a
+                # read-consented grant proved the scope survived the strip).
                 requested_scope = " ".join(
                     scope for scope in auth_service.supported_scopes
                     if scope in requested_set and scope not in command_scopes
+                    and scope != auth_service.board_create_scope
                 )
             elif access_mode == "write":
                 if wants_admin:
